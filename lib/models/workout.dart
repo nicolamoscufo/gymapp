@@ -6,12 +6,20 @@ class ExerciseSet {
   double weight;
   int reps;
   bool isCompleted;
+  bool isWarmup;
+  double? rpe;
+  int? rir;
+  String notes;
 
   ExerciseSet({
     String? id,
     required this.weight,
     required this.reps,
     this.isCompleted = false,
+    this.isWarmup = false,
+    this.rpe,
+    this.rir,
+    this.notes = '',
   }) : id = id ?? newModelId('set');
 
   Map<String, dynamic> toJson() => {
@@ -19,6 +27,10 @@ class ExerciseSet {
     'weight': weight,
     'reps': reps,
     'isCompleted': isCompleted,
+    'isWarmup': isWarmup,
+    'rpe': rpe,
+    'rir': rir,
+    'notes': notes,
   };
 
   factory ExerciseSet.fromJson(Map<String, dynamic> json) => ExerciseSet(
@@ -26,6 +38,10 @@ class ExerciseSet {
     weight: (json['weight'] as num).toDouble(),
     reps: json['reps'] as int,
     isCompleted: json['isCompleted'] as bool? ?? false,
+    isWarmup: json['isWarmup'] as bool? ?? false,
+    rpe: (json['rpe'] as num?)?.toDouble(),
+    rir: json['rir'] as int?,
+    notes: json['notes'] as String? ?? '',
   );
 }
 
@@ -33,26 +49,47 @@ class WorkoutExercise {
   final String id;
   String name;
   String notes;
+  MuscleGroup muscleGroup;
+  String equipment;
+  String movementPattern;
+  int? targetMinReps;
+  int? targetMaxReps;
   IntensityTechnique technique;
   int? restSeconds;
   List<ExerciseSet> sets;
+  List<double> previousWeights;
+  List<int> previousReps;
 
   WorkoutExercise({
     String? id,
     required this.name,
     required this.notes,
+    this.muscleGroup = MuscleGroup.unassigned,
+    this.equipment = '',
+    this.movementPattern = '',
+    this.targetMinReps,
+    this.targetMaxReps,
     required this.technique,
     this.restSeconds,
     required this.sets,
+    this.previousWeights = const [],
+    this.previousReps = const [],
   }) : id = id ?? newModelId('workout_exercise');
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
     'notes': notes,
+    'muscleGroup': muscleGroup.name,
+    'equipment': equipment,
+    'movementPattern': movementPattern,
+    'targetMinReps': targetMinReps,
+    'targetMaxReps': targetMaxReps,
     'technique': technique.name,
     'restSeconds': restSeconds,
     'sets': sets.map((e) => e.toJson()).toList(),
+    'previousWeights': previousWeights,
+    'previousReps': previousReps,
   };
 
   factory WorkoutExercise.fromJson(Map<String, dynamic> json) {
@@ -69,10 +106,23 @@ class WorkoutExercise {
       id: json['id'] as String?,
       name: json['name'] as String,
       notes: json['notes'] as String? ?? '',
+      muscleGroup: muscleGroupFromJson(json['muscleGroup']),
+      equipment: json['equipment'] as String? ?? '',
+      movementPattern: json['movementPattern'] as String? ?? '',
+      targetMinReps: json['targetMinReps'] as int?,
+      targetMaxReps: json['targetMaxReps'] as int?,
       technique: parsedTechnique,
-        restSeconds: json['restSeconds'] as int?,
+      restSeconds: json['restSeconds'] as int?,
       sets: (json['sets'] as List)
           .map((e) => ExerciseSet.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      previousWeights: (json['previousWeights'] as List? ?? [])
+          .whereType<num>()
+          .map((weight) => weight.toDouble())
+          .toList(),
+      previousReps: (json['previousReps'] as List? ?? [])
+          .whereType<num>()
+          .map((reps) => reps.toInt())
           .toList(),
     );
   }

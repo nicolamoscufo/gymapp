@@ -8,6 +8,9 @@ class Schedule {
   DateTime createdAt;
   List<Exercise> exercises;
   bool isArchived;
+  int mesocycleWeeks;
+  int deloadEveryWeeks;
+  String goal;
 
   Schedule({
     String? id,
@@ -16,7 +19,27 @@ class Schedule {
     required this.createdAt,
     required this.exercises,
     this.isArchived = false,
+    this.mesocycleWeeks = 8,
+    this.deloadEveryWeeks = 4,
+    this.goal = '',
   }) : id = id ?? newModelId('schedule');
+
+  int currentWeek({DateTime? now}) {
+    final elapsedDays = _startOfWeek(
+      now ?? DateTime.now(),
+    ).difference(_startOfWeek(createdAt)).inDays;
+    final elapsedWeeks = elapsedDays < 0 ? 0 : elapsedDays ~/ 7;
+    final calculatedWeek = week + elapsedWeeks;
+    return calculatedWeek < 1 ? 1 : calculatedWeek;
+  }
+
+  bool isDeloadWeek({DateTime? now}) {
+    if (deloadEveryWeeks <= 0) {
+      return false;
+    }
+
+    return currentWeek(now: now) % deloadEveryWeeks == 0;
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -25,6 +48,9 @@ class Schedule {
     'createdAt': createdAt.toIso8601String(),
     'exercises': exercises.map((e) => e.toJson()).toList(),
     'isArchived': isArchived,
+    'mesocycleWeeks': mesocycleWeeks,
+    'deloadEveryWeeks': deloadEveryWeeks,
+    'goal': goal,
   };
 
   factory Schedule.fromJson(Map<String, dynamic> json) => Schedule(
@@ -38,5 +64,15 @@ class Schedule {
             .toList() ??
         [],
     isArchived: json['isArchived'] as bool? ?? false,
+    mesocycleWeeks: json['mesocycleWeeks'] as int? ?? 8,
+    deloadEveryWeeks: json['deloadEveryWeeks'] as int? ?? 4,
+    goal: json['goal'] as String? ?? '',
   );
+}
+
+DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
+DateTime _startOfWeek(DateTime date) {
+  final normalized = _dateOnly(date);
+  return normalized.subtract(Duration(days: normalized.weekday - 1));
 }

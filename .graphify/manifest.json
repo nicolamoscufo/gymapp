@@ -1,0 +1,386 @@
+{
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\build.gradle.kts": {
+    "mtime": 1777735621284.1797,
+    "hash": "7dd70b6fc823f8112b8728538dd1e73d"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\kotlin\\com\\example\\gymapp\\MainActivity.kt": {
+    "mtime": 1777735621286.2078,
+    "hash": "8fc19fa3ad738bee2f344464a5823dae"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\build.gradle.kts": {
+    "mtime": 1777735621292.819,
+    "hash": "803fe22651fbe96ed401eb0b66a492d1"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\settings.gradle.kts": {
+    "mtime": 1777735621293.3223,
+    "hash": "7e2b812e622b81575eb9060fa80d2ae2"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\AppDelegate.swift": {
+    "mtime": 1777735621300.8848,
+    "hash": "e277c49e98c9f80e9e71c0524a5cb60f"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Runner-Bridging-Header.h": {
+    "mtime": 1777735621310.61,
+    "hash": "7ad7b5cea096132de13ba526b2b9efbe"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\RunnerTests\\RunnerTests.swift": {
+    "mtime": 1777735621310.61,
+    "hash": "24e5d095048eb86c30423f4e04b6e57b"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\app_preferences.dart": {
+    "mtime": 1777735621310.61,
+    "hash": "d3b769e6cc191769562a484ec993aefa"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\main.dart": {
+    "mtime": 1777735828030.9033,
+    "hash": "9956c4dc79cf56ecfdd0bbe01434fe0c"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\models\\exercise.dart": {
+    "mtime": 1779787318324.5874,
+    "hash": "116012cbf546bc75e97b6467f4a793b2"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\models\\model_id.dart": {
+    "mtime": 1777735621312.1404,
+    "hash": "198eb442dc5399500bcba08e59a36213"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\models\\schedule.dart": {
+    "mtime": 1779787336733.836,
+    "hash": "7cbbe3d0532e6f257cebe2a30b6b5e92"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\models\\workout.dart": {
+    "mtime": 1779789938290.9812,
+    "hash": "68f527f654dcd0efaf5c975bc08eb354"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\screens\\active_workout.dart": {
+    "mtime": 1779790281870.2017,
+    "hash": "b327cc5cda085f819731ae619ba322b4"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\screens\\home.dart": {
+    "mtime": 1779789373320.4275,
+    "hash": "4ad3697dc270fbad0bdcf805dfb80066"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\screens\\schedule_detail.dart": {
+    "mtime": 1779788072870.39,
+    "hash": "50efadb119c0409f6d688173df8e41d5"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\screens\\settings.dart": {
+    "mtime": 1777735621313.6704,
+    "hash": "8a9dfd7a07bf5e9cf8d5a85827d647bd"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\lib\\screens\\stats.dart": {
+    "mtime": 1779789449859.0164,
+    "hash": "fca1286b0bb187dae909b17010eaa47e"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\linux\\flutter\\generated_plugin_registrant.cc": {
+    "mtime": 1777735847644.323,
+    "hash": "d07afe003d5837167bdd357d593f20a0"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\linux\\flutter\\generated_plugin_registrant.h": {
+    "mtime": 1777735847638.1445,
+    "hash": "d295462c9da9f7fef22dc86c34492318"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\linux\\runner\\main.cc": {
+    "mtime": 1777735621317.2368,
+    "hash": "539395bcd63dba20afed0838d136189f"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\linux\\runner\\my_application.cc": {
+    "mtime": 1777735621317.7444,
+    "hash": "bda2a2972b651ab0bf2e0fd3a0a23f73"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\linux\\runner\\my_application.h": {
+    "mtime": 1777735621317.7444,
+    "hash": "f6b37d58752c8671078b6f660e33e8c1"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\Flutter\\GeneratedPluginRegistrant.swift": {
+    "mtime": 1779787302756.0952,
+    "hash": "f9104b889091853290dbcfba48548ad8"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\Runner\\AppDelegate.swift": {
+    "mtime": 1777735621322.3235,
+    "hash": "4b52e0b89ebfef9baf45b04548c463d6"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\Runner\\MainFlutterWindow.swift": {
+    "mtime": 1777735621326.8762,
+    "hash": "93c22dae2d93f3dc1402e121901f582b"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\RunnerTests\\RunnerTests.swift": {
+    "mtime": 1777735621328.4016,
+    "hash": "8059f5d27a19c556eeafb49b3f9b7bdd"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\test\\home_undo_test.dart": {
+    "mtime": 1779789839318.1887,
+    "hash": "899ab07641bb55057a2e8ffe0400134b"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\flutter\\generated_plugin_registrant.cc": {
+    "mtime": 1777735847660.951,
+    "hash": "a8f91348d8d9090f22ec69d597c41e1f"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\flutter\\generated_plugin_registrant.h": {
+    "mtime": 1777735847655.9224,
+    "hash": "0ea33875f9f8e118f9c2ded03e2e2835"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\runner\\flutter_window.cpp": {
+    "mtime": 1777735621335.559,
+    "hash": "2f463f9b7da67a2d692a012f9ea85e0c"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\runner\\flutter_window.h": {
+    "mtime": 1777735621336.562,
+    "hash": "7defcc89d4a26d56e801241d624d48fb"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\runner\\main.cpp": {
+    "mtime": 1777735621336.562,
+    "hash": "5fbb3ef058170b61c5aa9dcd05846e91"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\runner\\resource.h": {
+    "mtime": 1777735621337.0647,
+    "hash": "1ade5dd15e613479a15e8832ed276f2b"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\runner\\utils.cpp": {
+    "mtime": 1777735621338.0693,
+    "hash": "432461b09d862a2f8dadf380ff0e34e5"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\runner\\utils.h": {
+    "mtime": 1777735621338.0693,
+    "hash": "fd81e143f5614eb6fd75efe539002853"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\runner\\win32_window.cpp": {
+    "mtime": 1777735621338.0693,
+    "hash": "571eb8234dbc2661be03aa5f2a4d2fca"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\runner\\win32_window.h": {
+    "mtime": 1777735621339.0845,
+    "hash": "7569387d58711ab975940f4df3b4bcda"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\README.md": {
+    "mtime": 1777735621283.1755,
+    "hash": "b3add866fed21122bdf7d8200e83489f"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\analysis_options.yaml": {
+    "mtime": 1777735621283.1755,
+    "hash": "29c685c23a06da68389960ce6ac6f303"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\LaunchImage.imageset\\README.md": {
+    "mtime": 1777735621309.0776,
+    "hash": "f7ee1b402881509d197f34963e569927"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\linux\\CMakeLists.txt": {
+    "mtime": 1777735621315.1804,
+    "hash": "51be2d6ee081726fecad62ac0ce97d53"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\linux\\flutter\\CMakeLists.txt": {
+    "mtime": 1777735621315.1804,
+    "hash": "2195470ce31675d31db5a37590d011f6"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\linux\\runner\\CMakeLists.txt": {
+    "mtime": 1777735621316.6892,
+    "hash": "30cc1614b16214b66c014af09ba699eb"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\pubspec.yaml": {
+    "mtime": 1779787302086.7332,
+    "hash": "dd09ca500b85767301370cee80b0b048"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\web\\index.html": {
+    "mtime": 1777735621332.0461,
+    "hash": "3aa28378bd51e896048054f71d9e1090"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\CMakeLists.txt": {
+    "mtime": 1777735621333.551,
+    "hash": "952c4d59e016c140450c71bd7459c540"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\flutter\\CMakeLists.txt": {
+    "mtime": 1777735621334.0532,
+    "hash": "bbf66fed5180bd9ae8198b8d7c4a0001"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\windows\\runner\\CMakeLists.txt": {
+    "mtime": 1777735621335.559,
+    "hash": "028602ab9754bffe716659ada7590d29"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\res\\mipmap-hdpi\\ic_launcher.png": {
+    "mtime": 1777735621287.7312,
+    "hash": "13e9c72ec37fac220397aa819fa1ef2d"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\res\\mipmap-hdpi\\launcher_icon.png": {
+    "mtime": 1777735621287.7312,
+    "hash": "1d0900da6cc9adec4a3275807512e43c"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\res\\mipmap-mdpi\\ic_launcher.png": {
+    "mtime": 1777735621288.7346,
+    "hash": "6270344430679711b81476e29878caa7"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\res\\mipmap-mdpi\\launcher_icon.png": {
+    "mtime": 1777735621289.2375,
+    "hash": "81c2b172d54ec0565fc2fce59607ac79"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\res\\mipmap-xhdpi\\ic_launcher.png": {
+    "mtime": 1777735621289.2375,
+    "hash": "a0a8db5985280b3679d99a820ae2db79"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\res\\mipmap-xhdpi\\launcher_icon.png": {
+    "mtime": 1777735621289.7588,
+    "hash": "ea998e430a0275092b409b721a7cb4fe"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\res\\mipmap-xxhdpi\\ic_launcher.png": {
+    "mtime": 1777735621290.273,
+    "hash": "afe1b655b9f32da22f9a4301bb8e6ba8"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\res\\mipmap-xxhdpi\\launcher_icon.png": {
+    "mtime": 1777735621290.7966,
+    "hash": "09d52baefa9009998e0990d3a90f4ea5"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\res\\mipmap-xxxhdpi\\ic_launcher.png": {
+    "mtime": 1777735621291.3066,
+    "hash": "57838d52c318faff743130c3fcfae0c6"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\android\\app\\src\\main\\res\\mipmap-xxxhdpi\\launcher_icon.png": {
+    "mtime": 1777735621291.3066,
+    "hash": "5f88de949de4bf654a80bab54de08f7c"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\assets\\app_icon.png": {
+    "mtime": 1777735621294.8306,
+    "hash": "8f942520d22ffa0a1d161eec0ba12c26"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-1024x1024@1x.png": {
+    "mtime": 1777735621301.889,
+    "hash": "662e3a535ec622f8741a4d143fe34261"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-20x20@1x.png": {
+    "mtime": 1777735621301.889,
+    "hash": "68b328668d4acebe7899dfa9f98d0cba"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-20x20@2x.png": {
+    "mtime": 1777735621301.889,
+    "hash": "3b2a61a9563b0fa8eea2f208ff52a661"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-20x20@3x.png": {
+    "mtime": 1777735621301.889,
+    "hash": "ee8dad9782ccf8515f86765ad050857e"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-29x29@1x.png": {
+    "mtime": 1777735621303.418,
+    "hash": "7cc4efd40a5a40adf43238b07ccdbd6b"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-29x29@2x.png": {
+    "mtime": 1777735621303.418,
+    "hash": "83a987b1c06693f79914b0e3513c1744"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-29x29@3x.png": {
+    "mtime": 1777735621303.418,
+    "hash": "4073e09eb27761cc3079db6dcbdbe503"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-40x40@1x.png": {
+    "mtime": 1777735621303.418,
+    "hash": "3b2a61a9563b0fa8eea2f208ff52a661"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-40x40@2x.png": {
+    "mtime": 1777735621303.418,
+    "hash": "0d6f3afc9b3a7bbfccd737d2d2f5dad1"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-40x40@3x.png": {
+    "mtime": 1777735621303.418,
+    "hash": "5e0f7ef2bc89762d22f672956aef425b"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-50x50@1x.png": {
+    "mtime": 1777735621304.9421,
+    "hash": "169731fba684c7bfb3090628e116ad84"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-50x50@2x.png": {
+    "mtime": 1777735621304.9421,
+    "hash": "4592a9b63f346897f0dd4e654665286d"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-57x57@1x.png": {
+    "mtime": 1777735621305.466,
+    "hash": "7e87128cea25e85a53974c62607291f1"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-57x57@2x.png": {
+    "mtime": 1777735621305.466,
+    "hash": "ffb4358fc515553805359a4b54549781"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-60x60@2x.png": {
+    "mtime": 1777735621305.466,
+    "hash": "5e0f7ef2bc89762d22f672956aef425b"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-60x60@3x.png": {
+    "mtime": 1777735621305.466,
+    "hash": "bbfa4176f3815fcf9682c7ea3b7754af"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-72x72@1x.png": {
+    "mtime": 1777735621306.4697,
+    "hash": "1d0900da6cc9adec4a3275807512e43c"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-72x72@2x.png": {
+    "mtime": 1777735621306.4697,
+    "hash": "09d52baefa9009998e0990d3a90f4ea5"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-76x76@1x.png": {
+    "mtime": 1777735621306.4697,
+    "hash": "e439d11c9e585bf522724bad10ab2b5c"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-76x76@2x.png": {
+    "mtime": 1777735621306.4697,
+    "hash": "912d8bce5a6d6c793c19be6873e362da"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\AppIcon.appiconset\\Icon-App-83.5x83.5@2x.png": {
+    "mtime": 1777735621308.0374,
+    "hash": "d77564b60c910a3e7029bb8d421a467d"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\LaunchImage.imageset\\LaunchImage.png": {
+    "mtime": 1777735621308.0374,
+    "hash": "978c1bee49d7ad5fc1a4d81099b13e18"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\LaunchImage.imageset\\LaunchImage@2x.png": {
+    "mtime": 1777735621308.0374,
+    "hash": "978c1bee49d7ad5fc1a4d81099b13e18"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\ios\\Runner\\Assets.xcassets\\LaunchImage.imageset\\LaunchImage@3x.png": {
+    "mtime": 1777735621309.0776,
+    "hash": "978c1bee49d7ad5fc1a4d81099b13e18"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\Runner\\Assets.xcassets\\AppIcon.appiconset\\app_icon_1024.png": {
+    "mtime": 1777735621323.8284,
+    "hash": "c9becc9105f8cabce934d20c7bfb6aac"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\Runner\\Assets.xcassets\\AppIcon.appiconset\\app_icon_128.png": {
+    "mtime": 1777735621323.8284,
+    "hash": "3ded30823804caaa5ccc944067c54a36"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\Runner\\Assets.xcassets\\AppIcon.appiconset\\app_icon_16.png": {
+    "mtime": 1777735621323.8284,
+    "hash": "8bf511604bc6ed0a6aeb380c5113fdcf"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\Runner\\Assets.xcassets\\AppIcon.appiconset\\app_icon_256.png": {
+    "mtime": 1777735621323.8284,
+    "hash": "dfe2c93d1536ae02f085cc63faa3430e"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\Runner\\Assets.xcassets\\AppIcon.appiconset\\app_icon_32.png": {
+    "mtime": 1777735621323.8284,
+    "hash": "8e0ae58e362a6636bdfccbc04da2c58c"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\Runner\\Assets.xcassets\\AppIcon.appiconset\\app_icon_512.png": {
+    "mtime": 1777735621325.355,
+    "hash": "0ad44039155424738917502c69667699"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\macos\\Runner\\Assets.xcassets\\AppIcon.appiconset\\app_icon_64.png": {
+    "mtime": 1777735621325.355,
+    "hash": "04e7b6ef05346c70b663ca1d97de3ad5"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\web\\favicon.png": {
+    "mtime": 1777735621330.0212,
+    "hash": "5dcef449791fa27946b3d35ad8803796"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\web\\icons\\Icon-192.png": {
+    "mtime": 1777735621330.532,
+    "hash": "ac9a721a12bbc803b44f645561ecb1e1"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\web\\icons\\Icon-512.png": {
+    "mtime": 1777735621331.043,
+    "hash": "96e752610906ba2a93c65f8abe1645f1"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\web\\icons\\Icon-maskable-192.png": {
+    "mtime": 1777735621331.043,
+    "hash": "c457ef57daa1d16f64b27b786ec2ea3c"
+  },
+  "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp\\web\\icons\\Icon-maskable-512.png": {
+    "mtime": 1777735621331.043,
+    "hash": "301a7604d45b3e739efc881eb04896ea"
+  }
+}

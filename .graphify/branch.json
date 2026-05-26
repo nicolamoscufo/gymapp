@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "branchName": "main",
+  "worktreePath": "C:\\Users\\Nicola\\Desktop\\app palestra\\gymapp",
+  "upstream": "origin/main",
+  "mergeBase": "8b1a9c526fc495449f38070b9e9bf30cc23e00cb",
+  "firstSeenHead": "8b1a9c526fc495449f38070b9e9bf30cc23e00cb",
+  "lastSeenHead": "8b1a9c526fc495449f38070b9e9bf30cc23e00cb",
+  "lastAnalyzedHead": "8b1a9c526fc495449f38070b9e9bf30cc23e00cb",
+  "stale": false,
+  "staleReason": null,
+  "staleSince": null,
+  "lifecycleEvent": null,
+  "createdAt": "2026-05-26T09:10:53.277Z",
+  "updatedAt": "2026-05-26T10:12:13.031Z"
+}

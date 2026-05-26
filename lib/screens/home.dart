@@ -6,15 +6,26 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../app_data_store.dart';
 import '../app_preferences.dart';
+import '../models/body_log.dart';
 import '../models/exercise.dart';
 import '../models/schedule.dart';
 import '../models/workout.dart';
+import '../number_input.dart';
 import 'schedule_detail.dart';
 import 'settings.dart';
 import 'stats.dart';
+import 'active_workout.dart';
 
-enum _HomeAction { importCsv, exportCsv, exportBackup, restoreBackup }
+enum _HomeAction {
+  importCsv,
+  exportCsv,
+  exportHistoryCsv,
+  exportBodyCsv,
+  exportBackup,
+  restoreBackup,
+}
 
 enum _ScheduleMenuAction { toggleArchive, delete }
 
@@ -35,6 +46,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final List<Schedule> schedules = [];
   final List<WorkoutSession> history = [];
+  final List<BodyLog> bodyLogs = [];
+  WorkoutSession? _savedSession;
 
   int _currentIndex = 0;
   String _searchQuery = '';
@@ -50,27 +63,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadData() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final schedulesJson = prefs.getString('schedules');
-    final historyJson = prefs.getString('history');
-
-    final loadedSchedules = schedulesJson == null
-        ? <Schedule>[]
-        : (jsonDecode(schedulesJson) as List<dynamic>)
-              .map(
-                (e) => Schedule.fromJson(Map<String, dynamic>.from(e as Map)),
-              )
-              .toList();
-    final loadedHistory = historyJson == null
-        ? <WorkoutSession>[]
-        : (jsonDecode(historyJson) as List<dynamic>)
-              .map(
-                (e) => WorkoutSession.fromJson(
-                  Map<String, dynamic>.from(e as Map),
-                ),
-              )
-              .toList();
+    final bundle = await AppDataStore.loadBundle();
 
     if (!mounted) {
       return;
@@ -79,32 +72,48 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       schedules
         ..clear()
-        ..addAll(loadedSchedules);
+        ..addAll(bundle.schedules);
       history
         ..clear()
-        ..addAll(loadedHistory);
+        ..addAll(bundle.history);
+      bodyLogs
+        ..clear()
+        ..addAll(bundle.bodyLogs);
+      _savedSession = bundle.currentSession;
       _sortSchedules();
     });
+
+    if (bundle.recoveredFromCorruption) {
+      _showInfo('Alcuni dati corrotti sono stati ignorati per evitare crash.');
+    }
   }
 
   Future<void> _saveSchedules() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'schedules',
-      jsonEncode(schedules.map((e) => e.toJson()).toList()),
-    );
+    await AppDataStore.saveSchedules(schedules);
   }
 
   Future<void> _saveHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      'history',
-      jsonEncode(history.map((e) => e.toJson()).toList()),
-    );
+    await AppDataStore.saveHistory(history);
+  }
+
+  Future<void> _saveBodyLogs() async {
+    await AppDataStore.saveBodyLogs(bodyLogs);
   }
 
   Future<void> _saveAllData() async {
-    await Future.wait([_saveSchedules(), _saveHistory()]);
+    await AppDataStore.saveAll(
+      schedules: schedules,
+      history: history,
+      bodyLogs: bodyLogs,
+    );
+  }
+
+  Future<void> _discardSavedSession() async {
+    await AppDataStore.clearCurrentSession();
+    if (!mounted) return;
+    setState(() {
+      _savedSession = null;
+    });
   }
 
   Future<void> _loadSettings() async {
@@ -147,7 +156,8 @@ class _HomePageState extends State<HomePage> {
     messenger.showSnackBar(
       SnackBar(
         content: Text(message),
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
         action: SnackBarAction(label: 'ANNULLA', onPressed: onUndo),
       ),
     );
@@ -159,7 +169,7 @@ class _HomePageState extends State<HomePage> {
         return a.isArchived ? 1 : -1;
       }
 
-      final weekCompare = a.week.compareTo(b.week);
+      final weekCompare = a.currentWeek().compareTo(b.currentWeek());
       if (weekCompare != 0) {
         return weekCompare;
       }
@@ -260,6 +270,23 @@ class _HomePageState extends State<HomePage> {
     return rows;
   }
 
+  bool _parseBoolCell(Object? value) {
+    final normalized = value.toString().trim().toLowerCase();
+    return normalized == 'true' || normalized == '1' || normalized == 'si';
+  }
+
+  DateTime _parseDateCell(Object? value) {
+    return DateTime.tryParse(value.toString().trim()) ?? DateTime.now();
+  }
+
+  IntensityTechnique _parseTechnique(String value) {
+    try {
+      return IntensityTechnique.values.byName(value.trim());
+    } catch (_) {
+      return IntensityTechnique.none;
+    }
+  }
+
   bool _exerciseAlreadyExists(Schedule schedule, Exercise candidate) {
     return schedule.exercises.any((exercise) {
       return exercise.name == candidate.name &&
@@ -267,6 +294,11 @@ class _HomePageState extends State<HomePage> {
           exercise.reps == candidate.reps &&
           exercise.backoffReps == candidate.backoffReps &&
           exercise.restSeconds == candidate.restSeconds &&
+          exercise.muscleGroup == candidate.muscleGroup &&
+          exercise.equipment == candidate.equipment &&
+          exercise.movementPattern == candidate.movementPattern &&
+          exercise.targetMinReps == candidate.targetMinReps &&
+          exercise.targetMaxReps == candidate.targetMaxReps &&
           exercise.technique == candidate.technique &&
           exercise.weight == candidate.weight &&
           exercise.notes.trim() == candidate.notes.trim();
@@ -274,23 +306,149 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _buildSchedulesCsv() {
-    final rows = <List<dynamic>>[];
+    final rows = <List<dynamic>>[
+      [
+        'scheduleTitle',
+        'week',
+        'createdAt',
+        'goal',
+        'mesocycleWeeks',
+        'deloadEveryWeeks',
+        'isArchived',
+        'exerciseName',
+        'sets',
+        'reps',
+        'targetMinReps',
+        'targetMaxReps',
+        'weight',
+        'muscleGroup',
+        'equipment',
+        'movementPattern',
+        'technique',
+        'backoffReps',
+        'restSeconds',
+        'notes',
+      ],
+    ];
 
     for (final schedule in schedules) {
       for (final exercise in schedule.exercises) {
         rows.add([
           schedule.title,
           schedule.week,
+          schedule.createdAt.toIso8601String(),
+          schedule.goal,
+          schedule.mesocycleWeeks,
+          schedule.deloadEveryWeeks,
+          schedule.isArchived,
           exercise.name,
           exercise.set,
           exercise.reps,
+          exercise.targetMinReps,
+          exercise.targetMaxReps,
           exercise.weight,
+          exercise.muscleGroup.label,
+          exercise.equipment,
+          exercise.movementPattern,
+          exercise.technique.name,
+          exercise.backoffReps,
+          exercise.restSeconds,
           exercise.notes,
         ]);
       }
     }
 
-    if (rows.isEmpty) {
+    if (rows.length == 1) {
+      return '';
+    }
+
+    return const ListToCsvConverter(
+      fieldDelimiter: ',',
+      eol: '\n',
+    ).convert(rows);
+  }
+
+  String _buildHistoryCsv() {
+    final rows = <List<dynamic>>[
+      [
+        'sessionTitle',
+        'startTime',
+        'endTime',
+        'exercise',
+        'muscleGroup',
+        'setIndex',
+        'isWarmup',
+        'isCompleted',
+        'weight',
+        'reps',
+        'rpe',
+        'rir',
+        'setNotes',
+      ],
+    ];
+
+    for (final session in history) {
+      for (final exercise in session.exercises) {
+        for (var index = 0; index < exercise.sets.length; index++) {
+          final set = exercise.sets[index];
+          rows.add([
+            session.scheduleTitle,
+            session.startTime.toIso8601String(),
+            session.endTime.toIso8601String(),
+            exercise.name,
+            exercise.muscleGroup.label,
+            index + 1,
+            set.isWarmup,
+            set.isCompleted,
+            set.weight,
+            set.reps,
+            set.rpe,
+            set.rir,
+            set.notes,
+          ]);
+        }
+      }
+    }
+
+    if (rows.length == 1) {
+      return '';
+    }
+
+    return const ListToCsvConverter(
+      fieldDelimiter: ',',
+      eol: '\n',
+    ).convert(rows);
+  }
+
+  String _buildBodyCsv() {
+    final rows = <List<dynamic>>[
+      [
+        'date',
+        'bodyWeight',
+        'waist',
+        'chest',
+        'arm',
+        'thigh',
+        'sleepHours',
+        'readiness',
+        'notes',
+      ],
+      ...bodyLogs.map(
+        (entry) => [
+          entry.date.toIso8601String(),
+          entry.bodyWeight,
+          entry.waist,
+          entry.chest,
+          entry.arm,
+          entry.thigh,
+          entry.sleepHours,
+          entry.readiness,
+          entry.notes,
+        ],
+      ),
+    ];
+
+    if (rows.length == 1) {
       return '';
     }
 
@@ -302,10 +460,11 @@ class _HomePageState extends State<HomePage> {
 
   Map<String, dynamic> _buildBackupPayload() {
     return {
-      'version': 1,
+      'version': 2,
       'exportedAt': DateTime.now().toIso8601String(),
       'schedules': schedules.map((schedule) => schedule.toJson()).toList(),
       'history': history.map((session) => session.toJson()).toList(),
+      'bodyLogs': bodyLogs.map((entry) => entry.toJson()).toList(),
     };
   }
 
@@ -319,6 +478,10 @@ class _HomePageState extends State<HomePage> {
     return source
         .map((session) => WorkoutSession.fromJson(session.toJson()))
         .toList();
+  }
+
+  List<BodyLog> _cloneBodyLogs(List<BodyLog> source) {
+    return source.map((entry) => BodyLog.fromJson(entry.toJson())).toList();
   }
 
   Future<void> _importCsv() async {
@@ -351,15 +514,50 @@ class _HomePageState extends State<HomePage> {
           continue;
         }
 
+        final hasFullSchema = row.length >= 20;
         final scheduleTitle = row[0].toString().trim();
-        final week = int.tryParse(row[1].toString().trim());
-        final exerciseName = row[2].toString().trim();
-        final sets = int.tryParse(row[3].toString().trim());
-        final reps = int.tryParse(row[4].toString().trim());
-        final weight = double.tryParse(
-          row[5].toString().trim().replaceAll(',', '.'),
+        final week = parseIntInput(row[1].toString());
+        final createdAt = hasFullSchema
+            ? _parseDateCell(row[2])
+            : DateTime.now();
+        final goal = hasFullSchema ? row[3].toString().trim() : '';
+        final mesocycleWeeks = hasFullSchema
+            ? (parseIntInput(row[4].toString()) ?? 8)
+            : 8;
+        final deloadEveryWeeks = hasFullSchema
+            ? (parseIntInput(row[5].toString()) ?? 4)
+            : 4;
+        final isArchived = hasFullSchema ? _parseBoolCell(row[6]) : false;
+        final offset = hasFullSchema ? 7 : 0;
+        final exerciseName = row[offset + 2].toString().trim();
+        final sets = parseIntInput(row[offset + 3].toString());
+        final reps = parseIntInput(row[offset + 4].toString());
+        final targetMinReps = hasFullSchema
+            ? parseIntInput(row[10].toString())
+            : null;
+        final targetMaxReps = hasFullSchema
+            ? parseIntInput(row[11].toString())
+            : null;
+        final weight = parseDecimalInput(
+          row[hasFullSchema ? 12 : 5].toString(),
         );
-        final notes = row[6].toString().trim();
+        final notes = hasFullSchema
+            ? row[19].toString().trim()
+            : row[6].toString().trim();
+        final muscleGroup = row.length > (hasFullSchema ? 13 : 7)
+            ? muscleGroupFromJson(row[hasFullSchema ? 13 : 7])
+            : MuscleGroup.unassigned;
+        final equipment = hasFullSchema ? row[14].toString().trim() : '';
+        final movementPattern = hasFullSchema ? row[15].toString().trim() : '';
+        final technique = hasFullSchema
+            ? _parseTechnique(row[16].toString())
+            : IntensityTechnique.none;
+        final backoffReps = hasFullSchema
+            ? parseIntInput(row[17].toString())
+            : null;
+        final restSeconds = hasFullSchema
+            ? parseIntInput(row[18].toString())
+            : null;
 
         if (scheduleTitle.isEmpty ||
             week == null ||
@@ -376,8 +574,15 @@ class _HomePageState extends State<HomePage> {
           set: sets,
           reps: reps,
           weight: weight,
+          muscleGroup: muscleGroup,
+          equipment: equipment,
+          movementPattern: movementPattern,
+          targetMinReps: targetMinReps,
+          targetMaxReps: targetMaxReps,
           notes: notes,
-          technique: IntensityTechnique.none,
+          technique: technique,
+          backoffReps: backoffReps,
+          restSeconds: restSeconds,
         );
 
         final scheduleIndex = schedules.indexWhere(
@@ -388,14 +593,23 @@ class _HomePageState extends State<HomePage> {
             : Schedule(
                 title: scheduleTitle,
                 week: week,
-                createdAt: DateTime.now(),
+                createdAt: createdAt,
                 exercises: [],
+                isArchived: isArchived,
+                mesocycleWeeks: mesocycleWeeks,
+                deloadEveryWeeks: deloadEveryWeeks,
+                goal: goal,
               );
 
         if (scheduleIndex == -1) {
           schedules.add(schedule);
         } else {
           schedule.isArchived = false;
+          if (hasFullSchema) {
+            schedule.goal = goal;
+            schedule.mesocycleWeeks = mesocycleWeeks;
+            schedule.deloadEveryWeeks = deloadEveryWeeks;
+          }
         }
 
         if (_exerciseAlreadyExists(schedule, candidate)) {
@@ -441,6 +655,58 @@ class _HomePageState extends State<HomePage> {
       await _showInfo('CSV esportato con successo.');
     } catch (e) {
       await _showInfo('Errore durante export CSV: $e');
+    }
+  }
+
+  Future<void> _exportHistoryCsv() async {
+    try {
+      final csvText = _buildHistoryCsv();
+      if (csvText.isEmpty) {
+        await _showInfo('Non ci sono allenamenti da esportare.');
+        return;
+      }
+
+      final savedPath = await FilePicker.saveFile(
+        dialogTitle: 'Esporta cronologia CSV',
+        fileName: 'gymapp_cronologia.csv',
+        type: FileType.custom,
+        allowedExtensions: ['csv'],
+        bytes: Uint8List.fromList(utf8.encode(csvText)),
+      );
+
+      if (savedPath == null && !kIsWeb) {
+        return;
+      }
+
+      await _showInfo('Cronologia esportata con successo.');
+    } catch (e) {
+      await _showInfo('Errore durante export cronologia: $e');
+    }
+  }
+
+  Future<void> _exportBodyCsv() async {
+    try {
+      final csvText = _buildBodyCsv();
+      if (csvText.isEmpty) {
+        await _showInfo('Non ci sono misure corpo da esportare.');
+        return;
+      }
+
+      final savedPath = await FilePicker.saveFile(
+        dialogTitle: 'Esporta corpo CSV',
+        fileName: 'gymapp_corpo.csv',
+        type: FileType.custom,
+        allowedExtensions: ['csv'],
+        bytes: Uint8List.fromList(utf8.encode(csvText)),
+      );
+
+      if (savedPath == null && !kIsWeb) {
+        return;
+      }
+
+      await _showInfo('Misure corpo esportate con successo.');
+    } catch (e) {
+      await _showInfo('Errore durante export corpo: $e');
     }
   }
 
@@ -512,9 +778,11 @@ class _HomePageState extends State<HomePage> {
       final decoded = jsonDecode(_normalizeText(rawText));
       final previousSchedules = _cloneSchedules(schedules);
       final previousHistory = _cloneHistory(history);
+      final previousBodyLogs = _cloneBodyLogs(bodyLogs);
 
       List<Schedule> restoredSchedules = [];
       List<WorkoutSession> restoredHistory = [];
+      List<BodyLog> restoredBodyLogs = [];
 
       if (decoded is Map) {
         final backupMap = Map<String, dynamic>.from(decoded);
@@ -526,6 +794,9 @@ class _HomePageState extends State<HomePage> {
               (e) =>
                   WorkoutSession.fromJson(Map<String, dynamic>.from(e as Map)),
             )
+            .toList();
+        restoredBodyLogs = (backupMap['bodyLogs'] as List? ?? [])
+            .map((e) => BodyLog.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
       } else if (decoded is List) {
         restoredSchedules = decoded
@@ -539,6 +810,32 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
+      final previewConfirm =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Confermare ripristino'),
+              content: Text(
+                'Trovate ${restoredSchedules.length} schede, ${restoredHistory.length} allenamenti, ${restoredBodyLogs.length} misure corpo.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Annulla'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Ripristina'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+
+      if (!previewConfirm || !mounted) {
+        return;
+      }
+
       setState(() {
         schedules
           ..clear()
@@ -546,6 +843,9 @@ class _HomePageState extends State<HomePage> {
         history
           ..clear()
           ..addAll(restoredHistory);
+        bodyLogs
+          ..clear()
+          ..addAll(restoredBodyLogs);
         _sortSchedules();
       });
 
@@ -564,6 +864,9 @@ class _HomePageState extends State<HomePage> {
             history
               ..clear()
               ..addAll(_cloneHistory(previousHistory));
+            bodyLogs
+              ..clear()
+              ..addAll(_cloneBodyLogs(previousBodyLogs));
             _sortSchedules();
           });
           _saveAllData();
@@ -604,14 +907,22 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _addSchedule(String title, int week) {
+  void _addSchedule(
+    String title, {
+    String goal = '',
+    int mesocycleWeeks = 8,
+    int deloadEveryWeeks = 4,
+  }) {
     setState(() {
       schedules.add(
         Schedule(
           title: title,
-          week: week,
+          week: 1,
           createdAt: DateTime.now(),
           exercises: [],
+          goal: goal,
+          mesocycleWeeks: mesocycleWeeks,
+          deloadEveryWeeks: deloadEveryWeeks,
         ),
       );
       _sortSchedules();
@@ -627,6 +938,11 @@ class _HomePageState extends State<HomePage> {
             set: exercise.set,
             reps: exercise.reps,
             weight: exercise.weight,
+            muscleGroup: exercise.muscleGroup,
+            equipment: exercise.equipment,
+            movementPattern: exercise.movementPattern,
+            targetMinReps: exercise.targetMinReps,
+            targetMaxReps: exercise.targetMaxReps,
             notes: exercise.notes,
             technique: exercise.technique,
             backoffReps: exercise.backoffReps,
@@ -639,9 +955,12 @@ class _HomePageState extends State<HomePage> {
       schedules.add(
         Schedule(
           title: '${schedule.title} (copia)',
-          week: schedule.week,
+          week: schedule.currentWeek(),
           createdAt: DateTime.now(),
           exercises: copiedExercises,
+          mesocycleWeeks: schedule.mesocycleWeeks,
+          deloadEveryWeeks: schedule.deloadEveryWeeks,
+          goal: schedule.goal,
         ),
       );
       _sortSchedules();
@@ -658,7 +977,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<int> _availableWeeks() {
-    final weeks = schedules.map((schedule) => schedule.week).toSet().toList();
+    final weeks = schedules
+        .map((schedule) => schedule.currentWeek())
+        .toSet()
+        .toList();
     weeks.sort();
     return weeks;
   }
@@ -671,7 +993,8 @@ class _HomePageState extends State<HomePage> {
         return false;
       }
 
-      if (_selectedWeekFilter != null && schedule.week != _selectedWeekFilter) {
+      if (_selectedWeekFilter != null &&
+          schedule.currentWeek() != _selectedWeekFilter) {
         return false;
       }
 
@@ -692,7 +1015,7 @@ class _HomePageState extends State<HomePage> {
         return a.isArchived ? 1 : -1;
       }
 
-      final weekCompare = a.week.compareTo(b.week);
+      final weekCompare = a.currentWeek().compareTo(b.currentWeek());
       if (weekCompare != 0) {
         return weekCompare;
       }
@@ -705,7 +1028,9 @@ class _HomePageState extends State<HomePage> {
 
   void _showAddScheduleDialog() {
     final titleController = TextEditingController();
-    final weekController = TextEditingController();
+    final goalController = TextEditingController();
+    final mesocycleController = TextEditingController(text: '8');
+    final deloadController = TextEditingController(text: '4');
 
     showDialog(
       context: context,
@@ -720,12 +1045,43 @@ class _HomePageState extends State<HomePage> {
                 labelText: 'Titolo (es. Push Day)',
               ),
             ),
+            const SizedBox(height: 8),
             TextField(
-              controller: weekController,
+              controller: goalController,
               decoration: const InputDecoration(
-                labelText: 'Settimana (numero)',
+                labelText: 'Obiettivo (ipertrofia, forza, deload...)',
               ),
-              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: mesocycleController,
+                    decoration: const InputDecoration(
+                      labelText: 'Settimane mesociclo',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: deloadController,
+                    decoration: const InputDecoration(labelText: 'Deload ogni'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.calendar_today),
+              title: Text('Settimana automatica'),
+              subtitle: Text(
+                'La scheda parte da settimana 1 e avanza ogni lunedì.',
+              ),
             ),
           ],
         ),
@@ -736,11 +1092,12 @@ class _HomePageState extends State<HomePage> {
           ),
           ElevatedButton(
             onPressed: () {
-              if (titleController.text.isNotEmpty &&
-                  weekController.text.isNotEmpty) {
+              if (titleController.text.isNotEmpty) {
                 _addSchedule(
                   titleController.text,
-                  int.tryParse(weekController.text) ?? 1,
+                  goal: goalController.text.trim(),
+                  mesocycleWeeks: parseIntInput(mesocycleController.text) ?? 8,
+                  deloadEveryWeeks: parseIntInput(deloadController.text) ?? 4,
                 );
                 Navigator.pop(context);
               }
@@ -794,6 +1151,47 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         ),
+        if (_savedSession != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Card(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              child: ListTile(
+                title: Text(
+                  'Riprendi allenamento: ${_savedSession!.scheduleTitle}',
+                ),
+                subtitle: Text(
+                  'Iniziato ${_savedSession!.startTime.day}/${_savedSession!.startTime.month}/${_savedSession!.startTime.year}',
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () async {
+                        final session = _savedSession!;
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ActiveWorkoutScreen.resume(
+                              resumedSession: session,
+                              defaultRestSeconds: _defaultRestSeconds,
+                            ),
+                          ),
+                        );
+                        _loadData();
+                      },
+                      child: const Text('RIPRENDI'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: _discardSavedSession,
+                      child: const Text('SCARTA'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Wrap(
@@ -868,6 +1266,7 @@ class _HomePageState extends State<HomePage> {
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     final schedule = visibleSchedules[index];
+                    final currentWeek = schedule.currentWeek();
                     final actualIndex = schedules.indexOf(schedule);
 
                     return Dismissible(
@@ -913,7 +1312,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                           ),
                           subtitle: Text(
-                            'Settimana: ${schedule.week} • Esercizi: ${schedule.exercises.length}${schedule.isArchived ? ' • Archiviata' : ''}',
+                            'Settimana: $currentWeek (auto)${schedule.isDeloadWeek() ? ' • DELOAD' : ''} • Esercizi: ${schedule.exercises.length}${schedule.goal.trim().isNotEmpty ? '\nObiettivo: ${schedule.goal}' : ''}${schedule.isArchived ? ' • Archiviata' : ''}',
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -961,6 +1360,7 @@ class _HomePageState extends State<HomePage> {
                               MaterialPageRoute(
                                 builder: (context) => ScheduleDetailScreen(
                                   schedule: schedule,
+                                  history: history,
                                   defaultRestSeconds: _defaultRestSeconds,
                                   onUpdate: () {
                                     setState(() {});
@@ -1005,7 +1405,9 @@ class _HomePageState extends State<HomePage> {
           for (final s in ex.sets) {
             if (s.isCompleted) {
               completedSets++;
-              totalVolume += s.weight * s.reps;
+              if (!s.isWarmup) {
+                totalVolume += s.weight * s.reps;
+              }
             }
           }
         }
@@ -1031,14 +1433,402 @@ class _HomePageState extends State<HomePage> {
                 subtitle: Text(
                   ex.sets
                       .where((s) => s.isCompleted)
-                      .map((s) => '${s.weight}kg x ${s.reps}')
+                      .map(
+                        (s) =>
+                            '${s.isWarmup ? 'W ' : ''}${s.weight}kg x ${s.reps}${s.rpe != null ? ' RPE ${s.rpe}' : ''}${s.rir != null ? ' RIR ${s.rir}' : ''}',
+                      )
                       .join(', '),
+                ),
+                trailing: IconButton(
+                  tooltip: 'Modifica storico',
+                  icon: const Icon(Icons.edit),
+                  onPressed: () => _showHistoryExerciseDialog(session, ex),
                 ),
               );
             }).toList(),
           ),
         );
       },
+    );
+  }
+
+  Future<void> _showHistoryExerciseDialog(
+    WorkoutSession session,
+    WorkoutExercise exercise,
+  ) async {
+    final draft = WorkoutExercise.fromJson(exercise.toJson());
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Modifica ${exercise.name}'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: draft.sets.length,
+              separatorBuilder: (_, __) => const Divider(),
+              itemBuilder: (context, index) {
+                final set = draft.sets[index];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Set ${index + 1}${set.isWarmup ? ' warm-up' : ''}',
+                      ),
+                      subtitle: const Text('Completato'),
+                      value: set.isCompleted,
+                      onChanged: (value) =>
+                          setDialogState(() => set.isCompleted = value),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Warm-up'),
+                      value: set.isWarmup,
+                      onChanged: (value) =>
+                          setDialogState(() => set.isWarmup = value),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: set.weight.toString(),
+                            decoration: const InputDecoration(labelText: 'Kg'),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged: (value) {
+                              set.weight = parseDecimalInput(value) ?? 0;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: set.reps.toString(),
+                            decoration: const InputDecoration(
+                              labelText: 'Reps',
+                            ),
+                            keyboardType: TextInputType.number,
+                            onChanged: (value) {
+                              set.reps = parseIntInput(value) ?? 0;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: set.rpe?.toString() ?? '',
+                            decoration: const InputDecoration(labelText: 'RPE'),
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged: (value) {
+                              set.rpe = parseDecimalInput(value);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: set.rir?.toString() ?? '',
+                            decoration: const InputDecoration(labelText: 'RIR'),
+                            keyboardType: TextInputType.number,
+                            onChanged: (value) {
+                              set.rir = parseIntInput(value);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      initialValue: set.notes,
+                      decoration: const InputDecoration(labelText: 'Note set'),
+                      onChanged: (value) => set.notes = value,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Salva'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true) {
+      return;
+    }
+
+    setState(() {
+      exercise.sets = draft.sets;
+    });
+    await _saveHistory();
+    await _showInfo('Allenamento aggiornato.');
+  }
+
+  Future<void> _deleteBodyLog(BodyLog entry) async {
+    final index = bodyLogs.indexOf(entry);
+    if (index == -1) {
+      return;
+    }
+
+    setState(() {
+      bodyLogs.removeAt(index);
+    });
+    await _saveBodyLogs();
+
+    _showUndoSnackBar(
+      message: 'Misura eliminata.',
+      onUndo: () {
+        if (!mounted || bodyLogs.contains(entry)) {
+          return;
+        }
+        setState(() {
+          bodyLogs.insert(
+            index > bodyLogs.length ? bodyLogs.length : index,
+            entry,
+          );
+        });
+        _saveBodyLogs();
+      },
+    );
+  }
+
+  Future<void> _showBodyLogDialog({BodyLog? entry}) async {
+    final bodyWeightController = TextEditingController(
+      text: entry?.bodyWeight?.toString() ?? '',
+    );
+    final waistController = TextEditingController(
+      text: entry?.waist?.toString() ?? '',
+    );
+    final chestController = TextEditingController(
+      text: entry?.chest?.toString() ?? '',
+    );
+    final armController = TextEditingController(
+      text: entry?.arm?.toString() ?? '',
+    );
+    final thighController = TextEditingController(
+      text: entry?.thigh?.toString() ?? '',
+    );
+    final sleepController = TextEditingController(
+      text: entry?.sleepHours?.toString() ?? '',
+    );
+    final readinessController = TextEditingController(
+      text: entry?.readiness?.toString() ?? '',
+    );
+    final notesController = TextEditingController(text: entry?.notes ?? '');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(entry == null ? 'Nuova misura corpo' : 'Modifica misura'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: bodyWeightController,
+                decoration: const InputDecoration(labelText: 'Peso corpo (kg)'),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: waistController,
+                      decoration: const InputDecoration(labelText: 'Vita cm'),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: chestController,
+                      decoration: const InputDecoration(labelText: 'Torace cm'),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: armController,
+                      decoration: const InputDecoration(
+                        labelText: 'Braccio cm',
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: thighController,
+                      decoration: const InputDecoration(labelText: 'Coscia cm'),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: sleepController,
+                      decoration: const InputDecoration(labelText: 'Sonno ore'),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: readinessController,
+                      decoration: const InputDecoration(
+                        labelText: 'Readiness 1-10',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(
+                  labelText: 'Note recupero/dolori',
+                ),
+                minLines: 1,
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Salva'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved != true) {
+      return;
+    }
+
+    final updated = entry ?? BodyLog(date: DateTime.now());
+    updated.bodyWeight = parseDecimalInput(bodyWeightController.text);
+    updated.waist = parseDecimalInput(waistController.text);
+    updated.chest = parseDecimalInput(chestController.text);
+    updated.arm = parseDecimalInput(armController.text);
+    updated.thigh = parseDecimalInput(thighController.text);
+    updated.sleepHours = parseIntInput(sleepController.text);
+    updated.readiness = parseIntInput(
+      readinessController.text,
+    )?.clamp(1, 10).toInt();
+    updated.notes = notesController.text.trim();
+
+    setState(() {
+      if (entry == null) {
+        bodyLogs.add(updated);
+      }
+      bodyLogs.sort((a, b) => b.date.compareTo(a.date));
+    });
+    await _saveBodyLogs();
+  }
+
+  Widget _buildBodyTab() {
+    if (bodyLogs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Ancora nessuna misura corpo.'),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () => _showBodyLogDialog(),
+              icon: const Icon(Icons.add),
+              label: const Text('Aggiungi misura'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final latest = bodyLogs.reduce((a, b) => a.date.isAfter(b.date) ? a : b);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.monitor_weight),
+            title: const Text('Ultima misura'),
+            subtitle: Text(
+              '${latest.bodyWeight?.toStringAsFixed(1) ?? '-'} kg • Readiness ${latest.readiness ?? '-'} • Sonno ${latest.sleepHours ?? '-'}h',
+            ),
+            trailing: FilledButton.icon(
+              onPressed: () => _showBodyLogDialog(),
+              icon: const Icon(Icons.add),
+              label: const Text('Nuova'),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...bodyLogs.map(
+          (entry) => Card(
+            child: ListTile(
+              title: Text(
+                '${entry.date.day}/${entry.date.month}/${entry.date.year}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                'Peso ${entry.bodyWeight?.toStringAsFixed(1) ?? '-'} kg • Vita ${entry.waist?.toStringAsFixed(1) ?? '-'} cm • Readiness ${entry.readiness ?? '-'}${entry.notes.trim().isNotEmpty ? '\n${entry.notes}' : ''}',
+              ),
+              onTap: () => _showBodyLogDialog(entry: entry),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete),
+                onPressed: () => _deleteBodyLog(entry),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1062,70 +1852,97 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.settings),
             onPressed: _openSettings,
           ),
-          if (_currentIndex == 0)
-            PopupMenuButton<_HomeAction>(
-              tooltip: 'Importa ed esporta',
-              onSelected: (action) {
-                switch (action) {
-                  case _HomeAction.importCsv:
-                    _importCsv();
-                    break;
-                  case _HomeAction.exportCsv:
-                    _exportSchedulesCsv();
-                    break;
-                  case _HomeAction.exportBackup:
-                    _exportBackupJson();
-                    break;
-                  case _HomeAction.restoreBackup:
-                    _restoreBackupJson();
-                    break;
-                }
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                  value: _HomeAction.importCsv,
-                  child: ListTile(
-                    leading: Icon(Icons.file_upload),
-                    title: Text('Importa CSV'),
-                  ),
+          PopupMenuButton<_HomeAction>(
+            tooltip: 'Importa ed esporta',
+            onSelected: (action) {
+              switch (action) {
+                case _HomeAction.importCsv:
+                  _importCsv();
+                  break;
+                case _HomeAction.exportCsv:
+                  _exportSchedulesCsv();
+                  break;
+                case _HomeAction.exportHistoryCsv:
+                  _exportHistoryCsv();
+                  break;
+                case _HomeAction.exportBodyCsv:
+                  _exportBodyCsv();
+                  break;
+                case _HomeAction.exportBackup:
+                  _exportBackupJson();
+                  break;
+                case _HomeAction.restoreBackup:
+                  _restoreBackupJson();
+                  break;
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: _HomeAction.importCsv,
+                child: ListTile(
+                  leading: Icon(Icons.file_upload),
+                  title: Text('Importa CSV'),
                 ),
-                PopupMenuItem(
-                  value: _HomeAction.exportCsv,
-                  child: ListTile(
-                    leading: Icon(Icons.download),
-                    title: Text('Esporta CSV'),
-                  ),
+              ),
+              PopupMenuItem(
+                value: _HomeAction.exportCsv,
+                child: ListTile(
+                  leading: Icon(Icons.download),
+                  title: Text('Esporta CSV'),
                 ),
-                PopupMenuItem(
-                  value: _HomeAction.exportBackup,
-                  child: ListTile(
-                    leading: Icon(Icons.backup),
-                    title: Text('Esporta backup'),
-                  ),
+              ),
+              PopupMenuItem(
+                value: _HomeAction.exportHistoryCsv,
+                child: ListTile(
+                  leading: Icon(Icons.history),
+                  title: Text('Esporta cronologia CSV'),
                 ),
-                PopupMenuItem(
-                  value: _HomeAction.restoreBackup,
-                  child: ListTile(
-                    leading: Icon(Icons.restore),
-                    title: Text('Ripristina backup'),
-                  ),
+              ),
+              PopupMenuItem(
+                value: _HomeAction.exportBodyCsv,
+                child: ListTile(
+                  leading: Icon(Icons.monitor_weight),
+                  title: Text('Esporta corpo CSV'),
                 ),
-              ],
-            ),
+              ),
+              PopupMenuItem(
+                value: _HomeAction.exportBackup,
+                child: ListTile(
+                  leading: Icon(Icons.backup),
+                  title: Text('Esporta backup'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _HomeAction.restoreBackup,
+                child: ListTile(
+                  leading: Icon(Icons.restore),
+                  title: Text('Ripristina backup'),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: _currentIndex == 0
           ? _buildSchedulesTab()
           : _currentIndex == 1
           ? _buildHistoryTab()
-          : StatsScreen(history: history),
+          : _currentIndex == 2
+          ? StatsScreen(history: history)
+          : _buildBodyTab(),
       floatingActionButton: _currentIndex == 0
           ? FloatingActionButton(
               onPressed: _showAddScheduleDialog,
               child: const Icon(Icons.add),
             )
+          : _currentIndex == 3
+          ? FloatingActionButton(
+              onPressed: () => _showBodyLogDialog(),
+              child: const Icon(Icons.monitor_weight),
+            )
           : null,
       bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
         items: const [
@@ -1137,6 +1954,10 @@ class _HomePageState extends State<HomePage> {
           BottomNavigationBarItem(
             icon: Icon(Icons.bar_chart),
             label: 'Statistiche',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.monitor_weight),
+            label: 'Corpo',
           ),
         ],
       ),

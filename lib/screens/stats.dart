@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../models/exercise.dart';
 import '../models/workout.dart';
 
 class StatsScreen extends StatelessWidget {
@@ -41,6 +42,16 @@ class StatsScreen extends StatelessWidget {
       (max, entry) => entry.volume > max ? entry.volume : max,
     );
     final exerciseSummaries = _buildExerciseSummaries(sortedHistory);
+    final bestE1rm = exerciseSummaries.fold<double>(
+      0,
+      (max, entry) => entry.bestE1rm > max ? entry.bestE1rm : max,
+    );
+    final averageRpe = _averageRpe(sortedHistory);
+    final currentWeekStart = _startOfWeek(DateTime.now());
+    final weeklyMuscleGroupStats = _buildMuscleGroupWeeklyStats(
+      sortedHistory,
+      currentWeekStart,
+    );
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -70,6 +81,68 @@ class StatsScreen extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _MetricCard(
+                  label: 'Miglior e1RM',
+                  value: '${bestE1rm.toStringAsFixed(0)} kg',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _MetricCard(
+                  label: 'RPE medio',
+                  value: averageRpe == null
+                      ? '-'
+                      : averageRpe.toStringAsFixed(1),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Gruppi muscolari - settimana ${_isoWeekNumber(currentWeekStart)}',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            elevation: 1,
+            child: weeklyMuscleGroupStats.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('Nessun set completato questa settimana.'),
+                  )
+                : ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: weeklyMuscleGroupStats.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final stats = weeklyMuscleGroupStats[index];
+                      return ListTile(
+                        title: Text(
+                          stats.group.label,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          'Serie: ${stats.completedSets} • Ripetizioni: ${stats.reps}',
+                        ),
+                        trailing: Text(
+                          '${stats.load.toStringAsFixed(0)} kg',
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
           const SizedBox(height: 24),
           Text(
@@ -277,7 +350,7 @@ class StatsScreen extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(
-                    'Volume: ${summary.volume.toStringAsFixed(1)} kg • Set: ${summary.completedSets}',
+                    'Volume: ${summary.volume.toStringAsFixed(1)} kg • Set: ${summary.completedSets} • e1RM: ${summary.bestE1rm.toStringAsFixed(1)} kg${summary.averageRpe == null ? '' : ' • RPE medio: ${summary.averageRpe!.toStringAsFixed(1)}'}',
                   ),
                   trailing: Text(
                     'Top set ${summary.bestLoad.toStringAsFixed(1)} kg',
@@ -364,9 +437,23 @@ class _ExerciseSummary {
   double volume = 0;
   double bestLoad = 0;
   double bestSetVolume = 0;
+  double bestE1rm = 0;
+  double rpeTotal = 0;
+  int rpeCount = 0;
   int completedSets = 0;
 
   _ExerciseSummary(this.name);
+
+  double? get averageRpe => rpeCount == 0 ? null : rpeTotal / rpeCount;
+}
+
+class _MuscleGroupWeeklyStats {
+  final MuscleGroup group;
+  int completedSets = 0;
+  int reps = 0;
+  double load = 0;
+
+  _MuscleGroupWeeklyStats(this.group);
 }
 
 DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
@@ -376,11 +463,24 @@ DateTime _startOfWeek(DateTime date) {
   return normalized.subtract(Duration(days: normalized.weekday - 1));
 }
 
+int _dayOfYear(DateTime date) {
+  return _dateOnly(date).difference(DateTime(date.year)).inDays + 1;
+}
+
+int _isoWeekNumber(DateTime date) {
+  final week = ((_dayOfYear(date) - date.weekday + 10) / 7).floor();
+  if (week < 1) {
+    return _isoWeekNumber(DateTime(date.year - 1, 12, 31));
+  }
+
+  return week;
+}
+
 double _volumeForSession(WorkoutSession session) {
   double totalVolume = 0;
   for (final exercise in session.exercises) {
     for (final set in exercise.sets) {
-      if (set.isCompleted) {
+      if (set.isCompleted && !set.isWarmup) {
         totalVolume += set.weight * set.reps;
       }
     }
@@ -392,12 +492,37 @@ int _completedSetsForSession(WorkoutSession session) {
   int completedSets = 0;
   for (final exercise in session.exercises) {
     for (final set in exercise.sets) {
-      if (set.isCompleted) {
+      if (set.isCompleted && !set.isWarmup) {
         completedSets++;
       }
     }
   }
   return completedSets;
+}
+
+double _estimatedOneRepMax(double weight, int reps) {
+  if (reps <= 0 || weight <= 0) {
+    return 0;
+  }
+  return weight * (1 + reps / 30);
+}
+
+double? _averageRpe(List<WorkoutSession> history) {
+  double total = 0;
+  int count = 0;
+
+  for (final session in history) {
+    for (final exercise in session.exercises) {
+      for (final set in exercise.sets) {
+        if (set.isCompleted && !set.isWarmup && set.rpe != null) {
+          total += set.rpe!;
+          count++;
+        }
+      }
+    }
+  }
+
+  return count == 0 ? null : total / count;
 }
 
 List<_PeriodVolume> _buildWeeklyVolumes(
@@ -433,9 +558,46 @@ List<_PeriodVolume> _buildWeeklyVolumes(
       date: weekStart,
       volume: entry.value,
       sessionCount: weeklySessionCount[weekStart] ?? 0,
-      label: '${weekStart.day}/${weekStart.month}',
+      label: 'S${_isoWeekNumber(weekStart)}',
     );
   }).toList();
+}
+
+List<_MuscleGroupWeeklyStats> _buildMuscleGroupWeeklyStats(
+  List<WorkoutSession> history,
+  DateTime weekStart,
+) {
+  final weekEnd = weekStart.add(const Duration(days: 7));
+  final statsByGroup = <MuscleGroup, _MuscleGroupWeeklyStats>{};
+
+  for (final session in history) {
+    if (session.startTime.isBefore(weekStart) ||
+        !session.startTime.isBefore(weekEnd)) {
+      continue;
+    }
+
+    for (final exercise in session.exercises) {
+      final stats = statsByGroup.putIfAbsent(
+        exercise.muscleGroup,
+        () => _MuscleGroupWeeklyStats(exercise.muscleGroup),
+      );
+
+      for (final set in exercise.sets) {
+        if (!set.isCompleted || set.isWarmup) {
+          continue;
+        }
+
+        stats.completedSets++;
+        stats.reps += set.reps;
+        stats.load += set.weight * set.reps;
+      }
+    }
+  }
+
+  final sorted =
+      statsByGroup.values.where((stats) => stats.completedSets > 0).toList()
+        ..sort((a, b) => b.load.compareTo(a.load));
+  return sorted;
 }
 
 List<_DailyVolume> _buildDailyVolumes(
@@ -483,18 +645,26 @@ List<_ExerciseSummary> _buildExerciseSummaries(List<WorkoutSession> history) {
       );
 
       for (final set in exercise.sets) {
-        if (!set.isCompleted) {
+        if (!set.isCompleted || set.isWarmup) {
           continue;
         }
 
         final setVolume = set.weight * set.reps;
+        final estimatedOneRepMax = _estimatedOneRepMax(set.weight, set.reps);
         summary.volume += setVolume;
         summary.completedSets++;
+        if (set.rpe != null) {
+          summary.rpeTotal += set.rpe!;
+          summary.rpeCount++;
+        }
         if (set.weight > summary.bestLoad) {
           summary.bestLoad = set.weight;
         }
         if (setVolume > summary.bestSetVolume) {
           summary.bestSetVolume = setVolume;
+        }
+        if (estimatedOneRepMax > summary.bestE1rm) {
+          summary.bestE1rm = estimatedOneRepMax;
         }
       }
     }

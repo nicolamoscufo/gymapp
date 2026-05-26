@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
+import '../exercise_catalog.dart';
 import '../models/schedule.dart';
 import '../models/exercise.dart';
+import '../models/workout.dart';
+import '../number_input.dart';
 import 'active_workout.dart';
 
 class ScheduleDetailScreen extends StatefulWidget {
   final Schedule schedule;
+  final List<WorkoutSession> history;
   final int defaultRestSeconds;
   final VoidCallback onUpdate;
 
   const ScheduleDetailScreen({
     super.key,
     required this.schedule,
+    this.history = const [],
     required this.defaultRestSeconds,
     required this.onUpdate,
   });
@@ -56,7 +61,8 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     messenger.showSnackBar(
       SnackBar(
         content: Text(message),
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
         action: SnackBarAction(label: 'ANNULLA', onPressed: onUndo),
       ),
     );
@@ -67,6 +73,11 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     int sets,
     int reps,
     double weight,
+    MuscleGroup muscleGroup,
+    String equipment,
+    String movementPattern,
+    int? targetMinReps,
+    int? targetMaxReps,
     String notes,
     IntensityTechnique technique,
     int? backoffReps,
@@ -79,6 +90,11 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
           set: sets,
           reps: reps,
           weight: weight,
+          muscleGroup: muscleGroup,
+          equipment: equipment,
+          movementPattern: movementPattern,
+          targetMinReps: targetMinReps,
+          targetMaxReps: targetMaxReps,
           notes: notes,
           technique: technique,
           backoffReps: backoffReps,
@@ -95,6 +111,11 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     int sets,
     int reps,
     double weight,
+    MuscleGroup muscleGroup,
+    String equipment,
+    String movementPattern,
+    int? targetMinReps,
+    int? targetMaxReps,
     String notes,
     IntensityTechnique technique,
     int? backoffReps,
@@ -105,6 +126,11 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
       widget.schedule.exercises[index].set = sets;
       widget.schedule.exercises[index].reps = reps;
       widget.schedule.exercises[index].weight = weight;
+      widget.schedule.exercises[index].muscleGroup = muscleGroup;
+      widget.schedule.exercises[index].equipment = equipment;
+      widget.schedule.exercises[index].movementPattern = movementPattern;
+      widget.schedule.exercises[index].targetMinReps = targetMinReps;
+      widget.schedule.exercises[index].targetMaxReps = targetMaxReps;
       widget.schedule.exercises[index].notes = notes;
       widget.schedule.exercises[index].technique = technique;
       widget.schedule.exercises[index].backoffReps = backoffReps;
@@ -147,6 +173,13 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     IntensityTechnique selectedTechnique = isEditing
         ? exerciseToEdit.technique
         : IntensityTechnique.none;
+    MuscleGroup? selectedMuscleGroup =
+        isEditing && exerciseToEdit.muscleGroup != MuscleGroup.unassigned
+        ? exerciseToEdit.muscleGroup
+        : null;
+    String? selectedCatalogName = isEditing
+        ? catalogEntryByName(exerciseToEdit.name)?.name
+        : null;
 
     final nameController = TextEditingController(
       text: isEditing ? exerciseToEdit.name : '',
@@ -170,10 +203,21 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     final weightController = TextEditingController(
       text: isEditing ? exerciseToEdit.weight.toString() : '',
     );
+    final equipmentController = TextEditingController(
+      text: isEditing ? exerciseToEdit.equipment : '',
+    );
+    final movementPatternController = TextEditingController(
+      text: isEditing ? exerciseToEdit.movementPattern : '',
+    );
+    final targetMinRepsController = TextEditingController(
+      text: isEditing ? (exerciseToEdit.targetMinReps?.toString() ?? '') : '',
+    );
+    final targetMaxRepsController = TextEditingController(
+      text: isEditing ? (exerciseToEdit.targetMaxReps?.toString() ?? '') : '',
+    );
     final restSecondsController = TextEditingController(
       text: isEditing
-          ? (exerciseToEdit.restSeconds ?? widget.defaultRestSeconds)
-              .toString()
+          ? (exerciseToEdit.restSeconds ?? widget.defaultRestSeconds).toString()
           : widget.defaultRestSeconds.toString(),
     );
     final notesController = TextEditingController(
@@ -189,10 +233,77 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                DropdownButtonFormField<String?>(
+                  initialValue: selectedCatalogName,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Catalogo esercizi',
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Personalizzato'),
+                    ),
+                    ...exerciseCatalog.map(
+                      (entry) => DropdownMenuItem<String?>(
+                        value: entry.name,
+                        child: Text(entry.name),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    final entry = value == null
+                        ? null
+                        : catalogEntryByName(value);
+                    setDialogState(() {
+                      selectedCatalogName = value;
+                      if (entry != null) {
+                        nameController.text = entry.name;
+                        selectedMuscleGroup = entry.muscleGroup;
+                        equipmentController.text = entry.equipment;
+                        movementPatternController.text = entry.movementPattern;
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
                 TextField(
                   controller: nameController,
                   decoration: const InputDecoration(
                     labelText: 'Nome (es. Squat)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<MuscleGroup>(
+                  initialValue: selectedMuscleGroup,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Gruppo muscolare',
+                  ),
+                  items: selectableMuscleGroups
+                      .map(
+                        (group) => DropdownMenuItem<MuscleGroup>(
+                          value: group,
+                          child: Text(group.label),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedMuscleGroup = value;
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: equipmentController,
+                  decoration: const InputDecoration(labelText: 'Attrezzo'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: movementPatternController,
+                  decoration: const InputDecoration(
+                    labelText: 'Pattern movimento',
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -261,6 +372,30 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                   ),
                 ],
                 const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: targetMinRepsController,
+                        decoration: const InputDecoration(
+                          labelText: 'Range reps min',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: targetMaxRepsController,
+                        decoration: const InputDecoration(
+                          labelText: 'Range reps max',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 TextField(
                   controller: weightController,
                   decoration: const InputDecoration(labelText: 'Peso (kg)'),
@@ -296,20 +431,29 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
 
                 final int? parsedSets = isBackoff
                     ? 2
-                    : int.tryParse(setsController.text);
+                    : parseIntInput(setsController.text);
                 final int? parsedReps = isBackoff
-                    ? int.tryParse(topSetRepsController.text)
-                    : int.tryParse(repsController.text);
+                    ? parseIntInput(topSetRepsController.text)
+                    : parseIntInput(repsController.text);
                 final int? parsedBackoffReps = isBackoff
-                    ? int.tryParse(backoffRepsController.text)
+                    ? parseIntInput(backoffRepsController.text)
                     : null;
-                final int? parsedRestSeconds =
-                    int.tryParse(restSecondsController.text);
+                final int? parsedRestSeconds = parseIntInput(
+                  restSecondsController.text,
+                );
+                final parsedWeight = parseDecimalInput(weightController.text);
+                final parsedTargetMinReps = parseIntInput(
+                  targetMinRepsController.text,
+                );
+                final parsedTargetMaxReps = parseIntInput(
+                  targetMaxRepsController.text,
+                );
 
                 if (nameController.text.isEmpty ||
+                    selectedMuscleGroup == null ||
                     parsedSets == null ||
                     parsedReps == null ||
-                    weightController.text.isEmpty ||
+                    parsedWeight == null ||
                     parsedRestSeconds == null ||
                     (isBackoff && parsedBackoffReps == null)) {
                   return;
@@ -321,7 +465,12 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     nameController.text,
                     parsedSets,
                     parsedReps,
-                    double.tryParse(weightController.text) ?? 0.0,
+                    parsedWeight,
+                    selectedMuscleGroup!,
+                    equipmentController.text.trim(),
+                    movementPatternController.text.trim(),
+                    parsedTargetMinReps,
+                    parsedTargetMaxReps,
                     notesController.text,
                     selectedTechnique,
                     parsedBackoffReps,
@@ -332,7 +481,12 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     nameController.text,
                     parsedSets,
                     parsedReps,
-                    double.tryParse(weightController.text) ?? 0.0,
+                    parsedWeight,
+                    selectedMuscleGroup!,
+                    equipmentController.text.trim(),
+                    movementPatternController.text.trim(),
+                    parsedTargetMinReps,
+                    parsedTargetMaxReps,
                     notesController.text,
                     selectedTechnique,
                     parsedBackoffReps,
@@ -374,6 +528,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                 MaterialPageRoute(
                   builder: (context) => ActiveWorkoutScreen(
                     schedule: widget.schedule,
+                    history: widget.history,
                     defaultRestSeconds: widget.defaultRestSeconds,
                   ),
                 ),
@@ -419,12 +574,18 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       subtitle: Text(
-                        '${exercise.technique == IntensityTechnique.topsetBackoff && exercise.backoffReps != null
-                            ? '2 set | Top Set ${exercise.reps} reps / Back off ${exercise.backoffReps} reps | ${exercise.weight} kg'
-                            : '${exercise.set} set x ${exercise.reps} reps | ${exercise.weight} kg'}'
+                        '${exercise.technique == IntensityTechnique.topsetBackoff && exercise.backoffReps != null ? '2 set | Top Set ${exercise.reps} reps / Back off ${exercise.backoffReps} reps | ${exercise.weight} kg' : '${exercise.set} set x ${exercise.reps} reps | ${exercise.weight} kg'}'
+                        '\nTarget: ${exercise.targetRepsLabel}'
+                        '\nGruppo: ${exercise.muscleGroup.label}'
+                        '${exercise.equipment.trim().isNotEmpty ? '\nAttrezzo: ${exercise.equipment}' : ''}'
+                        '${exercise.movementPattern.trim().isNotEmpty ? '\nPattern: ${exercise.movementPattern}' : ''}'
                         '\nRecupero: ${exercise.restSeconds ?? widget.defaultRestSeconds} sec'
                         '\nTecnica: ${_techniqueLabel(exercise.technique)}'
                         '${exercise.notes.trim().isNotEmpty ? '\nNote: ${exercise.notes}' : ''}',
+                      ),
+                      onTap: () => _showExerciseDialog(
+                        indexToEdit: index,
+                        exerciseToEdit: exercise,
                       ),
                     ),
                   ),
@@ -433,7 +594,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showExerciseDialog(),
-        label: const Text('Add Exercise'),
+        label: const Text('Aggiungi'),
         icon: const Icon(Icons.add),
       ),
     );
