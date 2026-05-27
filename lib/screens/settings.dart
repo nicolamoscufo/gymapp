@@ -62,7 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         : '${restSeconds}s';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Impostazioni')),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -102,7 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 28),
           Text(
-            'Timer recupero',
+            'Recupero',
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -142,7 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 28),
           Text(
-            'Backup',
+            'Dati',
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -157,7 +157,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     });
                   }),
             icon: const Icon(Icons.backup),
-            label: const Text('Esporta backup'),
+            label: const Text('Esporta'),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
@@ -169,7 +169,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     });
                   }),
             icon: const Icon(Icons.restore),
-            label: const Text('Ripristina backup'),
+            label: const Text('Ripristina'),
           ),
         ],
       ),

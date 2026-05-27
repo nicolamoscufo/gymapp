@@ -1035,22 +1035,18 @@ class _HomePageState extends State<HomePage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Nuova Scheda'),
+        title: const Text('Nuova scheda'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: titleController,
-              decoration: const InputDecoration(
-                labelText: 'Titolo (es. Push Day)',
-              ),
+              decoration: const InputDecoration(labelText: 'Titolo'),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: goalController,
-              decoration: const InputDecoration(
-                labelText: 'Obiettivo (ipertrofia, forza, deload...)',
-              ),
+              decoration: const InputDecoration(labelText: 'Obiettivo'),
             ),
             const SizedBox(height: 8),
             Row(
@@ -1058,9 +1054,7 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: TextField(
                     controller: mesocycleController,
-                    decoration: const InputDecoration(
-                      labelText: 'Settimane mesociclo',
-                    ),
+                    decoration: const InputDecoration(labelText: 'Settimane'),
                     keyboardType: TextInputType.number,
                   ),
                 ),
@@ -1075,14 +1069,7 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
             const SizedBox(height: 12),
-            const ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.calendar_today),
-              title: Text('Settimana automatica'),
-              subtitle: Text(
-                'La scheda parte da settimana 1 e avanza ogni lunedì.',
-              ),
-            ),
+            const Text('La settimana avanza ogni lunedi.'),
           ],
         ),
         actions: [
@@ -1092,9 +1079,10 @@ class _HomePageState extends State<HomePage> {
           ),
           ElevatedButton(
             onPressed: () {
-              if (titleController.text.isNotEmpty) {
+              final title = titleController.text.trim();
+              if (title.isNotEmpty) {
                 _addSchedule(
-                  titleController.text,
+                  title,
                   goal: goalController.text.trim(),
                   mesocycleWeeks: parseIntInput(mesocycleController.text) ?? 8,
                   deloadEveryWeeks: parseIntInput(deloadController.text) ?? 4,
@@ -1140,7 +1128,7 @@ class _HomePageState extends State<HomePage> {
           child: TextField(
             onChanged: (value) => setState(() => _searchQuery = value),
             decoration: InputDecoration(
-              labelText: 'Cerca schede o esercizi',
+              hintText: 'Cerca',
               prefixIcon: const Icon(Icons.search),
               suffixIcon: _searchQuery.isEmpty
                   ? null
@@ -1166,7 +1154,7 @@ class _HomePageState extends State<HomePage> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ElevatedButton(
+                    FilledButton(
                       onPressed: () async {
                         final session = _savedSession!;
                         await Navigator.push(
@@ -1180,12 +1168,12 @@ class _HomePageState extends State<HomePage> {
                         );
                         _loadData();
                       },
-                      child: const Text('RIPRENDI'),
+                      child: const Text('Riprendi'),
                     ),
                     const SizedBox(width: 8),
                     TextButton(
                       onPressed: _discardSavedSession,
-                      child: const Text('SCARTA'),
+                      child: const Text('Scarta'),
                     ),
                   ],
                 ),
@@ -1204,7 +1192,7 @@ class _HomePageState extends State<HomePage> {
                 child: DropdownButtonFormField<int?>(
                   initialValue: selectedWeekValue,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Settimana'),
+                  decoration: const InputDecoration(labelText: 'Week'),
                   items: [
                     const DropdownMenuItem<int?>(
                       value: null,
@@ -1213,7 +1201,7 @@ class _HomePageState extends State<HomePage> {
                     ...availableWeeks.map(
                       (week) => DropdownMenuItem<int?>(
                         value: week,
-                        child: Text('Settimana $week'),
+                        child: Text('W$week'),
                       ),
                     ),
                   ],
@@ -1222,7 +1210,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               FilterChip(
-                label: const Text('Mostra archiviate'),
+                label: const Text('Archiviate'),
                 selected: _showArchived,
                 onSelected: (selected) =>
                     setState(() => _showArchived = selected),
@@ -1230,7 +1218,7 @@ class _HomePageState extends State<HomePage> {
               if (_searchQuery.isNotEmpty ||
                   _selectedWeekFilter != null ||
                   _showArchived)
-                TextButton.icon(
+                IconButton(
                   onPressed: () {
                     setState(() {
                       _searchQuery = '';
@@ -1238,28 +1226,16 @@ class _HomePageState extends State<HomePage> {
                       _showArchived = false;
                     });
                   },
+                  tooltip: 'Reset filtri',
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Reset filtri'),
                 ),
             ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '${visibleSchedules.length} schede visibili',
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
           ),
         ),
         const SizedBox(height: 8),
         Expanded(
           child: visibleSchedules.isEmpty
-              ? const Center(
-                  child: Text('Nessuna scheda corrisponde ai filtri scelti.'),
-                )
+              ? const Center(child: Text('Vuoto'))
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   itemCount: visibleSchedules.length,
@@ -1284,24 +1260,10 @@ class _HomePageState extends State<HomePage> {
                         child: Icon(Icons.delete, color: colorScheme.onError),
                       ),
                       child: Card(
-                        elevation: 2,
                         color: schedule.isArchived
                             ? colorScheme.surfaceContainerHighest
                             : null,
                         child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: schedule.isArchived
-                                ? colorScheme.surfaceContainer
-                                : colorScheme.primaryContainer,
-                            child: Icon(
-                              schedule.isArchived
-                                  ? Icons.archive
-                                  : Icons.fitness_center,
-                              color: schedule.isArchived
-                                  ? colorScheme.onSurfaceVariant
-                                  : colorScheme.onPrimaryContainer,
-                            ),
-                          ),
                           title: Text(
                             schedule.title,
                             style: TextStyle(
@@ -1312,7 +1274,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                           ),
                           subtitle: Text(
-                            'Settimana: $currentWeek (auto)${schedule.isDeloadWeek() ? ' • DELOAD' : ''} • Esercizi: ${schedule.exercises.length}${schedule.goal.trim().isNotEmpty ? '\nObiettivo: ${schedule.goal}' : ''}${schedule.isArchived ? ' • Archiviata' : ''}',
+                            'W$currentWeek${schedule.isDeloadWeek() ? ' • deload' : ''} • ${schedule.exercises.length} esercizi${schedule.goal.trim().isNotEmpty ? '\n${schedule.goal}' : ''}${schedule.isArchived ? ' • archiviata' : ''}',
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -1351,7 +1313,7 @@ class _HomePageState extends State<HomePage> {
                                   ),
                                 ],
                               ),
-                              const Icon(Icons.arrow_forward_ios),
+                              const Icon(Icons.chevron_right),
                             ],
                           ),
                           onTap: () async {
@@ -1836,16 +1798,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset('assets/app_icon.png', width: 32, height: 32),
-            ),
-            const SizedBox(width: 10),
-            const Text('GymApp', style: TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
+        title: const Text('Gym'),
         actions: [
           IconButton(
             tooltip: 'Impostazioni',
@@ -1853,7 +1806,7 @@ class _HomePageState extends State<HomePage> {
             onPressed: _openSettings,
           ),
           PopupMenuButton<_HomeAction>(
-            tooltip: 'Importa ed esporta',
+            tooltip: 'Dati',
             onSelected: (action) {
               switch (action) {
                 case _HomeAction.importCsv:

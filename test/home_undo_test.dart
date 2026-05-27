@@ -62,6 +62,57 @@ void main() {
     expect(storedSchedules.single['id'], 'schedule_1');
   });
 
+  testWidgets('unassigned exercise can be edited and saved', (tester) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 3,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Panca'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Nome'),
+      'Panca inclinata',
+    );
+    await tester.tap(find.text('Salva'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Modifica'), findsNothing);
+    expect(find.text('Panca inclinata'), findsOneWidget);
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedSchedules =
+        jsonDecode(prefs.getString('schedules')!) as List<dynamic>;
+    final storedExercises =
+        storedSchedules.single['exercises'] as List<dynamic>;
+    expect(storedExercises.single['name'], 'Panca inclinata');
+    expect(storedExercises.single['muscleGroup'], 'unassigned');
+  });
+
   testWidgets('history deletion can be undone', (tester) async {
     final session = WorkoutSession(
       id: 'session_1',

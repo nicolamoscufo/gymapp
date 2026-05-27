@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_preferences.dart';
 import 'screens/home.dart';
 
-const _brandSeedColor = Color(0xFF7C4DFF);
+const _brandSeedColor = Color(0xFF111827);
 
 void main() {
   runApp(const MainApp());
@@ -70,7 +70,7 @@ ThemeData _buildTheme(Brightness brightness) {
     brightness: brightness,
   );
   final inputBorder = OutlineInputBorder(
-    borderRadius: BorderRadius.circular(12),
+    borderRadius: BorderRadius.circular(18),
     borderSide: BorderSide(color: colorScheme.outlineVariant),
   );
 
@@ -78,34 +78,78 @@ ThemeData _buildTheme(Brightness brightness) {
     colorScheme: colorScheme,
     useMaterial3: true,
     scaffoldBackgroundColor: colorScheme.surface,
+    fontFamily: 'Roboto',
     appBarTheme: AppBarTheme(
       backgroundColor: colorScheme.surface,
       foregroundColor: colorScheme.onSurface,
-      surfaceTintColor: colorScheme.surfaceTint,
+      surfaceTintColor: Colors.transparent,
       elevation: 0,
+      centerTitle: false,
+      titleTextStyle: TextStyle(
+        color: colorScheme.onSurface,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.2,
+      ),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: colorScheme.surface,
+      indicatorColor: colorScheme.surfaceContainerHighest,
+      labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        final selected = states.contains(WidgetState.selected);
+        return IconThemeData(
+          color: selected
+              ? colorScheme.onSurface
+              : colorScheme.onSurfaceVariant,
+        );
+      }),
     ),
     bottomNavigationBarTheme: BottomNavigationBarThemeData(
-      backgroundColor: colorScheme.surfaceContainer,
+      backgroundColor: colorScheme.surface,
       selectedItemColor: colorScheme.primary,
       unselectedItemColor: colorScheme.onSurfaceVariant,
+      elevation: 0,
     ),
     cardTheme: CardThemeData(
-      color: colorScheme.surfaceContainerLow,
-      surfaceTintColor: colorScheme.surfaceTint,
-      elevation: 1,
+      color: colorScheme.surface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
     ),
     dividerTheme: DividerThemeData(color: colorScheme.outlineVariant),
     inputDecorationTheme: InputDecorationThemeData(
       filled: true,
-      fillColor: colorScheme.surfaceContainerLowest,
+      fillColor: colorScheme.surface,
       border: inputBorder,
       enabledBorder: inputBorder,
       focusedBorder: inputBorder.copyWith(
         borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     ),
   );

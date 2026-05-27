@@ -756,10 +756,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 if (mounted) navigator.pop();
               },
               style: TextButton.styleFrom(foregroundColor: colorScheme.error),
-              child: const Text(
-                'ANNULLA',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
+              child: const Text('Stop'),
             ),
             TextButton(
               onPressed: () async {
@@ -803,10 +800,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 await _finishWorkout();
               },
               style: TextButton.styleFrom(foregroundColor: colorScheme.primary),
-              child: const Text(
-                'FINE',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
+              child: const Text('Fine'),
             ),
           ],
         ),
@@ -819,7 +813,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
             final restSeconds = activeRestSeconds ?? _restSecondsFor(exercise);
 
             return Card(
-              margin: const EdgeInsets.all(8.0),
+              margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
                 child: Column(
@@ -846,7 +840,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                       runSpacing: 6,
                       children: [
                         Chip(
-                          label: Text('Target ${_targetLabelFor(exercise)}'),
+                          label: Text(_targetLabelFor(exercise)),
                           visualDensity: VisualDensity.compact,
                         ),
                         if (exercise.equipment.trim().isNotEmpty)
@@ -873,7 +867,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                     if (exercise.previousWeights.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(
-                        'Ultima volta: ${_formatPreviousWeights(exercise.previousWeights)}',
+                        _formatPreviousWeights(exercise.previousWeights),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.primary,
                           fontWeight: FontWeight.w600,
@@ -898,8 +892,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                         Expanded(
                           child: Text(
                             activeRestSeconds == null
-                                ? 'Recupero ${_formatDuration(restSeconds)}'
-                                : 'In corso: ${_formatDuration(restSeconds)}',
+                                ? _formatDuration(restSeconds)
+                                : 'Rest ${_formatDuration(restSeconds)}',
                             style: theme.textTheme.bodyMedium,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -925,14 +919,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                         const SizedBox(
                           width: 72,
                           child: Text(
-                            'SET',
+                            '#',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
                         Expanded(
                           child: Center(
                             child: Text(
-                              'KG',
+                              'kg',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -940,7 +934,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                         Expanded(
                           child: Center(
                             child: Text(
-                              'REPS',
+                              'reps',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -1150,7 +1144,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                         TextButton.icon(
                           onPressed: () => _addSet(exercise),
                           icon: const Icon(Icons.add),
-                          label: const Text('aggiungi set'),
+                          label: const Text('set'),
                         ),
                         TextButton.icon(
                           onPressed: () => _addSet(exercise, isWarmup: true),
