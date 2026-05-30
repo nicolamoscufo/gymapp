@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../app_preferences.dart';
+import '../app_data_store.dart';
 
 class SettingsScreen extends StatefulWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode>? onThemeModeChanged;
-  final int defaultRestSeconds;
-  final ValueChanged<int> onDefaultRestSecondsChanged;
   final Future<void> Function() onExportBackup;
   final Future<void> Function() onRestoreBackup;
 
@@ -14,8 +12,6 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     required this.themeMode,
     required this.onThemeModeChanged,
-    required this.defaultRestSeconds,
-    required this.onDefaultRestSecondsChanged,
     required this.onExportBackup,
     required this.onRestoreBackup,
   });
@@ -26,15 +22,30 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late ThemeMode _themeMode;
-  late int _defaultRestSeconds;
   bool _isExportingBackup = false;
   bool _isRestoringBackup = false;
+  DateTime? _lastAutoBackupAt;
 
   @override
   void initState() {
     super.initState();
     _themeMode = widget.themeMode;
-    _defaultRestSeconds = widget.defaultRestSeconds;
+    _loadAutoBackupInfo();
+  }
+
+  Future<void> _loadAutoBackupInfo() async {
+    final lastBackupAt = await AppDataStore.loadLastAutoBackupAt();
+    if (!mounted) return;
+    setState(() {
+      _lastAutoBackupAt = lastBackupAt;
+    });
+  }
+
+  String _formatDateTime(DateTime? dateTime) {
+    if (dateTime == null) {
+      return 'non ancora creato';
+    }
+    return '${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
   }
 
   Future<void> _runBackupAction(
@@ -55,121 +66,183 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final restMinutes = _defaultRestSeconds ~/ 60;
-    final restSeconds = _defaultRestSeconds % 60;
-    final restLabel = restMinutes > 0
-        ? '${restMinutes}m ${restSeconds.toString().padLeft(2, '0')}s'
-        : '${restSeconds}s';
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: const Text('Impostazioni')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            'Tema',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          SegmentedButton<ThemeMode>(
-            segments: const [
-              ButtonSegment(
-                value: ThemeMode.system,
-                icon: Icon(Icons.brightness_auto),
-                label: Text('Sistema'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.light,
-                icon: Icon(Icons.light_mode),
-                label: Text('Chiaro'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.dark,
-                icon: Icon(Icons.dark_mode),
-                label: Text('Scuro'),
-              ),
-            ],
-            selected: {_themeMode},
-            onSelectionChanged: (selection) {
-              final selectedThemeMode = selection.first;
-              setState(() {
-                _themeMode = selectedThemeMode;
-              });
-              widget.onThemeModeChanged?.call(selectedThemeMode);
-            },
-          ),
-          const SizedBox(height: 28),
-          Text(
-            'Recupero',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.timer, color: colorScheme.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Default',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+          Card(
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    colorScheme.primary.withValues(alpha: isDark ? 0.20 : 0.12),
+                    Colors.transparent,
+                  ],
                 ),
               ),
-              Text(restLabel, style: theme.textTheme.titleMedium),
-            ],
-          ),
-          Slider(
-            min: AppPreferences.minRestSeconds.toDouble(),
-            max: AppPreferences.maxRestSeconds.toDouble(),
-            divisions:
-                (AppPreferences.maxRestSeconds -
-                    AppPreferences.minRestSeconds) ~/
-                15,
-            label: restLabel,
-            value: _defaultRestSeconds.toDouble(),
-            onChanged: (value) {
-              final seconds = (value / 15).round() * 15;
-              setState(() {
-                _defaultRestSeconds = seconds;
-              });
-              widget.onDefaultRestSecondsChanged(seconds);
-            },
-          ),
-          const SizedBox(height: 28),
-          Text(
-            'Dati',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(
+                          Icons.palette,
+                          color: colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Tema',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Light, dark o automatico di sistema.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        icon: Icon(Icons.brightness_auto),
+                        label: Text('Sistema'),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        icon: Icon(Icons.light_mode),
+                        label: Text('Chiaro'),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        icon: Icon(Icons.dark_mode),
+                        label: Text('Scuro'),
+                      ),
+                    ],
+                    selected: {_themeMode},
+                    onSelectionChanged: (selection) {
+                      final selectedThemeMode = selection.first;
+                      setState(() {
+                        _themeMode = selectedThemeMode;
+                      });
+                      widget.onThemeModeChanged?.call(selectedThemeMode);
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: _isExportingBackup || _isRestoringBackup
-                ? null
-                : () => _runBackupAction(widget.onExportBackup, (value) {
-                    setState(() {
-                      _isExportingBackup = value;
-                    });
-                  }),
-            icon: const Icon(Icons.backup),
-            label: const Text('Esporta'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _isExportingBackup || _isRestoringBackup
-                ? null
-                : () => _runBackupAction(widget.onRestoreBackup, (value) {
-                    setState(() {
-                      _isRestoringBackup = value;
-                    });
-                  }),
-            icon: const Icon(Icons.restore),
-            label: const Text('Ripristina'),
+          const SizedBox(height: 14),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: colorScheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(
+                          Icons.storage,
+                          color: colorScheme.onSecondaryContainer,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Dati',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Backup locale, ripristino su file e backup auto.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.cloud_done,
+                      color: colorScheme.tertiary,
+                    ),
+                    title: const Text('Backup automatico locale'),
+                    subtitle: Text(
+                      'Ultimo snapshot: ${_formatDateTime(_lastAutoBackupAt)}',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _isExportingBackup || _isRestoringBackup
+                        ? null
+                        : () =>
+                              _runBackupAction(widget.onExportBackup, (value) {
+                                setState(() {
+                                  _isExportingBackup = value;
+                                });
+                              }),
+                    icon: const Icon(Icons.backup),
+                    label: const Text('Esporta'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _isExportingBackup || _isRestoringBackup
+                        ? null
+                        : () =>
+                              _runBackupAction(widget.onRestoreBackup, (value) {
+                                setState(() {
+                                  _isRestoringBackup = value;
+                                });
+                              }),
+                    icon: const Icon(Icons.restore),
+                    label: const Text('Ripristina'),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),

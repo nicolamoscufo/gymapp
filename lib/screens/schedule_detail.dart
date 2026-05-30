@@ -5,6 +5,7 @@ import '../models/exercise.dart';
 import '../models/workout.dart';
 import '../number_input.dart';
 import 'active_workout.dart';
+import 'exercise_picker.dart';
 
 class ScheduleDetailScreen extends StatefulWidget {
   final Schedule schedule;
@@ -25,6 +26,16 @@ class ScheduleDetailScreen extends StatefulWidget {
 }
 
 class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
+  Color _accentForIndex(ColorScheme colorScheme, int index) {
+    final accents = [
+      colorScheme.primary,
+      colorScheme.secondary,
+      colorScheme.tertiary,
+      colorScheme.error,
+    ];
+    return accents[index % accents.length];
+  }
+
   String _techniqueLabel(IntensityTechnique technique) {
     switch (technique) {
       case IntensityTechnique.none:
@@ -46,6 +57,127 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
       case IntensityTechnique.topsetBackoff:
         return 'Top Set / Back off';
     }
+  }
+
+  String _weekdayLabel(int weekday) {
+    return switch (weekday) {
+      DateTime.monday => 'Lun',
+      DateTime.tuesday => 'Mar',
+      DateTime.wednesday => 'Mer',
+      DateTime.thursday => 'Gio',
+      DateTime.friday => 'Ven',
+      DateTime.saturday => 'Sab',
+      DateTime.sunday => 'Dom',
+      _ => '?',
+    };
+  }
+
+  Future<void> _showScheduleProgramDialog() async {
+    final goalController = TextEditingController(text: widget.schedule.goal);
+    final mesocycleController = TextEditingController(
+      text: widget.schedule.mesocycleWeeks.toString(),
+    );
+    final deloadController = TextEditingController(
+      text: widget.schedule.deloadEveryWeeks.toString(),
+    );
+    final selectedDays = widget.schedule.trainingWeekdays.toSet();
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Programmazione'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: goalController,
+                  decoration: const InputDecoration(labelText: 'Obiettivo'),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: mesocycleController,
+                        decoration: const InputDecoration(
+                          labelText: 'Settimane',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: deloadController,
+                        decoration: const InputDecoration(
+                          labelText: 'Deload ogni',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Giorni allenamento',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: List.generate(7, (index) {
+                    final weekday = index + 1;
+                    return FilterChip(
+                      label: Text(_weekdayLabel(weekday)),
+                      selected: selectedDays.contains(weekday),
+                      onSelected: (selected) => setDialogState(() {
+                        if (selected) {
+                          selectedDays.add(weekday);
+                        } else {
+                          selectedDays.remove(weekday);
+                        }
+                      }),
+                    );
+                  }),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annulla'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Salva'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true) {
+      return;
+    }
+
+    setState(() {
+      widget.schedule.goal = goalController.text.trim();
+      widget.schedule.mesocycleWeeks =
+          parseIntInput(mesocycleController.text) ??
+          widget.schedule.mesocycleWeeks;
+      widget.schedule.deloadEveryWeeks =
+          parseIntInput(deloadController.text) ??
+          widget.schedule.deloadEveryWeeks;
+      widget.schedule.trainingWeekdays = selectedDays.toList()..sort();
+    });
+    widget.onUpdate();
   }
 
   void _showUndoSnackBar({
@@ -82,6 +214,9 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     IntensityTechnique technique,
     int? backoffReps,
     int? restSeconds,
+    int? supersetGroup,
+    double progressionKgStep,
+    int progressionRepStep,
   ) {
     setState(() {
       widget.schedule.exercises.add(
@@ -99,10 +234,59 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
           technique: technique,
           backoffReps: backoffReps,
           restSeconds: restSeconds,
+          supersetGroup: supersetGroup,
+          progressionKgStep: progressionKgStep,
+          progressionRepStep: progressionRepStep,
         ),
       );
     });
     widget.onUpdate();
+  }
+
+  void _addCatalogExercises(List<ExerciseCatalogEntry> entries) {
+    if (entries.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      for (final entry in entries) {
+        widget.schedule.exercises.add(
+          Exercise(
+            name: entry.name,
+            set: 3,
+            reps: 10,
+            weight: 0,
+            muscleGroup: entry.muscleGroup,
+            equipment: entry.equipment,
+            movementPattern: entry.movementPattern,
+            notes: '',
+            technique: IntensityTechnique.none,
+            restSeconds: widget.defaultRestSeconds,
+            progressionKgStep: 2.5,
+            progressionRepStep: 1,
+          ),
+        );
+      }
+    });
+    widget.onUpdate();
+  }
+
+  Future<void> _openExercisePicker() async {
+    final result = await Navigator.push<ExercisePickerResult>(
+      context,
+      MaterialPageRoute(builder: (context) => const ExercisePickerScreen()),
+    );
+
+    if (!mounted || result == null) {
+      return;
+    }
+
+    if (result.addCustom) {
+      _showExerciseDialog();
+      return;
+    }
+
+    _addCatalogExercises(result.entries);
   }
 
   void _editExercise(
@@ -120,6 +304,9 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     IntensityTechnique technique,
     int? backoffReps,
     int? restSeconds,
+    int? supersetGroup,
+    double progressionKgStep,
+    int progressionRepStep,
   ) {
     setState(() {
       widget.schedule.exercises[index].name = name;
@@ -135,6 +322,9 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
       widget.schedule.exercises[index].technique = technique;
       widget.schedule.exercises[index].backoffReps = backoffReps;
       widget.schedule.exercises[index].restSeconds = restSeconds;
+      widget.schedule.exercises[index].supersetGroup = supersetGroup;
+      widget.schedule.exercises[index].progressionKgStep = progressionKgStep;
+      widget.schedule.exercises[index].progressionRepStep = progressionRepStep;
     });
     widget.onUpdate();
   }
@@ -168,6 +358,23 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     );
   }
 
+  void _reorderExercise(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= widget.schedule.exercises.length) {
+      return;
+    }
+
+    if (newIndex < 0 || newIndex > widget.schedule.exercises.length) {
+      return;
+    }
+
+    setState(() {
+      final exercise = widget.schedule.exercises.removeAt(oldIndex);
+      final insertIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;
+      widget.schedule.exercises.insert(insertIndex, exercise);
+    });
+    widget.onUpdate();
+  }
+
   void _showExerciseDialog({int? indexToEdit, Exercise? exerciseToEdit}) {
     final bool isEditing = exerciseToEdit != null && indexToEdit != null;
     IntensityTechnique selectedTechnique = isEditing
@@ -177,10 +384,6 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
         isEditing && exerciseToEdit.muscleGroup != MuscleGroup.unassigned
         ? exerciseToEdit.muscleGroup
         : null;
-    String? selectedCatalogName = isEditing
-        ? catalogEntryByName(exerciseToEdit.name)?.name
-        : null;
-
     final nameController = TextEditingController(
       text: isEditing ? exerciseToEdit.name : '',
     );
@@ -220,9 +423,19 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
           ? (exerciseToEdit.restSeconds ?? widget.defaultRestSeconds).toString()
           : widget.defaultRestSeconds.toString(),
     );
+    final supersetController = TextEditingController(
+      text: isEditing ? (exerciseToEdit.supersetGroup?.toString() ?? '') : '',
+    );
+    final progressionKgController = TextEditingController(
+      text: isEditing ? exerciseToEdit.progressionKgStep.toString() : '2.5',
+    );
+    final progressionRepController = TextEditingController(
+      text: isEditing ? exerciseToEdit.progressionRepStep.toString() : '1',
+    );
     final notesController = TextEditingController(
       text: isEditing ? exerciseToEdit.notes : '',
     );
+    String? validationMessage;
 
     showDialog(
       context: context,
@@ -233,44 +446,8 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<String?>(
-                  initialValue: selectedCatalogName,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Catalogo'),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('Personalizzato'),
-                    ),
-                    ...exerciseCatalog.map(
-                      (entry) => DropdownMenuItem<String?>(
-                        value: entry.name,
-                        child: Text(entry.name),
-                      ),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    final entry = value == null
-                        ? null
-                        : catalogEntryByName(value);
-                    setDialogState(() {
-                      selectedCatalogName = value;
-                      if (entry != null) {
-                        nameController.text = entry.name;
-                        selectedMuscleGroup = entry.muscleGroup;
-                        equipmentController.text = entry.equipment;
-                        movementPatternController.text = entry.movementPattern;
-                      }
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Nome'),
-                ),
-                const SizedBox(height: 8),
                 DropdownButtonFormField<MuscleGroup>(
+                  key: ValueKey(selectedMuscleGroup),
                   initialValue: selectedMuscleGroup,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Gruppo'),
@@ -287,6 +464,11 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                       selectedMuscleGroup = value;
                     });
                   },
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Nome'),
                 ),
                 const SizedBox(height: 8),
                 TextField(
@@ -317,7 +499,34 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     }
 
                     setDialogState(() {
+                      final wasBackoff =
+                          selectedTechnique == IntensityTechnique.topsetBackoff;
+                      final willBeBackoff =
+                          value == IntensityTechnique.topsetBackoff;
+                      if (!wasBackoff && willBeBackoff) {
+                        final currentReps = repsController.text.trim();
+                        if (topSetRepsController.text.trim().isEmpty &&
+                            currentReps.isNotEmpty) {
+                          topSetRepsController.text = currentReps;
+                        }
+                        if (backoffRepsController.text.trim().isEmpty) {
+                          backoffRepsController.text = currentReps.isNotEmpty
+                              ? currentReps
+                              : topSetRepsController.text.trim();
+                        }
+                      } else if (wasBackoff && !willBeBackoff) {
+                        final currentTopSet = topSetRepsController.text.trim();
+                        if (repsController.text.trim().isEmpty &&
+                            currentTopSet.isNotEmpty) {
+                          repsController.text = currentTopSet;
+                        }
+                        if (setsController.text.trim().isEmpty) {
+                          setsController.text = '2';
+                        }
+                      }
+
                       selectedTechnique = value;
+                      validationMessage = null;
                     });
                   },
                 ),
@@ -395,9 +604,53 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                 ),
                 const SizedBox(height: 8),
                 TextField(
+                  controller: supersetController,
+                  decoration: const InputDecoration(
+                    labelText: 'Superset gruppo',
+                    hintText: 'Esempio: 1',
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: progressionKgController,
+                        decoration: const InputDecoration(
+                          labelText: 'Step kg auto',
+                        ),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: progressionRepController,
+                        decoration: const InputDecoration(
+                          labelText: 'Step reps auto',
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                TextField(
                   controller: notesController,
                   decoration: const InputDecoration(labelText: 'Note'),
                 ),
+                if (validationMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    validationMessage!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -414,25 +667,44 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     selectedMuscleGroup ?? MuscleGroup.unassigned;
                 final exerciseName = nameController.text.trim();
 
-                final int? parsedSets = isBackoff
+                int? parsedSets = isBackoff
                     ? 2
                     : parseIntInput(setsController.text);
-                final int? parsedReps = isBackoff
+                int? parsedReps = isBackoff
                     ? parseIntInput(topSetRepsController.text)
                     : parseIntInput(repsController.text);
-                final int? parsedBackoffReps = isBackoff
+                int? parsedBackoffReps = isBackoff
                     ? parseIntInput(backoffRepsController.text)
                     : null;
-                final int? parsedRestSeconds = parseIntInput(
+                int? parsedRestSeconds = parseIntInput(
                   restSecondsController.text,
                 );
-                final parsedWeight = parseDecimalInput(weightController.text);
+                double? parsedWeight = parseDecimalInput(weightController.text);
                 final parsedTargetMinReps = parseIntInput(
                   targetMinRepsController.text,
                 );
                 final parsedTargetMaxReps = parseIntInput(
                   targetMaxRepsController.text,
                 );
+                final parsedSupersetGroup = parseIntInput(
+                  supersetController.text,
+                );
+                final parsedProgressionKgStep =
+                    parseDecimalInput(progressionKgController.text) ?? 2.5;
+                final parsedProgressionRepStep =
+                    parseIntInput(progressionRepController.text) ?? 1;
+
+                if (isEditing) {
+                  parsedSets ??= isBackoff ? 2 : exerciseToEdit.set;
+                  parsedReps ??= exerciseToEdit.reps;
+                  parsedWeight ??= exerciseToEdit.weight;
+                  parsedRestSeconds ??=
+                      exerciseToEdit.restSeconds ?? widget.defaultRestSeconds;
+                  if (isBackoff) {
+                    parsedBackoffReps ??=
+                        exerciseToEdit.backoffReps ?? exerciseToEdit.reps;
+                  }
+                }
 
                 if (exerciseName.isEmpty ||
                     parsedSets == null ||
@@ -440,8 +712,17 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     parsedWeight == null ||
                     parsedRestSeconds == null ||
                     (isBackoff && parsedBackoffReps == null)) {
+                  setDialogState(() {
+                    validationMessage = isBackoff
+                        ? 'Completa nome, top set reps, back off reps, kg e recupero.'
+                        : 'Completa nome, serie, reps, kg e recupero.';
+                  });
                   return;
                 }
+
+                setDialogState(() {
+                  validationMessage = null;
+                });
 
                 if (isEditing) {
                   _editExercise(
@@ -459,6 +740,9 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     selectedTechnique,
                     parsedBackoffReps,
                     parsedRestSeconds,
+                    parsedSupersetGroup,
+                    parsedProgressionKgStep,
+                    parsedProgressionRepStep,
                   );
                 } else {
                   _addExercise(
@@ -475,6 +759,9 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     selectedTechnique,
                     parsedBackoffReps,
                     parsedRestSeconds,
+                    parsedSupersetGroup,
+                    parsedProgressionKgStep,
+                    parsedProgressionRepStep,
                   );
                 }
                 Navigator.pop(context);
@@ -489,12 +776,19 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.schedule.title),
         actions: [
+          IconButton(
+            tooltip: 'Programmazione',
+            icon: const Icon(Icons.calendar_month),
+            onPressed: _showScheduleProgramDialog,
+          ),
           TextButton(
             onPressed: () {
               if (widget.schedule.exercises.isEmpty) {
@@ -524,40 +818,142 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
         ],
       ),
       body: widget.schedule.exercises.isEmpty
-          ? const Center(child: Text('Vuota'))
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                      child: Icon(
+                        Icons.fitness_center,
+                        color: colorScheme.onPrimaryContainer,
+                        size: 36,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Scheda vuota',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Aggiungi esercizi dal catalogo o crea un esercizio personalizzato.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : ReorderableListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+              buildDefaultDragHandles: false,
+              onReorder: _reorderExercise,
               itemCount: widget.schedule.exercises.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final exercise = widget.schedule.exercises[index];
+                final accent = _accentForIndex(colorScheme, index);
+                var dragDelta = 0.0;
                 return Dismissible(
                   key: ValueKey(exercise.id),
                   direction: DismissDirection.endToStart,
                   onDismissed: (_) => _removeExercise(index),
-                  background: Container(
-                    color: colorScheme.error,
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 20),
-                    child: Icon(Icons.delete, color: colorScheme.onError),
+                  background: Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(26),
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 20),
+                          child: Icon(
+                            Icons.delete,
+                            color: colorScheme.onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                   child: Card(
-                    child: ListTile(
-                      title: Text(
-                        exercise.name,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                    margin: const EdgeInsets.only(bottom: 10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            accent.withValues(alpha: isDark ? 0.18 : 0.10),
+                            Colors.transparent,
+                          ],
+                        ),
                       ),
-                      subtitle: Text(
-                        '${exercise.technique == IntensityTechnique.topsetBackoff && exercise.backoffReps != null ? '2 set • ${exercise.reps}/${exercise.backoffReps} reps • ${exercise.weight} kg' : '${exercise.set} x ${exercise.reps} • ${exercise.weight} kg'}'
-                        '${exercise.muscleGroup == MuscleGroup.unassigned ? '' : '\n${exercise.muscleGroup.label}'}'
-                        '${exercise.equipment.trim().isNotEmpty ? ' • ${exercise.equipment}' : ''}'
-                        '\n${exercise.restSeconds ?? widget.defaultRestSeconds}s'
-                        '${exercise.technique == IntensityTechnique.none ? '' : ' • ${_techniqueLabel(exercise.technique)}'}'
-                        '${exercise.notes.trim().isNotEmpty ? '\nNote: ${exercise.notes}' : ''}',
-                      ),
-                      onTap: () => _showExerciseDialog(
-                        indexToEdit: index,
-                        exerciseToEdit: exercise,
+                      child: ListTile(
+                        leading: Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: accent.withValues(
+                              alpha: isDark ? 0.22 : 0.14,
+                            ),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Icon(Icons.fitness_center, color: accent),
+                        ),
+                        title: Text(
+                          exercise.name,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            '${exercise.technique == IntensityTechnique.topsetBackoff && exercise.backoffReps != null ? '2 set • ${exercise.reps}/${exercise.backoffReps} reps • ${exercise.weight} kg' : '${exercise.set} x ${exercise.reps} • ${exercise.weight} kg'}'
+                            '${exercise.muscleGroup == MuscleGroup.unassigned ? '' : '\n${exercise.muscleGroup.label}'}'
+                            '${exercise.equipment.trim().isNotEmpty ? ' • ${exercise.equipment}' : ''}'
+                            '\nRecupero ${exercise.restSeconds ?? widget.defaultRestSeconds}s'
+                            '${exercise.supersetGroup == null ? '' : ' • Superset ${exercise.supersetGroup}'}'
+                            ' • Auto +${exercise.progressionKgStep} kg/${exercise.progressionRepStep} rep'
+                            '${exercise.technique == IntensityTechnique.none ? '' : ' • ${_techniqueLabel(exercise.technique)}'}'
+                            '${exercise.notes.trim().isNotEmpty ? '\nNote: ${exercise.notes}' : ''}',
+                          ),
+                        ),
+                        onTap: () => _showExerciseDialog(
+                          indexToEdit: index,
+                          exerciseToEdit: exercise,
+                        ),
+                        trailing: GestureDetector(
+                          key: ValueKey('exercise-reorder-${exercise.id}'),
+                          behavior: HitTestBehavior.opaque,
+                          onVerticalDragUpdate: (details) {
+                            dragDelta += details.delta.dy;
+                          },
+                          onVerticalDragEnd: (_) {
+                            if (dragDelta > 40 &&
+                                index < widget.schedule.exercises.length - 1) {
+                              _reorderExercise(index, index + 2);
+                            } else if (dragDelta < -40 && index > 0) {
+                              _reorderExercise(index, index - 1);
+                            }
+                            dragDelta = 0;
+                          },
+                          child: const SizedBox.square(
+                            dimension: 48,
+                            child: Center(child: Icon(Icons.drag_handle)),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -565,7 +961,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
               },
             ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showExerciseDialog(),
+        onPressed: _openExercisePicker,
         child: const Icon(Icons.add),
       ),
     );

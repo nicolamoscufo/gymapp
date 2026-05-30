@@ -47,6 +47,7 @@ class ExerciseSet {
 
 class WorkoutExercise {
   final String id;
+  String? sourceExerciseId;
   String name;
   String notes;
   MuscleGroup muscleGroup;
@@ -56,12 +57,18 @@ class WorkoutExercise {
   int? targetMaxReps;
   IntensityTechnique technique;
   int? restSeconds;
+  int? activeRestSeconds;
+  DateTime? activeRestStartedAt;
+  int? supersetGroup;
+  double progressionKgStep;
+  int progressionRepStep;
   List<ExerciseSet> sets;
   List<double> previousWeights;
   List<int> previousReps;
 
   WorkoutExercise({
     String? id,
+    this.sourceExerciseId,
     required this.name,
     required this.notes,
     this.muscleGroup = MuscleGroup.unassigned,
@@ -71,6 +78,11 @@ class WorkoutExercise {
     this.targetMaxReps,
     required this.technique,
     this.restSeconds,
+    this.activeRestSeconds,
+    this.activeRestStartedAt,
+    this.supersetGroup,
+    this.progressionKgStep = 2.5,
+    this.progressionRepStep = 1,
     required this.sets,
     this.previousWeights = const [],
     this.previousReps = const [],
@@ -78,6 +90,7 @@ class WorkoutExercise {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'sourceExerciseId': sourceExerciseId,
     'name': name,
     'notes': notes,
     'muscleGroup': muscleGroup.name,
@@ -87,6 +100,11 @@ class WorkoutExercise {
     'targetMaxReps': targetMaxReps,
     'technique': technique.name,
     'restSeconds': restSeconds,
+    'activeRestSeconds': activeRestSeconds,
+    'activeRestStartedAt': activeRestStartedAt?.toIso8601String(),
+    'supersetGroup': supersetGroup,
+    'progressionKgStep': progressionKgStep,
+    'progressionRepStep': progressionRepStep,
     'sets': sets.map((e) => e.toJson()).toList(),
     'previousWeights': previousWeights,
     'previousReps': previousReps,
@@ -104,6 +122,7 @@ class WorkoutExercise {
 
     return WorkoutExercise(
       id: json['id'] as String?,
+      sourceExerciseId: json['sourceExerciseId'] as String?,
       name: json['name'] as String,
       notes: json['notes'] as String? ?? '',
       muscleGroup: muscleGroupFromJson(json['muscleGroup']),
@@ -113,6 +132,13 @@ class WorkoutExercise {
       targetMaxReps: json['targetMaxReps'] as int?,
       technique: parsedTechnique,
       restSeconds: json['restSeconds'] as int?,
+      activeRestSeconds: json['activeRestSeconds'] as int?,
+      activeRestStartedAt: json['activeRestStartedAt'] == null
+          ? null
+          : DateTime.tryParse(json['activeRestStartedAt'] as String),
+      supersetGroup: json['supersetGroup'] as int?,
+      progressionKgStep: (json['progressionKgStep'] as num?)?.toDouble() ?? 2.5,
+      progressionRepStep: json['progressionRepStep'] as int? ?? 1,
       sets: (json['sets'] as List)
           .map((e) => ExerciseSet.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -130,6 +156,7 @@ class WorkoutExercise {
 
 class WorkoutSession {
   final String id;
+  String? scheduleId;
   String scheduleTitle;
   DateTime startTime;
   DateTime endTime;
@@ -137,6 +164,7 @@ class WorkoutSession {
 
   WorkoutSession({
     String? id,
+    this.scheduleId,
     required this.scheduleTitle,
     required this.startTime,
     required this.endTime,
@@ -145,6 +173,7 @@ class WorkoutSession {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'scheduleId': scheduleId,
     'scheduleTitle': scheduleTitle,
     'startTime': startTime.toIso8601String(),
     'endTime': endTime.toIso8601String(),
@@ -153,6 +182,7 @@ class WorkoutSession {
 
   factory WorkoutSession.fromJson(Map<String, dynamic> json) => WorkoutSession(
     id: json['id'] as String?,
+    scheduleId: json['scheduleId'] as String?,
     scheduleTitle: json['scheduleTitle'] as String,
     startTime: DateTime.parse(json['startTime'] as String),
     endTime: DateTime.parse(json['endTime'] as String),

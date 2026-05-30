@@ -113,6 +113,394 @@ void main() {
     expect(storedExercises.single['muscleGroup'], 'unassigned');
   });
 
+  testWidgets('editing exercise keeps old numbers when fields are empty', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 3,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Panca'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Nome'),
+      'Panca inclinata',
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Kg'), '');
+    await tester.tap(find.text('Salva'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Modifica'), findsNothing);
+    expect(find.text('Panca inclinata'), findsOneWidget);
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedSchedules =
+        jsonDecode(prefs.getString('schedules')!) as List<dynamic>;
+    final storedExercises =
+        storedSchedules.single['exercises'] as List<dynamic>;
+    expect(storedExercises.single['name'], 'Panca inclinata');
+    expect(storedExercises.single['weight'], 80);
+  });
+
+  testWidgets('editing exercise can save after changing intensity technique', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 3,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Panca'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Nessuna tecnica'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Top Set / Back off').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Salva'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Modifica'), findsNothing);
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedSchedules =
+        jsonDecode(prefs.getString('schedules')!) as List<dynamic>;
+    final storedExercises =
+        storedSchedules.single['exercises'] as List<dynamic>;
+    expect(storedExercises.single['technique'], 'topsetBackoff');
+    expect(storedExercises.single['backoffReps'], 8);
+  });
+
+  testWidgets('schedule exercises can be reordered from detail', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 3,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+        Exercise(
+          id: 'exercise_2',
+          name: 'Squat',
+          reps: 5,
+          set: 4,
+          notes: '',
+          weight: 100,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+
+    await tester.drag(
+      find.byKey(const ValueKey('exercise-reorder-exercise_1')),
+      const Offset(0, 180),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getTopLeft(find.text('Squat')).dy,
+      lessThan(tester.getTopLeft(find.text('Panca')).dy),
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedSchedules =
+        jsonDecode(prefs.getString('schedules')!) as List<dynamic>;
+    final storedExercises =
+        storedSchedules.single['exercises'] as List<dynamic>;
+    expect(storedExercises.map((entry) => entry['id']), [
+      'exercise_2',
+      'exercise_1',
+    ]);
+  });
+
+  testWidgets('active workout does not show quick set buttons', (tester) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 3,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('-2.5kg'), findsNothing);
+    expect(find.text('+2.5kg'), findsNothing);
+    expect(find.text('-1 rep'), findsNothing);
+    expect(find.text('+1 rep'), findsNothing);
+  });
+
+  testWidgets('active workout rest timer is manual per exercise', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 1,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+          restSeconds: 90,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'sec'), '45');
+    await tester.tap(find.byIcon(Icons.check).last);
+    await tester.pump();
+
+    expect(find.textContaining('Rest '), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tester.pump();
+
+    expect(find.text('Rest 00:45'), findsOneWidget);
+  });
+
+  testWidgets('completed improved set shows trophy volume delta', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 1,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+    final previousSession = WorkoutSession(
+      id: 'session_1',
+      scheduleTitle: 'Push',
+      startTime: DateTime(2026, 5, 1, 10),
+      endTime: DateTime(2026, 5, 1, 11),
+      exercises: [
+        WorkoutExercise(
+          id: 'workout_exercise_1',
+          name: 'Panca',
+          notes: '',
+          technique: IntensityTechnique.none,
+          sets: [
+            ExerciseSet(id: 'set_1', weight: 70, reps: 8, isCompleted: true),
+          ],
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': jsonEncode([previousSession.toJson()]),
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField).at(1), '80');
+    await tester.tap(find.byIcon(Icons.check).last);
+    await tester.pump();
+
+    expect(find.byIcon(Icons.emoji_events), findsWidgets);
+    expect(find.text('Volume +80 kg'), findsOneWidget);
+  });
+
+  testWidgets('history shows exercise progress summaries', (tester) async {
+    final oldSession = WorkoutSession(
+      id: 'session_1',
+      scheduleTitle: 'Push',
+      startTime: DateTime(2026, 5, 1, 10),
+      endTime: DateTime(2026, 5, 1, 11),
+      exercises: [
+        WorkoutExercise(
+          id: 'workout_exercise_1',
+          name: 'Panca',
+          notes: '',
+          technique: IntensityTechnique.none,
+          sets: [
+            ExerciseSet(id: 'set_1', weight: 70, reps: 8, isCompleted: true),
+          ],
+        ),
+      ],
+    );
+    final newSession = WorkoutSession(
+      id: 'session_2',
+      scheduleTitle: 'Push',
+      startTime: DateTime(2026, 5, 8, 10),
+      endTime: DateTime(2026, 5, 8, 11),
+      exercises: [
+        WorkoutExercise(
+          id: 'workout_exercise_2',
+          name: 'Panca',
+          notes: '',
+          technique: IntensityTechnique.none,
+          sets: [
+            ExerciseSet(id: 'set_2', weight: 80, reps: 8, isCompleted: true),
+          ],
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': '[]',
+      'history': jsonEncode([oldSession.toJson(), newSession.toJson()]),
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cronologia'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Progressi esercizi'), findsOneWidget);
+    expect(find.text('1 miglioramenti recenti'), findsOneWidget);
+
+    await tester.tap(find.text('Push').first);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Top set:'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.edit).first);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byIcon(Icons.emoji_events),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Annulla'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Progressi esercizi'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Panca'), findsWidgets);
+    expect(find.textContaining('+80 kg'), findsOneWidget);
+  });
+
   testWidgets('history deletion can be undone', (tester) async {
     final session = WorkoutSession(
       id: 'session_1',

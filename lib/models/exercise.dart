@@ -6,12 +6,18 @@ enum MuscleGroup {
   back,
   quadriceps,
   hamstrings,
+  glutes,
+  calves,
   legs,
   biceps,
   triceps,
   arms,
+  forearms,
   shoulders,
+  traps,
   abs,
+  cardio,
+  neck,
 }
 
 const selectableMuscleGroups = [
@@ -19,12 +25,18 @@ const selectableMuscleGroups = [
   MuscleGroup.back,
   MuscleGroup.quadriceps,
   MuscleGroup.hamstrings,
+  MuscleGroup.glutes,
+  MuscleGroup.calves,
   MuscleGroup.legs,
   MuscleGroup.biceps,
   MuscleGroup.triceps,
   MuscleGroup.arms,
+  MuscleGroup.forearms,
   MuscleGroup.shoulders,
+  MuscleGroup.traps,
   MuscleGroup.abs,
+  MuscleGroup.cardio,
+  MuscleGroup.neck,
 ];
 
 extension MuscleGroupLabel on MuscleGroup {
@@ -35,12 +47,18 @@ extension MuscleGroupLabel on MuscleGroup {
       MuscleGroup.back => 'Dorso',
       MuscleGroup.quadriceps => 'Quadricipiti',
       MuscleGroup.hamstrings => 'Bicipiti femorali',
+      MuscleGroup.glutes => 'Glutei',
+      MuscleGroup.calves => 'Polpacci',
       MuscleGroup.legs => 'Gambe (Quadricipiti + bicipiti femorali)',
       MuscleGroup.biceps => 'Bicipiti',
       MuscleGroup.triceps => 'Tricipiti',
       MuscleGroup.arms => 'Braccia (Bicipiti + Tricipiti)',
+      MuscleGroup.forearms => 'Avambracci',
       MuscleGroup.shoulders => 'Spalle',
+      MuscleGroup.traps => 'Trapezi',
       MuscleGroup.abs => 'Addome',
+      MuscleGroup.cardio => 'Cardio',
+      MuscleGroup.neck => 'Collo',
     };
   }
 }
@@ -88,6 +106,9 @@ class Exercise {
   IntensityTechnique technique; // Aggiornato per usare l'enum
   int? backoffReps;
   int? restSeconds;
+  int? supersetGroup;
+  double progressionKgStep;
+  int progressionRepStep;
 
   Exercise({
     String? id,
@@ -104,6 +125,9 @@ class Exercise {
     required this.technique,
     this.backoffReps,
     this.restSeconds,
+    this.supersetGroup,
+    this.progressionKgStep = 2.5,
+    this.progressionRepStep = 1,
   }) : id = id ?? newModelId('exercise');
 
   String get targetRepsLabel {
@@ -131,6 +155,9 @@ class Exercise {
     'technique': technique.name, // Salviamo l'enum come Stringa (es: "dropSet")
     'backoffReps': backoffReps,
     'restSeconds': restSeconds,
+    'supersetGroup': supersetGroup,
+    'progressionKgStep': progressionKgStep,
+    'progressionRepStep': progressionRepStep,
   };
 
   factory Exercise.fromJson(Map<String, dynamic> json) {
@@ -162,6 +189,9 @@ class Exercise {
       technique: parsedTechnique, // Ripristiniamo l'enum
       backoffReps: json['backoffReps'] as int?,
       restSeconds: json['restSeconds'] as int?,
+      supersetGroup: json['supersetGroup'] as int?,
+      progressionKgStep: (json['progressionKgStep'] as num?)?.toDouble() ?? 2.5,
+      progressionRepStep: json['progressionRepStep'] as int? ?? 1,
     );
   }
 }

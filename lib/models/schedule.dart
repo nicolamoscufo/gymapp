@@ -11,6 +11,7 @@ class Schedule {
   int mesocycleWeeks;
   int deloadEveryWeeks;
   String goal;
+  List<int> trainingWeekdays;
 
   Schedule({
     String? id,
@@ -22,7 +23,9 @@ class Schedule {
     this.mesocycleWeeks = 8,
     this.deloadEveryWeeks = 4,
     this.goal = '',
-  }) : id = id ?? newModelId('schedule');
+    List<int>? trainingWeekdays,
+  }) : trainingWeekdays = trainingWeekdays ?? [],
+       id = id ?? newModelId('schedule');
 
   int currentWeek({DateTime? now}) {
     final elapsedDays = _startOfWeek(
@@ -41,6 +44,10 @@ class Schedule {
     return currentWeek(now: now) % deloadEveryWeeks == 0;
   }
 
+  bool isPlannedOn(DateTime date) {
+    return trainingWeekdays.contains(date.weekday);
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'title': title,
@@ -51,6 +58,7 @@ class Schedule {
     'mesocycleWeeks': mesocycleWeeks,
     'deloadEveryWeeks': deloadEveryWeeks,
     'goal': goal,
+    'trainingWeekdays': trainingWeekdays,
   };
 
   factory Schedule.fromJson(Map<String, dynamic> json) => Schedule(
@@ -67,6 +75,11 @@ class Schedule {
     mesocycleWeeks: json['mesocycleWeeks'] as int? ?? 8,
     deloadEveryWeeks: json['deloadEveryWeeks'] as int? ?? 4,
     goal: json['goal'] as String? ?? '',
+    trainingWeekdays: (json['trainingWeekdays'] as List? ?? const [])
+        .whereType<num>()
+        .map((day) => day.toInt())
+        .where((day) => day >= 1 && day <= 7)
+        .toList(),
   );
 }
 
