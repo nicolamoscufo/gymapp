@@ -55,6 +55,8 @@ class ExerciseDetailScreen extends StatelessWidget {
                   formatValue: _formatKg,
                 ),
                 const SizedBox(height: 14),
+                _CombinedExerciseTrendChart(entries: entries),
+                const SizedBox(height: 14),
                 _MetricLineChart(
                   title: 'Reps migliori',
                   entries: entries,
@@ -130,18 +132,26 @@ class ExerciseDetailScreen extends StatelessWidget {
         var bestLoad = 0.0;
         var e1rm = 0.0;
         var bestReps = 0;
+        var totalReps = 0;
         var bestSetVolume = 0.0;
         var completedSets = 0;
+        var rpeTotal = 0.0;
+        var rpeCount = 0;
         for (final set in exercise.sets) {
           if (!set.isCompleted || set.isWarmup) {
             continue;
           }
           completedSets++;
           volume += set.weight * set.reps;
+          totalReps += set.reps;
           bestLoad = math.max(bestLoad, set.weight);
           bestReps = math.max(bestReps, set.reps);
           bestSetVolume = math.max(bestSetVolume, set.weight * set.reps);
           e1rm = math.max(e1rm, set.weight * (1 + set.reps / 30));
+          if (set.rpe != null) {
+            rpeTotal += set.rpe!;
+            rpeCount++;
+          }
         }
         if (completedSets == 0) {
           continue;
@@ -154,6 +164,8 @@ class ExerciseDetailScreen extends StatelessWidget {
             bestLoad: bestLoad,
             e1rm: e1rm,
             bestReps: bestReps,
+            averageReps: completedSets == 0 ? 0 : totalReps / completedSets,
+            averageRpe: rpeCount == 0 ? null : rpeTotal / rpeCount,
             bestSetVolume: bestSetVolume,
             completedSets: completedSets,
           ),
@@ -205,11 +217,161 @@ class _SummaryCard extends StatelessWidget {
             _MetricChip(label: 'Record volume', value: _formatKg(bestVolume)),
             _MetricChip(label: 'Record kg', value: _formatKg(bestLoad)),
             _MetricChip(label: 'Record reps', value: '$bestReps'),
+            _MetricChip(
+              label: 'RPE ultimo',
+              value: latest.averageRpe?.toStringAsFixed(1) ?? '-',
+              color: colorScheme.tertiary,
+            ),
             _MetricChip(label: 'Record e1RM', value: _formatKg(bestE1rm)),
             _MetricChip(
               label: 'Sessioni',
               value: '${entries.length}',
               color: colorScheme.secondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CombinedExerciseTrendChart extends StatelessWidget {
+  final List<_ExerciseHistoryEntry> entries;
+
+  const _CombinedExerciseTrendChart({required this.entries});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final maxLoad = entries.fold<double>(
+      0,
+      (max, entry) => math.max(max, entry.bestLoad),
+    );
+    final maxReps = entries.fold<double>(
+      0,
+      (max, entry) => math.max(max, entry.averageReps),
+    );
+    final hasRpe = entries.any((entry) => entry.averageRpe != null);
+
+    double normalized(double value, double maxValue) {
+      if (maxValue <= 0) return 0;
+      return value / maxValue * 100;
+    }
+
+    LineChartBarData line({
+      required Color color,
+      required double Function(_ExerciseHistoryEntry entry) valueFor,
+    }) {
+      return LineChartBarData(
+        spots: List.generate(
+          entries.length,
+          (index) => FlSpot(index.toDouble(), valueFor(entries[index])),
+        ),
+        isCurved: true,
+        color: color,
+        barWidth: 3,
+        dotData: const FlDotData(show: true),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Kg / Reps / RPE nel tempo',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Linee normalizzate per confrontare trend diversi.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 210,
+              child: LineChart(
+                LineChartData(
+                  minY: 0,
+                  maxY: 110,
+                  gridData: FlGridData(
+                    drawVerticalLine: false,
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: colorScheme.outlineVariant,
+                      strokeWidth: 1,
+                    ),
+                  ),
+                  titlesData: const FlTitlesData(
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  lineBarsData: [
+                    line(
+                      color: colorScheme.primary,
+                      valueFor: (entry) => normalized(entry.bestLoad, maxLoad),
+                    ),
+                    line(
+                      color: colorScheme.secondary,
+                      valueFor: (entry) =>
+                          normalized(entry.averageReps, maxReps),
+                    ),
+                    if (hasRpe)
+                      line(
+                        color: colorScheme.tertiary,
+                        valueFor: (entry) =>
+                            normalized(entry.averageRpe ?? 0, 10),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                Chip(
+                  label: Text('Kg top'),
+                  avatar: Icon(
+                    Icons.circle,
+                    color: colorScheme.primary,
+                    size: 14,
+                  ),
+                ),
+                Chip(
+                  label: Text('Reps medie'),
+                  avatar: Icon(
+                    Icons.circle,
+                    color: colorScheme.secondary,
+                    size: 14,
+                  ),
+                ),
+                if (hasRpe)
+                  Chip(
+                    label: Text('RPE medio'),
+                    avatar: Icon(
+                      Icons.circle,
+                      color: colorScheme.tertiary,
+                      size: 14,
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
@@ -365,6 +527,8 @@ class _ExerciseHistoryEntry {
   final double bestLoad;
   final double e1rm;
   final int bestReps;
+  final double averageReps;
+  final double? averageRpe;
   final double bestSetVolume;
   final int completedSets;
 
@@ -374,6 +538,8 @@ class _ExerciseHistoryEntry {
     required this.bestLoad,
     required this.e1rm,
     required this.bestReps,
+    required this.averageReps,
+    required this.averageRpe,
     required this.bestSetVolume,
     required this.completedSets,
   });

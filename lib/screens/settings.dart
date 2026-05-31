@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../app_data_store.dart';
+import '../app_preferences.dart';
+import '../local_notifications.dart';
+import '../models/schedule.dart';
 
 class SettingsScreen extends StatefulWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode>? onThemeModeChanged;
   final Future<void> Function() onExportBackup;
   final Future<void> Function() onRestoreBackup;
+  final Future<void> Function() onRestoreAutoBackup;
+  final List<Schedule> schedules;
 
   const SettingsScreen({
     super.key,
@@ -14,6 +19,8 @@ class SettingsScreen extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.onExportBackup,
     required this.onRestoreBackup,
+    required this.onRestoreAutoBackup,
+    required this.schedules,
   });
 
   @override
@@ -24,6 +31,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late ThemeMode _themeMode;
   bool _isExportingBackup = false;
   bool _isRestoringBackup = false;
+  bool _isRestoringAutoBackup = false;
+  bool _isSchedulingReminders = false;
+  bool _remindersEnabled = false;
+  int _reminderHour = AppPreferences.defaultWorkoutReminderHour;
+  int _reminderMinute = AppPreferences.defaultWorkoutReminderMinute;
   DateTime? _lastAutoBackupAt;
 
   @override
@@ -31,6 +43,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _themeMode = widget.themeMode;
     _loadAutoBackupInfo();
+    _loadReminderSettings();
   }
 
   Future<void> _loadAutoBackupInfo() async {
@@ -39,6 +52,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _lastAutoBackupAt = lastBackupAt;
     });
+  }
+
+  Future<void> _loadReminderSettings() async {
+    final settings = await AppPreferences.loadWorkoutReminderSettings();
+    if (!mounted) return;
+    setState(() {
+      _remindersEnabled = settings.enabled;
+      _reminderHour = settings.hour;
+      _reminderMinute = settings.minute;
+    });
+  }
+
+  Future<void> _saveReminderSettings({
+    bool? enabled,
+    int? hour,
+    int? minute,
+  }) async {
+    final nextSettings = WorkoutReminderSettings(
+      enabled: enabled ?? _remindersEnabled,
+      hour: hour ?? _reminderHour,
+      minute: minute ?? _reminderMinute,
+    );
+    setState(() {
+      _isSchedulingReminders = true;
+      _remindersEnabled = nextSettings.enabled;
+      _reminderHour = nextSettings.hour;
+      _reminderMinute = nextSettings.minute;
+    });
+    await AppPreferences.saveWorkoutReminderSettings(nextSettings);
+    await LocalNotificationService.scheduleWorkoutReminders(
+      schedules: widget.schedules,
+      enabled: nextSettings.enabled,
+      hour: nextSettings.hour,
+      minute: nextSettings.minute,
+    );
+    if (mounted) {
+      setState(() => _isSchedulingReminders = false);
+    }
   }
 
   String _formatDateTime(DateTime? dateTime) {
@@ -58,8 +109,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) {
         setRunning(false);
+        await _loadAutoBackupInfo();
       }
     }
+  }
+
+  Future<void> _showPrivacyDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Privacy e store'),
+        content: const Text(
+          'Gym App salva schede, storico, misure corpo e backup solo sul dispositivo. Non usa backend, account o chiamate di rete. Per spostare i dati usa export/import backup JSON.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Chiudi'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -165,6 +235,87 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: Icon(
+                      Icons.notifications_active,
+                      color: colorScheme.primary,
+                    ),
+                    title: const Text('Promemoria allenamento'),
+                    subtitle: Text(
+                      'Notifica nei giorni programmati alle ${_reminderHour.toString().padLeft(2, '0')}:${_reminderMinute.toString().padLeft(2, '0')}',
+                    ),
+                    value: _remindersEnabled,
+                    onChanged: _isSchedulingReminders
+                        ? null
+                        : (value) => _saveReminderSettings(enabled: value),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          initialValue: _reminderHour,
+                          decoration: const InputDecoration(labelText: 'Ora'),
+                          items: List.generate(
+                            24,
+                            (hour) => DropdownMenuItem<int>(
+                              value: hour,
+                              child: Text(hour.toString().padLeft(2, '0')),
+                            ),
+                          ),
+                          onChanged: _isSchedulingReminders
+                              ? null
+                              : (value) {
+                                  if (value != null) {
+                                    _saveReminderSettings(hour: value);
+                                  }
+                                },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          initialValue: _reminderMinute,
+                          decoration: const InputDecoration(
+                            labelText: 'Minuti',
+                          ),
+                          items: const [0, 15, 30, 45]
+                              .map(
+                                (minute) => DropdownMenuItem<int>(
+                                  value: minute,
+                                  child: Text(
+                                    minute.toString().padLeft(2, '0'),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: _isSchedulingReminders
+                              ? null
+                              : (value) {
+                                  if (value != null) {
+                                    _saveReminderSettings(minute: value);
+                                  }
+                                },
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_isSchedulingReminders) ...[
+                    const SizedBox(height: 8),
+                    const LinearProgressIndicator(),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Row(
                     children: [
                       Container(
@@ -216,7 +367,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
-                    onPressed: _isExportingBackup || _isRestoringBackup
+                    onPressed:
+                        _isExportingBackup ||
+                            _isRestoringBackup ||
+                            _isRestoringAutoBackup
                         ? null
                         : () =>
                               _runBackupAction(widget.onExportBackup, (value) {
@@ -229,7 +383,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
-                    onPressed: _isExportingBackup || _isRestoringBackup
+                    onPressed:
+                        _isExportingBackup ||
+                            _isRestoringBackup ||
+                            _isRestoringAutoBackup
                         ? null
                         : () =>
                               _runBackupAction(widget.onRestoreBackup, (value) {
@@ -240,7 +397,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: const Icon(Icons.restore),
                     label: const Text('Ripristina'),
                   ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed:
+                        _lastAutoBackupAt == null ||
+                            _isExportingBackup ||
+                            _isRestoringBackup ||
+                            _isRestoringAutoBackup
+                        ? null
+                        : () => _runBackupAction(widget.onRestoreAutoBackup, (
+                            value,
+                          ) {
+                            setState(() {
+                              _isRestoringAutoBackup = value;
+                            });
+                          }),
+                    icon: const Icon(Icons.history_toggle_off),
+                    label: const Text('Ripristina ultimo auto-backup'),
+                  ),
                 ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Card(
+            child: ListTile(
+              leading: Icon(Icons.privacy_tip, color: colorScheme.primary),
+              title: const Text('Privacy locale'),
+              subtitle: const Text(
+                'Dati offline: niente account, server o tracking.',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _showPrivacyDialog,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Card(
+            child: ListTile(
+              leading: Icon(Icons.storefront, color: colorScheme.tertiary),
+              title: const Text('Checklist pubblicazione'),
+              subtitle: const Text(
+                'Icona, privacy, backup, responsive e test UI pronti per store.',
               ),
             ),
           ),

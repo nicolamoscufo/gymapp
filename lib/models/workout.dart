@@ -62,6 +62,7 @@ class WorkoutExercise {
   int? supersetGroup;
   double progressionKgStep;
   int progressionRepStep;
+  ProgressionScheme progressionScheme;
   List<ExerciseSet> sets;
   List<double> previousWeights;
   List<int> previousReps;
@@ -83,6 +84,7 @@ class WorkoutExercise {
     this.supersetGroup,
     this.progressionKgStep = 2.5,
     this.progressionRepStep = 1,
+    this.progressionScheme = ProgressionScheme.doubleProgression,
     required this.sets,
     this.previousWeights = const [],
     this.previousReps = const [],
@@ -105,6 +107,7 @@ class WorkoutExercise {
     'supersetGroup': supersetGroup,
     'progressionKgStep': progressionKgStep,
     'progressionRepStep': progressionRepStep,
+    'progressionScheme': progressionScheme.name,
     'sets': sets.map((e) => e.toJson()).toList(),
     'previousWeights': previousWeights,
     'previousReps': previousReps,
@@ -139,6 +142,7 @@ class WorkoutExercise {
       supersetGroup: json['supersetGroup'] as int?,
       progressionKgStep: (json['progressionKgStep'] as num?)?.toDouble() ?? 2.5,
       progressionRepStep: json['progressionRepStep'] as int? ?? 1,
+      progressionScheme: progressionSchemeFromJson(json['progressionScheme']),
       sets: (json['sets'] as List)
           .map((e) => ExerciseSet.fromJson(e as Map<String, dynamic>))
           .toList(),

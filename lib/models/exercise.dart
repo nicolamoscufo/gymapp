@@ -91,6 +91,32 @@ enum IntensityTechnique {
   topsetBackoff, // Top Set + Back off
 }
 
+enum ProgressionScheme { doubleProgression, loadOnly, repsOnly, linear, manual }
+
+extension ProgressionSchemeLabel on ProgressionScheme {
+  String get label {
+    return switch (this) {
+      ProgressionScheme.doubleProgression => 'Doppia progressione',
+      ProgressionScheme.loadOnly => 'Solo carico',
+      ProgressionScheme.repsOnly => 'Solo reps',
+      ProgressionScheme.linear => 'Lineare',
+      ProgressionScheme.manual => 'Manuale',
+    };
+  }
+}
+
+ProgressionScheme progressionSchemeFromJson(Object? value) {
+  if (value == null) {
+    return ProgressionScheme.doubleProgression;
+  }
+
+  try {
+    return ProgressionScheme.values.byName(value.toString());
+  } catch (_) {
+    return ProgressionScheme.doubleProgression;
+  }
+}
+
 class Exercise {
   final String id;
   String name;
@@ -109,6 +135,7 @@ class Exercise {
   int? supersetGroup;
   double progressionKgStep;
   int progressionRepStep;
+  ProgressionScheme progressionScheme;
 
   Exercise({
     String? id,
@@ -128,6 +155,7 @@ class Exercise {
     this.supersetGroup,
     this.progressionKgStep = 2.5,
     this.progressionRepStep = 1,
+    this.progressionScheme = ProgressionScheme.doubleProgression,
   }) : id = id ?? newModelId('exercise');
 
   String get targetRepsLabel {
@@ -158,6 +186,7 @@ class Exercise {
     'supersetGroup': supersetGroup,
     'progressionKgStep': progressionKgStep,
     'progressionRepStep': progressionRepStep,
+    'progressionScheme': progressionScheme.name,
   };
 
   factory Exercise.fromJson(Map<String, dynamic> json) {
@@ -192,6 +221,7 @@ class Exercise {
       supersetGroup: json['supersetGroup'] as int?,
       progressionKgStep: (json['progressionKgStep'] as num?)?.toDouble() ?? 2.5,
       progressionRepStep: json['progressionRepStep'] as int? ?? 1,
+      progressionScheme: progressionSchemeFromJson(json['progressionScheme']),
     );
   }
 }

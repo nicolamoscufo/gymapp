@@ -12,6 +12,9 @@ class Schedule {
   int deloadEveryWeeks;
   String goal;
   List<int> trainingWeekdays;
+  String programBlock;
+  int cycleNumber;
+  String cycleNotes;
 
   Schedule({
     String? id,
@@ -24,6 +27,9 @@ class Schedule {
     this.deloadEveryWeeks = 4,
     this.goal = '',
     List<int>? trainingWeekdays,
+    this.programBlock = '',
+    this.cycleNumber = 1,
+    this.cycleNotes = '',
   }) : trainingWeekdays = trainingWeekdays ?? [],
        id = id ?? newModelId('schedule');
 
@@ -48,6 +54,16 @@ class Schedule {
     return trainingWeekdays.contains(date.weekday);
   }
 
+  void resetCycle({DateTime? now}) {
+    week = 1;
+    createdAt = now ?? DateTime.now();
+  }
+
+  void completeMesocycle({DateTime? now}) {
+    cycleNumber = cycleNumber < 1 ? 1 : cycleNumber + 1;
+    resetCycle(now: now);
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'title': title,
@@ -59,6 +75,9 @@ class Schedule {
     'deloadEveryWeeks': deloadEveryWeeks,
     'goal': goal,
     'trainingWeekdays': trainingWeekdays,
+    'programBlock': programBlock,
+    'cycleNumber': cycleNumber,
+    'cycleNotes': cycleNotes,
   };
 
   factory Schedule.fromJson(Map<String, dynamic> json) => Schedule(
@@ -80,6 +99,9 @@ class Schedule {
         .map((day) => day.toInt())
         .where((day) => day >= 1 && day <= 7)
         .toList(),
+    programBlock: json['programBlock'] as String? ?? '',
+    cycleNumber: json['cycleNumber'] as int? ?? 1,
+    cycleNotes: json['cycleNotes'] as String? ?? '',
   );
 }
 

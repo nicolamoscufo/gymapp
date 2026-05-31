@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gymapp/app_data_store.dart';
 import 'package:gymapp/models/exercise.dart';
 import 'package:gymapp/models/schedule.dart';
 import 'package:gymapp/models/workout.dart';
@@ -219,6 +220,229 @@ void main() {
     expect(storedExercises.single['backoffReps'], 8);
   });
 
+  testWidgets('form dialogs keep text fields readable on narrow screens', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true,
+          dialogTheme: const DialogThemeData(
+            insetPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          ),
+        ),
+        home: const HomePage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(find.widgetWithText(TextField, 'Deload ogni')).width,
+      greaterThan(220),
+    );
+  });
+
+  testWidgets('exercise dialog keeps long field labels readable', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 3,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true,
+          dialogTheme: const DialogThemeData(
+            insetPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          ),
+        ),
+        home: const HomePage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Panca'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getSize(find.widgetWithText(TextField, 'Step reps auto')).width,
+      greaterThan(220),
+    );
+  });
+
+  testWidgets('first launch shows onboarding setup', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Setup iniziale'), findsOneWidget);
+    expect(find.text('Crea scheda'), findsOneWidget);
+    expect(find.text('Scegli template'), findsNothing);
+  });
+
+  testWidgets('agenda shows planned workout and starts it', (tester) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      trainingWeekdays: [DateTime.now().weekday],
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 1,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Agenda prossimi 7 giorni'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Start').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Panca'), findsOneWidget);
+    expect(find.text('Fine'), findsOneWidget);
+  });
+
+  testWidgets('guided progression prefills next workout targets', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 1,
+          notes: '',
+          weight: 80,
+          targetMinReps: 8,
+          targetMaxReps: 10,
+          technique: IntensityTechnique.none,
+          progressionKgStep: 2.5,
+        ),
+      ],
+    );
+    final previousSession = WorkoutSession(
+      id: 'session_1',
+      scheduleTitle: 'Push',
+      startTime: DateTime(2026, 5, 1, 10),
+      endTime: DateTime(2026, 5, 1, 11),
+      exercises: [
+        WorkoutExercise(
+          id: 'workout_exercise_1',
+          name: 'Panca',
+          notes: '',
+          technique: IntensityTechnique.none,
+          sets: [
+            ExerciseSet(id: 'set_1', weight: 80, reps: 10, isCompleted: true),
+          ],
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': jsonEncode([previousSession.toJson()]),
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<EditableText>(find.byType(EditableText).at(1))
+          .controller
+          .text,
+      '82.5',
+    );
+    expect(
+      tester
+          .widget<EditableText>(find.byType(EditableText).at(2))
+          .controller
+          .text,
+      '8',
+    );
+  });
+
+  test('auto backup bundle can be loaded for restore', () async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: const [],
+    );
+    SharedPreferences.setMockInitialValues({
+      AppDataKeys.autoBackupJson: jsonEncode({
+        'version': 3,
+        'schedules': [schedule.toJson()],
+        'history': [],
+        'bodyLogs': [],
+      }),
+    });
+
+    final bundle = await AppDataStore.loadAutoBackupBundle();
+
+    expect(bundle?.schedules.single.title, 'Push');
+    expect(bundle?.recoveredFromCorruption, isTrue);
+  });
+
   testWidgets('schedule exercises can be reordered from detail', (
     tester,
   ) async {
@@ -262,7 +486,7 @@ void main() {
 
     await tester.drag(
       find.byKey(const ValueKey('exercise-reorder-exercise_1')),
-      const Offset(0, 180),
+      const Offset(0, 300),
     );
     await tester.pumpAndSettle();
 
@@ -278,6 +502,84 @@ void main() {
         storedSchedules.single['exercises'] as List<dynamic>;
     expect(storedExercises.map((entry) => entry['id']), [
       'exercise_2',
+      'exercise_1',
+    ]);
+  });
+
+  testWidgets('exercise reorder can move across multiple cards', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 3,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+        Exercise(
+          id: 'exercise_2',
+          name: 'Squat',
+          reps: 5,
+          set: 4,
+          notes: '',
+          weight: 100,
+          technique: IntensityTechnique.none,
+        ),
+        Exercise(
+          id: 'exercise_3',
+          name: 'Stacco',
+          reps: 5,
+          set: 3,
+          notes: '',
+          weight: 120,
+          technique: IntensityTechnique.none,
+        ),
+        Exercise(
+          id: 'exercise_4',
+          name: 'Military press',
+          reps: 6,
+          set: 3,
+          notes: '',
+          weight: 50,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+
+    await tester.drag(
+      find.byKey(const ValueKey('exercise-reorder-exercise_1')),
+      const Offset(0, 420),
+    );
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedSchedules =
+        jsonDecode(prefs.getString('schedules')!) as List<dynamic>;
+    final storedExercises =
+        storedSchedules.single['exercises'] as List<dynamic>;
+    expect(storedExercises.map((entry) => entry['id']), [
+      'exercise_2',
+      'exercise_3',
+      'exercise_4',
       'exercise_1',
     ]);
   });
@@ -365,6 +667,94 @@ void main() {
     await tester.pump();
 
     expect(find.text('Rest 00:45'), findsOneWidget);
+  });
+
+  testWidgets('active workout set inputs keep focus while autosaving', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 1,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+
+    final weightField = find.byType(TextFormField).at(1);
+    await tester.tap(weightField);
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<EditableText>(find.byType(EditableText).at(1))
+          .focusNode
+          .hasFocus,
+      isTrue,
+    );
+
+    tester.testTextInput.enterText('85');
+    await tester.pump(const Duration(milliseconds: 1200));
+
+    expect(
+      tester
+          .widget<EditableText>(find.byType(EditableText).at(1))
+          .focusNode
+          .hasFocus,
+      isTrue,
+    );
+
+    tester.testTextInput.enterText('87.5');
+    await tester.pump();
+
+    final repsField = find.byType(TextFormField).at(2);
+    await tester.tap(repsField);
+    await tester.pump();
+    tester.testTextInput.enterText('12');
+    await tester.pump(const Duration(milliseconds: 1200));
+
+    expect(
+      tester
+          .widget<EditableText>(find.byType(EditableText).at(2))
+          .focusNode
+          .hasFocus,
+      isTrue,
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedSession =
+        jsonDecode(prefs.getString(AppDataKeys.currentSession)!)
+            as Map<String, dynamic>;
+    final storedSet =
+        (((storedSession['exercises'] as List<dynamic>).single
+                        as Map<String, dynamic>)['sets']
+                    as List<dynamic>)
+                .single
+            as Map<String, dynamic>;
+    expect(storedSet['weight'], 87.5);
+    expect(storedSet['reps'], 12);
   });
 
   testWidgets('completed improved set shows trophy volume delta', (
@@ -645,5 +1035,56 @@ void main() {
     expect(parseDecimalInput('72,5'), 72.5);
     expect(parseDecimalInput('72.5'), 72.5);
     expect(parseDecimalInput(''), isNull);
+  });
+
+  testWidgets('home handles large text in landscape', (tester) async {
+    tester.view.physicalSize = const Size(900, 390);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push accessibile',
+      week: 1,
+      createdAt: DateTime(2026),
+      trainingWeekdays: [DateTime.now().weekday],
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 3,
+          notes: '',
+          weight: 80,
+          technique: IntensityTechnique.none,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(
+          size: Size(900, 390),
+          textScaler: TextScaler.linear(1.7),
+          highContrast: true,
+        ),
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
+          home: const HomePage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Push accessibile'), findsWidgets);
+    expect(find.textContaining('Agenda'), findsWidgets);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/body_log.dart';
+import 'models/exercise.dart';
 import 'models/schedule.dart';
 import 'models/workout.dart';
 
@@ -12,6 +13,9 @@ class AppDataKeys {
   static const currentSession = 'current_session';
   static const bodyLogs = 'body_logs';
   static const favoriteExerciseIds = 'favorite_exercise_ids';
+  static const customExercises = 'custom_exercises';
+  static const scheduledReminderNotificationIds =
+      'scheduled_reminder_notification_ids';
   static const autoBackupJson = 'auto_backup_json';
   static const lastAutoBackupAt = 'last_auto_backup_at';
 }
@@ -71,7 +75,7 @@ class AppDataStore {
 
   static Future<void> _writeAutoBackupSnapshot(SharedPreferences prefs) async {
     final payload = {
-      'version': 3,
+      'version': 4,
       'auto': true,
       'exportedAt': DateTime.now().toIso8601String(),
       'schedules': jsonDecode(prefs.getString(AppDataKeys.schedules) ?? '[]'),
@@ -212,10 +216,83 @@ class AppDataStore {
     );
   }
 
+  static Future<List<Exercise>> loadCustomExercises() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(AppDataKeys.customExercises);
+    if (raw == null || raw.trim().isEmpty) {
+      return [];
+    }
+
+    try {
+      return (jsonDecode(raw) as List<dynamic>)
+          .whereType<Map>()
+          .map((entry) => Exercise.fromJson(Map<String, dynamic>.from(entry)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> saveCustomExercises(List<Exercise> exercises) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      AppDataKeys.customExercises,
+      jsonEncode(exercises.map((entry) => entry.toJson()).toList()),
+    );
+  }
+
+  static Future<void> addCustomExercise(Exercise exercise) async {
+    final exercises = await loadCustomExercises();
+    final normalizedName = exercise.name.trim().toLowerCase();
+    final existingIndex = exercises.indexWhere(
+      (entry) => entry.name.trim().toLowerCase() == normalizedName,
+    );
+    final template = Exercise.fromJson(exercise.toJson());
+    if (existingIndex == -1) {
+      exercises.add(template);
+    } else {
+      exercises[existingIndex] = template;
+    }
+    exercises.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+    await saveCustomExercises(exercises);
+  }
+
+  static Future<Set<int>> loadScheduledReminderNotificationIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(AppDataKeys.scheduledReminderNotificationIds);
+    if (raw == null || raw.trim().isEmpty) {
+      return <int>{};
+    }
+
+    try {
+      return (jsonDecode(raw) as List<dynamic>)
+          .whereType<num>()
+          .map((entry) => entry.toInt())
+          .toSet();
+    } catch (_) {
+      return <int>{};
+    }
+  }
+
+  static Future<void> saveScheduledReminderNotificationIds(Set<int> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      AppDataKeys.scheduledReminderNotificationIds,
+      jsonEncode(ids.toList()),
+    );
+  }
+
   static Future<DateTime?> loadLastAutoBackupAt() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(AppDataKeys.lastAutoBackupAt);
     return raw == null ? null : DateTime.tryParse(raw);
+  }
+
+  static Future<AppDataBundle?> loadAutoBackupBundle() async {
+    final prefs = await SharedPreferences.getInstance();
+    return _bundleFromAutoBackup(prefs);
   }
 
   static Future<void> saveAll({

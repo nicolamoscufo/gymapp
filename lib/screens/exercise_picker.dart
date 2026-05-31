@@ -6,11 +6,22 @@ import '../models/exercise.dart';
 
 class ExercisePickerResult {
   final List<ExerciseCatalogEntry> entries;
+  final List<Exercise> customExercises;
   final bool addCustom;
 
-  const ExercisePickerResult.entries(this.entries) : addCustom = false;
+  const ExercisePickerResult.entries(this.entries)
+    : customExercises = const [],
+      addCustom = false;
 
-  const ExercisePickerResult.custom() : entries = const [], addCustom = true;
+  const ExercisePickerResult.mixed({
+    this.entries = const [],
+    this.customExercises = const [],
+  }) : addCustom = false;
+
+  const ExercisePickerResult.custom()
+    : entries = const [],
+      customExercises = const [],
+      addCustom = true;
 }
 
 class ExercisePickerScreen extends StatefulWidget {
@@ -23,7 +34,9 @@ class ExercisePickerScreen extends StatefulWidget {
 class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
   final TextEditingController _searchController = TextEditingController();
   final Map<String, ExerciseCatalogEntry> _selectedEntries = {};
+  final Map<String, Exercise> _selectedCustomExercises = {};
   final Set<String> _favoriteEntryIds = {};
+  final List<Exercise> _customExercises = [];
   late final Future<List<ExerciseCatalogEntry>> _catalogFuture;
 
   MuscleGroup? _selectedGroup;
@@ -35,6 +48,7 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
     super.initState();
     _catalogFuture = loadExerciseCatalog();
     _loadFavorites();
+    _loadCustomExercises();
   }
 
   Future<void> _loadFavorites() async {
@@ -44,6 +58,16 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
       _favoriteEntryIds
         ..clear()
         ..addAll(favorites);
+    });
+  }
+
+  Future<void> _loadCustomExercises() async {
+    final exercises = await AppDataStore.loadCustomExercises();
+    if (!mounted) return;
+    setState(() {
+      _customExercises
+        ..clear()
+        ..addAll(exercises);
     });
   }
 
@@ -64,14 +88,27 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
     });
   }
 
+  void _toggleCustomExercise(Exercise exercise) {
+    setState(() {
+      if (_selectedCustomExercises.containsKey(exercise.id)) {
+        _selectedCustomExercises.remove(exercise.id);
+      } else {
+        _selectedCustomExercises[exercise.id] = exercise;
+      }
+    });
+  }
+
   void _finishSelection() {
-    if (_selectedEntries.isEmpty) {
+    if (_selectedEntries.isEmpty && _selectedCustomExercises.isEmpty) {
       return;
     }
 
     Navigator.pop(
       context,
-      ExercisePickerResult.entries(_selectedEntries.values.toList()),
+      ExercisePickerResult.mixed(
+        entries: _selectedEntries.values.toList(),
+        customExercises: _selectedCustomExercises.values.toList(),
+      ),
     );
   }
 
@@ -91,7 +128,8 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final selectedCount = _selectedEntries.length;
+    final selectedCount =
+        _selectedEntries.length + _selectedCustomExercises.length;
 
     return Scaffold(
       appBar: AppBar(
@@ -125,6 +163,24 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
           }
 
           final catalog = snapshot.data ?? const <ExerciseCatalogEntry>[];
+          final normalizedCustomQuery = _searchController.text
+              .trim()
+              .toLowerCase();
+          final visibleCustomExercises = _customExercises.where((exercise) {
+            final queryMatches =
+                normalizedCustomQuery.isEmpty ||
+                exercise.name.toLowerCase().contains(normalizedCustomQuery) ||
+                exercise.muscleGroup.label.toLowerCase().contains(
+                  normalizedCustomQuery,
+                ) ||
+                exercise.equipment.toLowerCase().contains(
+                  normalizedCustomQuery,
+                );
+            final groupMatches =
+                _selectedGroup == null ||
+                exercise.muscleGroup == _selectedGroup;
+            return queryMatches && groupMatches && !_showFavoritesOnly;
+          }).toList();
           final baseEntries = filterExerciseCatalog(
             catalog,
             query: _searchController.text,
@@ -243,20 +299,70 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     _selectedGroup == null
-                        ? '${visibleEntries.length} esercizi'
-                        : '${visibleEntries.length} per ${_shortGroupLabel(_selectedGroup!)}',
+                        ? '${visibleEntries.length + visibleCustomExercises.length} esercizi'
+                        : '${visibleEntries.length + visibleCustomExercises.length} per ${_shortGroupLabel(_selectedGroup!)}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
               ),
               Expanded(
-                child: visibleEntries.isEmpty
+                child: visibleEntries.isEmpty && visibleCustomExercises.isEmpty
                     ? const Center(child: Text('Nessun esercizio trovato.'))
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        itemCount: visibleEntries.length,
+                        itemCount:
+                            visibleCustomExercises.length +
+                            visibleEntries.length,
                         itemBuilder: (context, index) {
-                          final entry = visibleEntries[index];
+                          if (index < visibleCustomExercises.length) {
+                            final exercise = visibleCustomExercises[index];
+                            final selected = _selectedCustomExercises
+                                .containsKey(exercise.id);
+
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Card(
+                                color: selected
+                                    ? colorScheme.secondaryContainer
+                                    : null,
+                                child: ListTile(
+                                  key: ValueKey(
+                                    'custom-exercise-${exercise.id}',
+                                  ),
+                                  leading: CircleAvatar(
+                                    backgroundColor: colorScheme.secondary
+                                        .withValues(
+                                          alpha: isDark ? 0.22 : 0.14,
+                                        ),
+                                    foregroundColor: colorScheme.secondary,
+                                    child: const Icon(Icons.person),
+                                  ),
+                                  title: Text(
+                                    exercise.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    '${exercise.set} x ${exercise.reps} - ${exercise.weight} kg - ${exercise.muscleGroup.label}',
+                                    style: TextStyle(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  trailing: Checkbox(
+                                    value: selected,
+                                    onChanged: (_) =>
+                                        _toggleCustomExercise(exercise),
+                                  ),
+                                  onTap: () => _toggleCustomExercise(exercise),
+                                ),
+                              ),
+                            );
+                          }
+
+                          final catalogIndex =
+                              index - visibleCustomExercises.length;
+                          final entry = visibleEntries[catalogIndex];
                           final selected = _selectedEntries.containsKey(
                             _entryKey(entry),
                           );

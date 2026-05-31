@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../app_data_store.dart';
+import '../dialog_form.dart';
 import '../exercise_catalog.dart';
 import '../models/schedule.dart';
 import '../models/exercise.dart';
@@ -80,6 +82,15 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     final deloadController = TextEditingController(
       text: widget.schedule.deloadEveryWeeks.toString(),
     );
+    final blockController = TextEditingController(
+      text: widget.schedule.programBlock,
+    );
+    final cycleController = TextEditingController(
+      text: widget.schedule.cycleNumber.toString(),
+    );
+    final cycleNotesController = TextEditingController(
+      text: widget.schedule.cycleNotes,
+    );
     final selectedDays = widget.schedule.trainingWeekdays.toSet();
 
     final saved = await showDialog<bool>(
@@ -87,67 +98,74 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('Programmazione'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: goalController,
-                  decoration: const InputDecoration(labelText: 'Obiettivo'),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: mesocycleController,
-                        decoration: const InputDecoration(
-                          labelText: 'Settimane',
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: deloadController,
-                        decoration: const InputDecoration(
-                          labelText: 'Deload ogni',
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Giorni allenamento',
-                    style: Theme.of(context).textTheme.labelLarge,
+          content: AppDialogContent(
+            children: [
+              TextField(
+                controller: goalController,
+                decoration: const InputDecoration(labelText: 'Obiettivo'),
+              ),
+              appDialogFieldGap,
+              AppFieldRow(
+                children: [
+                  TextField(
+                    controller: mesocycleController,
+                    decoration: const InputDecoration(labelText: 'Settimane'),
+                    keyboardType: TextInputType.number,
                   ),
+                  TextField(
+                    controller: deloadController,
+                    decoration: const InputDecoration(labelText: 'Deload ogni'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ],
+              ),
+              appDialogFieldGap,
+              TextField(
+                controller: blockController,
+                decoration: const InputDecoration(labelText: 'Blocco'),
+              ),
+              appDialogFieldGap,
+              AppFieldRow(
+                children: [
+                  TextField(
+                    controller: cycleController,
+                    decoration: const InputDecoration(labelText: 'Ciclo'),
+                    keyboardType: TextInputType.number,
+                  ),
+                  TextField(
+                    controller: cycleNotesController,
+                    decoration: const InputDecoration(labelText: 'Note ciclo'),
+                  ),
+                ],
+              ),
+              appDialogFieldGap,
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Giorni allenamento',
+                  style: Theme.of(context).textTheme.labelLarge,
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: List.generate(7, (index) {
-                    final weekday = index + 1;
-                    return FilterChip(
-                      label: Text(_weekdayLabel(weekday)),
-                      selected: selectedDays.contains(weekday),
-                      onSelected: (selected) => setDialogState(() {
-                        if (selected) {
-                          selectedDays.add(weekday);
-                        } else {
-                          selectedDays.remove(weekday);
-                        }
-                      }),
-                    );
-                  }),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: List.generate(7, (index) {
+                  final weekday = index + 1;
+                  return FilterChip(
+                    label: Text(_weekdayLabel(weekday)),
+                    selected: selectedDays.contains(weekday),
+                    onSelected: (selected) => setDialogState(() {
+                      if (selected) {
+                        selectedDays.add(weekday);
+                      } else {
+                        selectedDays.remove(weekday);
+                      }
+                    }),
+                  );
+                }),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -176,7 +194,59 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
           parseIntInput(deloadController.text) ??
           widget.schedule.deloadEveryWeeks;
       widget.schedule.trainingWeekdays = selectedDays.toList()..sort();
+      widget.schedule.programBlock = blockController.text.trim();
+      widget.schedule.cycleNumber =
+          parseIntInput(cycleController.text) ?? widget.schedule.cycleNumber;
+      widget.schedule.cycleNotes = cycleNotesController.text.trim();
     });
+    widget.onUpdate();
+  }
+
+  Future<void> _resetCycle() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset ciclo?'),
+        content: const Text('La scheda torna a week 1 da oggi.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    setState(() => widget.schedule.resetCycle());
+    widget.onUpdate();
+  }
+
+  Future<void> _completeMesocycle() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Fine mesociclo?'),
+        content: const Text(
+          'Apre ciclo successivo e riporta la scheda a week 1.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Chiudi mesociclo'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    setState(() => widget.schedule.completeMesocycle());
     widget.onUpdate();
   }
 
@@ -217,29 +287,31 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     int? supersetGroup,
     double progressionKgStep,
     int progressionRepStep,
+    ProgressionScheme progressionScheme,
   ) {
+    final exercise = Exercise(
+      name: name,
+      set: sets,
+      reps: reps,
+      weight: weight,
+      muscleGroup: muscleGroup,
+      equipment: equipment,
+      movementPattern: movementPattern,
+      targetMinReps: targetMinReps,
+      targetMaxReps: targetMaxReps,
+      notes: notes,
+      technique: technique,
+      backoffReps: backoffReps,
+      restSeconds: restSeconds,
+      supersetGroup: supersetGroup,
+      progressionKgStep: progressionKgStep,
+      progressionRepStep: progressionRepStep,
+      progressionScheme: progressionScheme,
+    );
     setState(() {
-      widget.schedule.exercises.add(
-        Exercise(
-          name: name,
-          set: sets,
-          reps: reps,
-          weight: weight,
-          muscleGroup: muscleGroup,
-          equipment: equipment,
-          movementPattern: movementPattern,
-          targetMinReps: targetMinReps,
-          targetMaxReps: targetMaxReps,
-          notes: notes,
-          technique: technique,
-          backoffReps: backoffReps,
-          restSeconds: restSeconds,
-          supersetGroup: supersetGroup,
-          progressionKgStep: progressionKgStep,
-          progressionRepStep: progressionRepStep,
-        ),
-      );
+      widget.schedule.exercises.add(exercise);
     });
+    AppDataStore.addCustomExercise(exercise);
     widget.onUpdate();
   }
 
@@ -264,9 +336,23 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
             restSeconds: widget.defaultRestSeconds,
             progressionKgStep: 2.5,
             progressionRepStep: 1,
+            progressionScheme: ProgressionScheme.doubleProgression,
           ),
         );
       }
+    });
+    widget.onUpdate();
+  }
+
+  void _addCustomExercises(List<Exercise> exercises) {
+    if (exercises.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      widget.schedule.exercises.addAll(
+        exercises.map((exercise) => Exercise.fromJson(exercise.toJson())),
+      );
     });
     widget.onUpdate();
   }
@@ -286,6 +372,9 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
       return;
     }
 
+    if (result.customExercises.isNotEmpty) {
+      _addCustomExercises(result.customExercises);
+    }
     _addCatalogExercises(result.entries);
   }
 
@@ -307,6 +396,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     int? supersetGroup,
     double progressionKgStep,
     int progressionRepStep,
+    ProgressionScheme progressionScheme,
   ) {
     setState(() {
       widget.schedule.exercises[index].name = name;
@@ -325,6 +415,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
       widget.schedule.exercises[index].supersetGroup = supersetGroup;
       widget.schedule.exercises[index].progressionKgStep = progressionKgStep;
       widget.schedule.exercises[index].progressionRepStep = progressionRepStep;
+      widget.schedule.exercises[index].progressionScheme = progressionScheme;
     });
     widget.onUpdate();
   }
@@ -384,6 +475,9 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
         isEditing && exerciseToEdit.muscleGroup != MuscleGroup.unassigned
         ? exerciseToEdit.muscleGroup
         : null;
+    ProgressionScheme selectedProgressionScheme = isEditing
+        ? exerciseToEdit.progressionScheme
+        : ProgressionScheme.doubleProgression;
     final nameController = TextEditingController(
       text: isEditing ? exerciseToEdit.name : '',
     );
@@ -442,217 +536,221 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text(isEditing ? 'Modifica' : 'Nuovo esercizio'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<MuscleGroup>(
-                  key: ValueKey(selectedMuscleGroup),
-                  initialValue: selectedMuscleGroup,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Gruppo'),
-                  items: selectableMuscleGroups
-                      .map(
-                        (group) => DropdownMenuItem<MuscleGroup>(
-                          value: group,
-                          child: Text(group.label),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    setDialogState(() {
-                      selectedMuscleGroup = value;
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Nome'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: equipmentController,
-                  decoration: const InputDecoration(labelText: 'Attrezzo'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: movementPatternController,
-                  decoration: const InputDecoration(labelText: 'Movimento'),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<IntensityTechnique>(
-                  initialValue: selectedTechnique,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Tecnica'),
-                  items: IntensityTechnique.values
-                      .map(
-                        (technique) => DropdownMenuItem<IntensityTechnique>(
-                          value: technique,
-                          child: Text(_techniqueLabel(technique)),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value == null) {
-                      return;
+          content: AppDialogContent(
+            maxWidth: 560,
+            children: [
+              DropdownButtonFormField<MuscleGroup>(
+                key: ValueKey(selectedMuscleGroup),
+                initialValue: selectedMuscleGroup,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Gruppo'),
+                items: selectableMuscleGroups
+                    .map(
+                      (group) => DropdownMenuItem<MuscleGroup>(
+                        value: group,
+                        child: Text(group.label),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedMuscleGroup = value;
+                  });
+                },
+              ),
+              appDialogFieldGap,
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Nome'),
+              ),
+              appDialogFieldGap,
+              TextField(
+                controller: equipmentController,
+                decoration: const InputDecoration(labelText: 'Attrezzo'),
+              ),
+              appDialogFieldGap,
+              TextField(
+                controller: movementPatternController,
+                decoration: const InputDecoration(labelText: 'Movimento'),
+              ),
+              appDialogFieldGap,
+              DropdownButtonFormField<IntensityTechnique>(
+                initialValue: selectedTechnique,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Tecnica'),
+                items: IntensityTechnique.values
+                    .map(
+                      (technique) => DropdownMenuItem<IntensityTechnique>(
+                        value: technique,
+                        child: Text(_techniqueLabel(technique)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+
+                  setDialogState(() {
+                    final wasBackoff =
+                        selectedTechnique == IntensityTechnique.topsetBackoff;
+                    final willBeBackoff =
+                        value == IntensityTechnique.topsetBackoff;
+                    if (!wasBackoff && willBeBackoff) {
+                      final currentReps = repsController.text.trim();
+                      if (topSetRepsController.text.trim().isEmpty &&
+                          currentReps.isNotEmpty) {
+                        topSetRepsController.text = currentReps;
+                      }
+                      if (backoffRepsController.text.trim().isEmpty) {
+                        backoffRepsController.text = currentReps.isNotEmpty
+                            ? currentReps
+                            : topSetRepsController.text.trim();
+                      }
+                    } else if (wasBackoff && !willBeBackoff) {
+                      final currentTopSet = topSetRepsController.text.trim();
+                      if (repsController.text.trim().isEmpty &&
+                          currentTopSet.isNotEmpty) {
+                        repsController.text = currentTopSet;
+                      }
+                      if (setsController.text.trim().isEmpty) {
+                        setsController.text = '2';
+                      }
                     }
 
-                    setDialogState(() {
-                      final wasBackoff =
-                          selectedTechnique == IntensityTechnique.topsetBackoff;
-                      final willBeBackoff =
-                          value == IntensityTechnique.topsetBackoff;
-                      if (!wasBackoff && willBeBackoff) {
-                        final currentReps = repsController.text.trim();
-                        if (topSetRepsController.text.trim().isEmpty &&
-                            currentReps.isNotEmpty) {
-                          topSetRepsController.text = currentReps;
-                        }
-                        if (backoffRepsController.text.trim().isEmpty) {
-                          backoffRepsController.text = currentReps.isNotEmpty
-                              ? currentReps
-                              : topSetRepsController.text.trim();
-                        }
-                      } else if (wasBackoff && !willBeBackoff) {
-                        final currentTopSet = topSetRepsController.text.trim();
-                        if (repsController.text.trim().isEmpty &&
-                            currentTopSet.isNotEmpty) {
-                          repsController.text = currentTopSet;
-                        }
-                        if (setsController.text.trim().isEmpty) {
-                          setsController.text = '2';
-                        }
-                      }
-
-                      selectedTechnique = value;
-                      validationMessage = null;
-                    });
-                  },
-                ),
-                const SizedBox(height: 8),
-                if (selectedTechnique == IntensityTechnique.topsetBackoff) ...[
-                  TextField(
-                    controller: topSetRepsController,
-                    decoration: const InputDecoration(
-                      labelText: 'Top set reps',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: backoffRepsController,
-                    decoration: const InputDecoration(
-                      labelText: 'Back off reps',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                ] else ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: setsController,
-                          decoration: const InputDecoration(labelText: 'Serie'),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: repsController,
-                          decoration: const InputDecoration(labelText: 'Reps'),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Row(
+                    selectedTechnique = value;
+                    validationMessage = null;
+                  });
+                },
+              ),
+              appDialogFieldGap,
+              if (selectedTechnique == IntensityTechnique.topsetBackoff) ...[
+                AppFieldRow(
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: targetMinRepsController,
-                        decoration: const InputDecoration(labelText: 'Min'),
-                        keyboardType: TextInputType.number,
+                    TextField(
+                      controller: topSetRepsController,
+                      decoration: const InputDecoration(
+                        labelText: 'Top set reps',
                       ),
+                      keyboardType: TextInputType.number,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: targetMaxRepsController,
-                        decoration: const InputDecoration(labelText: 'Max'),
-                        keyboardType: TextInputType.number,
+                    TextField(
+                      controller: backoffRepsController,
+                      decoration: const InputDecoration(
+                        labelText: 'Back off reps',
                       ),
+                      keyboardType: TextInputType.number,
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: weightController,
-                  decoration: const InputDecoration(labelText: 'Kg'),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: restSecondsController,
-                  decoration: const InputDecoration(labelText: 'Recupero sec'),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: supersetController,
-                  decoration: const InputDecoration(
-                    labelText: 'Superset gruppo',
-                    hintText: 'Esempio: 1',
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 8),
-                Row(
+              ] else ...[
+                AppFieldRow(
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: progressionKgController,
-                        decoration: const InputDecoration(
-                          labelText: 'Step kg auto',
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                      ),
+                    TextField(
+                      controller: setsController,
+                      decoration: const InputDecoration(labelText: 'Serie'),
+                      keyboardType: TextInputType.number,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: progressionRepController,
-                        decoration: const InputDecoration(
-                          labelText: 'Step reps auto',
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
+                    TextField(
+                      controller: repsController,
+                      decoration: const InputDecoration(labelText: 'Reps'),
+                      keyboardType: TextInputType.number,
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: notesController,
-                  decoration: const InputDecoration(labelText: 'Note'),
-                ),
-                if (validationMessage != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    validationMessage!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ],
               ],
-            ),
+              appDialogFieldGap,
+              AppFieldRow(
+                children: [
+                  TextField(
+                    controller: targetMinRepsController,
+                    decoration: const InputDecoration(labelText: 'Min'),
+                    keyboardType: TextInputType.number,
+                  ),
+                  TextField(
+                    controller: targetMaxRepsController,
+                    decoration: const InputDecoration(labelText: 'Max'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ],
+              ),
+              appDialogFieldGap,
+              DropdownButtonFormField<ProgressionScheme>(
+                initialValue: selectedProgressionScheme,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Schema progressione',
+                ),
+                items: ProgressionScheme.values
+                    .map(
+                      (scheme) => DropdownMenuItem<ProgressionScheme>(
+                        value: scheme,
+                        child: Text(scheme.label),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setDialogState(() => selectedProgressionScheme = value);
+                },
+              ),
+              appDialogFieldGap,
+              TextField(
+                controller: weightController,
+                decoration: const InputDecoration(labelText: 'Kg'),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+              ),
+              appDialogFieldGap,
+              TextField(
+                controller: restSecondsController,
+                decoration: const InputDecoration(labelText: 'Recupero sec'),
+                keyboardType: TextInputType.number,
+              ),
+              appDialogFieldGap,
+              TextField(
+                controller: supersetController,
+                decoration: const InputDecoration(
+                  labelText: 'Superset gruppo',
+                  hintText: 'Esempio: 1',
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              appDialogFieldGap,
+              AppFieldRow(
+                children: [
+                  TextField(
+                    controller: progressionKgController,
+                    decoration: const InputDecoration(
+                      labelText: 'Step kg auto',
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                  ),
+                  TextField(
+                    controller: progressionRepController,
+                    decoration: const InputDecoration(
+                      labelText: 'Step reps auto',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ],
+              ),
+              appDialogFieldGap,
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(labelText: 'Note'),
+              ),
+              if (validationMessage != null) ...[
+                appDialogFieldGap,
+                Text(
+                  validationMessage!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+            ],
           ),
           actions: [
             TextButton(
@@ -743,6 +841,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     parsedSupersetGroup,
                     parsedProgressionKgStep,
                     parsedProgressionRepStep,
+                    selectedProgressionScheme,
                   );
                 } else {
                   _addExercise(
@@ -762,6 +861,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     parsedSupersetGroup,
                     parsedProgressionKgStep,
                     parsedProgressionRepStep,
+                    selectedProgressionScheme,
                   );
                 }
                 Navigator.pop(context);
@@ -788,6 +888,20 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
             tooltip: 'Programmazione',
             icon: const Icon(Icons.calendar_month),
             onPressed: _showScheduleProgramDialog,
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Ciclo',
+            onSelected: (value) {
+              if (value == 'reset') {
+                _resetCycle();
+              } else if (value == 'complete') {
+                _completeMesocycle();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'reset', child: Text('Reset ciclo')),
+              PopupMenuItem(value: 'complete', child: Text('Fine mesociclo')),
+            ],
           ),
           TextButton(
             onPressed: () {
@@ -883,7 +997,6 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
               itemBuilder: (context, index) {
                 final exercise = widget.schedule.exercises[index];
                 final accent = _accentForIndex(colorScheme, index);
-                var dragDelta = 0.0;
                 return Dismissible(
                   key: ValueKey(exercise.id),
                   direction: DismissDirection.endToStart,
@@ -953,37 +1066,17 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                           indexToEdit: index,
                           exerciseToEdit: exercise,
                         ),
-                        trailing: Listener(
-                          key: ValueKey('exercise-reorder-${exercise.id}'),
-                          behavior: HitTestBehavior.opaque,
-                          onPointerMove: (event) {
-                            dragDelta += event.delta.dy;
-                          },
-                          onPointerUp: (_) {
-                            final currentIndex = widget.schedule.exercises
-                                .indexWhere((entry) => entry.id == exercise.id);
-                            if (currentIndex == index) {
-                              if (dragDelta > 40 &&
-                                  currentIndex <
-                                      widget.schedule.exercises.length - 1) {
-                                _reorderExercise(
-                                  currentIndex,
-                                  currentIndex + 2,
-                                );
-                              } else if (dragDelta < -40 && currentIndex > 0) {
-                                _reorderExercise(
-                                  currentIndex,
-                                  currentIndex - 1,
-                                );
-                              }
-                            }
-                            dragDelta = 0;
-                          },
+                        trailing: Tooltip(
+                          message: 'Trascina per riordinare',
                           child: ReorderableDragStartListener(
+                            key: ValueKey('exercise-reorder-${exercise.id}'),
                             index: index,
-                            child: const SizedBox.square(
-                              dimension: 48,
-                              child: Center(child: Icon(Icons.drag_handle)),
+                            child: const MouseRegion(
+                              cursor: SystemMouseCursors.grab,
+                              child: SizedBox.square(
+                                dimension: 48,
+                                child: Center(child: Icon(Icons.drag_handle)),
+                              ),
                             ),
                           ),
                         ),

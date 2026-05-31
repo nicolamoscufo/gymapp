@@ -6,7 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../app_data_store.dart';
+import '../dialog_form.dart';
 import '../exercise_catalog.dart';
+import '../local_notifications.dart';
 import '../models/exercise.dart';
 import '../models/schedule.dart';
 import '../models/workout.dart';
@@ -59,7 +61,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   Timer? _durationTimer;
   int _elapsedSeconds = 0;
   final Map<String, int> _restSecondsByExerciseId = {};
-  final Map<String, int> _weightFieldVersions = {};
+  final Map<String, GlobalKey> _exerciseCardKeys = {};
   final Set<String> _exerciseIdsAddedToScheduleThisFinish = {};
   DateTime? _lastSavedAt;
   bool _isSaving = false;
@@ -72,6 +74,23 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       colorScheme.error,
     ];
     return accents[index % accents.length];
+  }
+
+  GlobalKey _exerciseCardKey(String exerciseId) {
+    return _exerciseCardKeys.putIfAbsent(exerciseId, GlobalKey.new);
+  }
+
+  void _scrollToExercise(String exerciseId) {
+    final context = _exerciseCardKeys[exerciseId]?.currentContext;
+    if (context == null) {
+      return;
+    }
+    Scrollable.ensureVisible(
+      context,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      alignment: 0.08,
+    );
   }
 
   Iterable<WorkoutSession> get _comparisonHistory {
@@ -441,6 +460,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   String? _progressionHintFor(WorkoutExercise exercise) {
+    if (exercise.progressionScheme == ProgressionScheme.manual) {
+      return 'Progressione manuale: carico e reps non cambiano in automatico.';
+    }
     if (exercise.previousWeights.isEmpty || exercise.previousReps.isEmpty) {
       return null;
     }
@@ -449,6 +471,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final maxReps = exercise.targetMaxReps;
     if (minReps == null || maxReps == null) {
       return 'Progressione auto: riparti dai carichi dell ultima volta.';
+    }
+
+    if (exercise.progressionScheme == ProgressionScheme.loadOnly) {
+      return 'Schema carico: aumenta kg solo quando tutte le serie stanno al top.';
+    }
+    if (exercise.progressionScheme == ProgressionScheme.repsOnly) {
+      return 'Schema reps: carico fisso, sali di ${exercise.progressionRepStep} rep.';
+    }
+    if (exercise.progressionScheme == ProgressionScheme.linear) {
+      return 'Schema lineare: +${exercise.progressionKgStep} kg quando completi le serie.';
     }
 
     final allAtTop = exercise.previousReps.every((reps) => reps >= maxReps);
@@ -470,20 +502,74 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   double _weightForSet(
     Exercise exercise,
     List<double> previousWeights,
+    List<int> previousReps,
     int index,
   ) {
     if (previousWeights.isEmpty) {
       return exercise.weight;
     }
 
-    return index < previousWeights.length
+    if (exercise.progressionScheme == ProgressionScheme.manual ||
+        exercise.progressionScheme == ProgressionScheme.repsOnly) {
+      return index < previousWeights.length
+          ? previousWeights[index]
+          : previousWeights.last;
+    }
+
+    final previousWeight = index < previousWeights.length
         ? previousWeights[index]
         : previousWeights.last;
+    final previousRep = index < previousReps.length
+        ? previousReps[index]
+        : (previousReps.isEmpty ? exercise.reps : previousReps.last);
+    final minReps = exercise.targetMinReps;
+    final maxReps = exercise.targetMaxReps;
+    if (minReps == null || maxReps == null) {
+      return previousWeight;
+    }
+    if (exercise.progressionScheme == ProgressionScheme.linear) {
+      return previousWeight + exercise.progressionKgStep;
+    }
+    if (exercise.progressionScheme == ProgressionScheme.loadOnly) {
+      return previousRep >= maxReps
+          ? previousWeight + exercise.progressionKgStep
+          : previousWeight;
+    }
+    if (previousRep >= maxReps) {
+      return previousWeight + exercise.progressionKgStep;
+    }
+    if (previousRep < minReps) {
+      return math.max(0, previousWeight - exercise.progressionKgStep);
+    }
+    return previousWeight;
+  }
+
+  int _repsForSet(Exercise exercise, List<int> previousReps, int index) {
+    final minReps = exercise.targetMinReps;
+    final maxReps = exercise.targetMaxReps;
+    if (previousReps.isEmpty || minReps == null || maxReps == null) {
+      return exercise.reps;
+    }
+
+    if (exercise.progressionScheme == ProgressionScheme.manual ||
+        exercise.progressionScheme == ProgressionScheme.loadOnly ||
+        exercise.progressionScheme == ProgressionScheme.linear) {
+      return exercise.reps;
+    }
+
+    final previousRep = index < previousReps.length
+        ? previousReps[index]
+        : previousReps.last;
+    if (previousRep >= maxReps || previousRep < minReps) {
+      return minReps;
+    }
+    return math.min(maxReps, previousRep + exercise.progressionRepStep);
   }
 
   List<ExerciseSet> _setsForExercise(
     Exercise exercise,
     List<double> previousWeights,
+    List<int> previousReps,
   ) {
     final isBackoff =
         exercise.technique == IntensityTechnique.topsetBackoff &&
@@ -492,12 +578,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     if (isBackoff) {
       return [
         ExerciseSet(
-          weight: _weightForSet(exercise, previousWeights, 0),
-          reps: exercise.reps,
+          weight: _weightForSet(exercise, previousWeights, previousReps, 0),
+          reps: _repsForSet(exercise, previousReps, 0),
         ),
         ExerciseSet(
-          weight: _weightForSet(exercise, previousWeights, 1),
-          reps: exercise.backoffReps!,
+          weight: _weightForSet(exercise, previousWeights, previousReps, 1),
+          reps: _repsForSet(exercise, previousReps, 1),
         ),
       ];
     }
@@ -505,8 +591,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     return List.generate(
       exercise.set,
       (index) => ExerciseSet(
-        weight: _weightForSet(exercise, previousWeights, index),
-        reps: exercise.reps,
+        weight: _weightForSet(exercise, previousWeights, previousReps, index),
+        reps: _repsForSet(exercise, previousReps, index),
       ),
     );
   }
@@ -534,7 +620,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       supersetGroup: exercise.supersetGroup,
       progressionKgStep: exercise.progressionKgStep,
       progressionRepStep: exercise.progressionRepStep,
-      sets: _setsForExercise(exercise, previousWeights),
+      progressionScheme: exercise.progressionScheme,
+      sets: _setsForExercise(exercise, previousWeights, previousReps),
       previousWeights: previousWeights,
       previousReps: previousReps,
     );
@@ -554,7 +641,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       restSeconds: widget.defaultRestSeconds,
       progressionKgStep: 2.5,
       progressionRepStep: 1,
+      progressionScheme: ProgressionScheme.doubleProgression,
     );
+  }
+
+  Exercise _copyExerciseTemplate(Exercise exercise) {
+    return Exercise.fromJson(exercise.toJson());
   }
 
   Exercise _exerciseFromWorkoutExercise(WorkoutExercise exercise) {
@@ -585,6 +677,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       supersetGroup: exercise.supersetGroup,
       progressionKgStep: exercise.progressionKgStep,
       progressionRepStep: exercise.progressionRepStep,
+      progressionScheme: exercise.progressionScheme,
     );
   }
 
@@ -651,6 +744,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
     HapticFeedback.mediumImpact();
     SystemSound.play(SystemSoundType.alert);
+    LocalNotificationService.cancel(
+      LocalNotificationService.restNotificationId(exerciseId),
+    );
+    LocalNotificationService.showRestFinished(exerciseName ?? '');
 
     if (!mounted) {
       return;
@@ -677,6 +774,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       exercise.activeRestSeconds = restSeconds;
       exercise.activeRestStartedAt = DateTime.now();
     });
+    LocalNotificationService.scheduleRestFinished(
+      id: LocalNotificationService.restNotificationId(exercise.id),
+      endTime: DateTime.now().add(Duration(seconds: restSeconds)),
+      exerciseName: exercise.name,
+    );
     _ensureRestTimerRunning();
     _saveCurrentSession();
   }
@@ -693,6 +795,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       exercise.activeRestSeconds = currentSeconds + 30;
       exercise.activeRestStartedAt = DateTime.now();
     });
+    LocalNotificationService.scheduleRestFinished(
+      id: LocalNotificationService.restNotificationId(exercise.id),
+      endTime: DateTime.now().add(Duration(seconds: currentSeconds + 30)),
+      exerciseName: exercise.name,
+    );
     _ensureRestTimerRunning();
     _saveCurrentSession();
   }
@@ -703,6 +810,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       exercise.activeRestSeconds = null;
       exercise.activeRestStartedAt = null;
     });
+    LocalNotificationService.cancel(
+      LocalNotificationService.restNotificationId(exercise.id),
+    );
 
     if (_restSecondsByExerciseId.isEmpty) {
       _restTimer?.cancel();
@@ -743,6 +853,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       final remaining = duration - now.difference(startedAt).inSeconds;
       if (remaining > 0) {
         _restSecondsByExerciseId[exercise.id] = remaining;
+        LocalNotificationService.scheduleRestFinished(
+          id: LocalNotificationService.restNotificationId(exercise.id),
+          endTime: now.add(Duration(seconds: remaining)),
+          exerciseName: exercise.name,
+        );
       } else {
         exercise.activeRestStartedAt = null;
         exercise.activeRestSeconds = null;
@@ -899,6 +1014,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         _isSaving = false;
       });
     }
+  }
+
+  Future<void> _saveCurrentSessionSilently() async {
+    if (widget.editCompletedSession) {
+      _lastSavedAt = DateTime.now();
+      return;
+    }
+
+    await AppDataStore.saveCurrentSession(session);
+    _lastSavedAt = DateTime.now();
   }
 
   Future<void> _clearSavedSession() async {
@@ -1079,6 +1204,37 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         continue;
       }
 
+      if (targetExercise.progressionScheme == ProgressionScheme.manual) {
+        continue;
+      }
+
+      if (targetExercise.progressionScheme == ProgressionScheme.linear) {
+        if (completedExercise.sets.any(
+          (set) => set.isCompleted && !set.isWarmup,
+        )) {
+          targetExercise.weight += targetExercise.progressionKgStep;
+        }
+        continue;
+      }
+
+      if (targetExercise.progressionScheme == ProgressionScheme.loadOnly) {
+        if (_allCompletedAtTop(completedExercise, targetExercise)) {
+          targetExercise.weight += targetExercise.progressionKgStep;
+        }
+        continue;
+      }
+
+      if (targetExercise.progressionScheme == ProgressionScheme.repsOnly) {
+        if (targetExercise.targetMaxReps != null &&
+            targetExercise.reps < targetExercise.targetMaxReps!) {
+          targetExercise.reps = math.min(
+            targetExercise.targetMaxReps!,
+            targetExercise.reps + targetExercise.progressionRepStep,
+          );
+        }
+        continue;
+      }
+
       if (_allCompletedAtTop(completedExercise, targetExercise)) {
         targetExercise.weight += targetExercise.progressionKgStep;
       } else if (_anyCompletedBelowMin(completedExercise, targetExercise)) {
@@ -1204,6 +1360,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _addExercisesToSession(entries.map(_exerciseFromCatalogEntry).toList());
   }
 
+  void _addCustomExercisesToSession(List<Exercise> exercises) {
+    _addExercisesToSession(exercises.map(_copyExerciseTemplate).toList());
+  }
+
   Future<void> _openExercisePicker() async {
     final result = await Navigator.push<ExercisePickerResult>(
       context,
@@ -1222,6 +1382,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       return;
     }
 
+    if (result.customExercises.isNotEmpty) {
+      _addCustomExercisesToSession(result.customExercises);
+    }
     _addCatalogExercisesToSession(result.entries);
   }
 
@@ -1238,6 +1401,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final notesController = TextEditingController();
     String? validationMessage;
     Exercise? createdExercise;
+    bool saveToCatalog = true;
 
     try {
       final saved = await showDialog<bool>(
@@ -1245,96 +1409,93 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         builder: (context) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
             title: const Text('Nuovo esercizio'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  DropdownButtonFormField<MuscleGroup>(
-                    initialValue: selectedMuscleGroup,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Gruppo'),
-                    items: selectableMuscleGroups
-                        .map(
-                          (group) => DropdownMenuItem<MuscleGroup>(
-                            value: group,
-                            child: Text(group.label),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) => setDialogState(() {
-                      selectedMuscleGroup = value;
-                    }),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(labelText: 'Nome'),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: setsController,
-                          decoration: const InputDecoration(labelText: 'Serie'),
-                          keyboardType: TextInputType.number,
+            content: AppDialogContent(
+              maxWidth: 520,
+              children: [
+                DropdownButtonFormField<MuscleGroup>(
+                  initialValue: selectedMuscleGroup,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Gruppo'),
+                  items: selectableMuscleGroups
+                      .map(
+                        (group) => DropdownMenuItem<MuscleGroup>(
+                          value: group,
+                          child: Text(group.label),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: repsController,
-                          decoration: const InputDecoration(labelText: 'Reps'),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: weightController,
-                          decoration: const InputDecoration(labelText: 'Kg'),
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: restSecondsController,
-                          decoration: const InputDecoration(
-                            labelText: 'Recupero sec',
-                          ),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: equipmentController,
-                    decoration: const InputDecoration(labelText: 'Attrezzo'),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: notesController,
-                    decoration: const InputDecoration(labelText: 'Note'),
-                  ),
-                  if (validationMessage != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      validationMessage!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+                      )
+                      .toList(),
+                  onChanged: (value) => setDialogState(() {
+                    selectedMuscleGroup = value;
+                  }),
+                ),
+                appDialogFieldGap,
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Nome'),
+                ),
+                appDialogFieldGap,
+                AppFieldRow(
+                  children: [
+                    TextField(
+                      controller: setsController,
+                      decoration: const InputDecoration(labelText: 'Serie'),
+                      keyboardType: TextInputType.number,
+                    ),
+                    TextField(
+                      controller: repsController,
+                      decoration: const InputDecoration(labelText: 'Reps'),
+                      keyboardType: TextInputType.number,
                     ),
                   ],
+                ),
+                appDialogFieldGap,
+                AppFieldRow(
+                  children: [
+                    TextField(
+                      controller: weightController,
+                      decoration: const InputDecoration(labelText: 'Kg'),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                    ),
+                    TextField(
+                      controller: restSecondsController,
+                      decoration: const InputDecoration(
+                        labelText: 'Recupero sec',
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ],
+                ),
+                appDialogFieldGap,
+                TextField(
+                  controller: equipmentController,
+                  decoration: const InputDecoration(labelText: 'Attrezzo'),
+                ),
+                appDialogFieldGap,
+                TextField(
+                  controller: notesController,
+                  decoration: const InputDecoration(labelText: 'Note'),
+                ),
+                appDialogFieldGap,
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Salva nel catalogo personale'),
+                  value: saveToCatalog,
+                  onChanged: (value) => setDialogState(() {
+                    saveToCatalog = value;
+                  }),
+                ),
+                if (validationMessage != null) ...[
+                  appDialogFieldGap,
+                  Text(
+                    validationMessage!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ],
-              ),
+              ],
             ),
             actions: [
               TextButton(
@@ -1383,6 +1544,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         ),
       );
 
+      if (saved == true && createdExercise != null && saveToCatalog) {
+        await AppDataStore.addCustomExercise(createdExercise!);
+      }
       return saved == true ? createdExercise : null;
     } finally {
       nameController.dispose();
@@ -1409,6 +1573,72 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _saveCurrentSession();
   }
 
+  void _copySet(WorkoutExercise exercise, int setIndex) {
+    if (setIndex < 0 || setIndex >= exercise.sets.length) {
+      return;
+    }
+    final source = exercise.sets[setIndex];
+    setState(() {
+      exercise.sets.insert(
+        setIndex + 1,
+        ExerciseSet(
+          weight: source.weight,
+          reps: source.reps,
+          isWarmup: source.isWarmup,
+          rpe: source.rpe,
+          rir: source.rir,
+          notes: source.notes,
+        ),
+      );
+    });
+    _saveCurrentSession();
+  }
+
+  List<String> _sessionValidationProblems() {
+    final problems = <String>[];
+    for (final exercise in session.exercises) {
+      for (var index = 0; index < exercise.sets.length; index++) {
+        final set = exercise.sets[index];
+        final label = '${exercise.name} set ${index + 1}';
+        if (set.weight < 0 || set.weight > 1000) {
+          problems.add('$label: kg fuori range 0-1000.');
+        }
+        if (set.reps <= 0 || set.reps > 200) {
+          problems.add('$label: reps fuori range 1-200.');
+        }
+        if (set.rpe != null && (set.rpe! < 1 || set.rpe! > 10)) {
+          problems.add('$label: RPE fuori range 1-10.');
+        }
+        if (set.rir != null && (set.rir! < 0 || set.rir! > 10)) {
+          problems.add('$label: RIR fuori range 0-10.');
+        }
+      }
+    }
+    return problems;
+  }
+
+  Future<void> _showValidationProblems(List<String> problems) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Controlla dati'),
+        content: AppDialogContent(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: problems
+              .take(8)
+              .map((problem) => Text('- $problem'))
+              .toList(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Ok'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _applyRecommendedBackoffWeight(WorkoutExercise exercise, int setIndex) {
     if (setIndex < 0 || setIndex >= exercise.sets.length) {
       return;
@@ -1422,7 +1652,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final set = exercise.sets[setIndex];
     setState(() {
       set.weight = recommendedWeight;
-      _weightFieldVersions[set.id] = (_weightFieldVersions[set.id] ?? 0) + 1;
     });
     _saveCurrentSession();
   }
@@ -1488,8 +1717,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Warm-up ${exercise.name}'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+        content: AppDialogContent(
+          maxWidth: 420,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: rows.map((row) => Text(row)).toList(),
         ),
@@ -1557,38 +1786,39 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('Dettagli set'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Warm-up'),
-                  value: isWarmup,
-                  onChanged: (value) => setDialogState(() => isWarmup = value),
-                ),
-                TextField(
-                  controller: rpeController,
-                  decoration: const InputDecoration(labelText: 'RPE (1-10)'),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+          content: AppDialogContent(
+            maxWidth: 480,
+            children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Warm-up'),
+                value: isWarmup,
+                onChanged: (value) => setDialogState(() => isWarmup = value),
+              ),
+              AppFieldRow(
+                children: [
+                  TextField(
+                    controller: rpeController,
+                    decoration: const InputDecoration(labelText: 'RPE (1-10)'),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: rirController,
-                  decoration: const InputDecoration(labelText: 'RIR (0-10)'),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: notesController,
-                  decoration: const InputDecoration(labelText: 'Note set'),
-                  minLines: 1,
-                  maxLines: 3,
-                ),
-              ],
-            ),
+                  TextField(
+                    controller: rirController,
+                    decoration: const InputDecoration(labelText: 'RIR (0-10)'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ],
+              ),
+              appDialogFieldGap,
+              TextField(
+                controller: notesController,
+                decoration: const InputDecoration(labelText: 'Note set'),
+                minLines: 1,
+                maxLines: 3,
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -1845,6 +2075,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
             ),
             TextButton(
               onPressed: () async {
+                final problems = _sessionValidationProblems();
+                if (problems.isNotEmpty) {
+                  await _showValidationProblems(problems);
+                  return;
+                }
+
                 final duration = _formatDuration(_elapsedSeconds);
                 final prCount = _sessionPrCount();
 
@@ -1856,8 +2092,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                           ? 'Salvare modifiche?'
                           : 'Riepilogo allenamento',
                     ),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
+                    content: AppDialogContent(
+                      maxWidth: 420,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _summaryRow('Esercizi', '${stats.exercises}'),
@@ -1924,14 +2160,26 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         ),
         body: ListView.builder(
           padding: const EdgeInsets.only(bottom: 96),
-          itemCount: session.exercises.length,
-          itemBuilder: (context, exIndex) {
+          itemCount:
+              session.exercises.length + (session.exercises.length > 1 ? 1 : 0),
+          itemBuilder: (context, itemIndex) {
+            if (session.exercises.length > 1 && itemIndex == 0) {
+              return _ExerciseJumpBar(
+                exercises: session.exercises,
+                onSelected: _scrollToExercise,
+              );
+            }
+
+            final exIndex = session.exercises.length > 1
+                ? itemIndex - 1
+                : itemIndex;
             final exercise = session.exercises[exIndex];
             final activeRestSeconds = _restSecondsByExerciseId[exercise.id];
             final restSeconds = activeRestSeconds ?? _restSecondsFor(exercise);
             final accent = _accentForIndex(colorScheme, exIndex);
 
             return Card(
+              key: _exerciseCardKey(exercise.id),
               margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
               child: Container(
                 decoration: BoxDecoration(
@@ -1989,6 +2237,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                               label: Text('Superset ${exercise.supersetGroup}'),
                               visualDensity: VisualDensity.compact,
                             ),
+                          Chip(
+                            label: Text(exercise.progressionScheme.label),
+                            visualDensity: VisualDensity.compact,
+                          ),
                           if (widget.schedule?.isDeloadWeek() ?? false)
                             Chip(
                               avatar: const Icon(Icons.trending_down, size: 18),
@@ -2041,7 +2293,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                             ),
                           ),
                           SizedBox(
-                            width: 86,
+                            width: 96,
                             child: TextFormField(
                               key: ValueKey('rest-${exercise.id}'),
                               initialValue: _restSecondsFor(
@@ -2054,7 +2306,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                 isDense: true,
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 8,
-                                  vertical: 8,
+                                  vertical: 10,
                                 ),
                                 border: compactInputBorder,
                                 enabledBorder: compactInputBorder,
@@ -2215,13 +2467,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 8.0,
                                         ),
-                                        child: TextFormField(
-                                          key: ValueKey(
-                                            '${exSet.id}-weight-${_weightFieldVersions[exSet.id] ?? 0}',
-                                          ),
-                                          initialValue: _formatWeight(
-                                            exSet.weight,
-                                          ),
+                                        child: _StableSetTextField(
+                                          key: ValueKey('${exSet.id}-weight'),
+                                          text: _formatWeight(exSet.weight),
                                           keyboardType:
                                               const TextInputType.numberWithOptions(
                                                 decimal: true,
@@ -2245,18 +2493,25 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                           ),
                                           onChanged: (value) {
                                             final parsedWeight =
-                                                parseDecimalInput(value) ?? 0.0;
+                                                parseDecimalInput(value);
+                                            if (parsedWeight == null) {
+                                              return;
+                                            }
+                                            final normalizedWeight =
+                                                parsedWeight
+                                                    .clamp(0, 1000)
+                                                    .toDouble();
                                             if (exercise.technique ==
                                                     IntensityTechnique
                                                         .topsetBackoff &&
                                                 setIndex == 0) {
                                               setState(() {
-                                                exSet.weight = parsedWeight;
+                                                exSet.weight = normalizedWeight;
                                               });
                                             } else {
-                                              exSet.weight = parsedWeight;
+                                              exSet.weight = normalizedWeight;
                                             }
-                                            _saveCurrentSession();
+                                            _saveCurrentSessionSilently();
                                           },
                                         ),
                                       ),
@@ -2266,11 +2521,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 8.0,
                                         ),
-                                        child: TextFormField(
-                                          key: ValueKey(
-                                            '${exSet.id}-reps-${exSet.reps}',
-                                          ),
-                                          initialValue: exSet.reps.toString(),
+                                        child: _StableSetTextField(
+                                          key: ValueKey('${exSet.id}-reps'),
+                                          text: exSet.reps.toString(),
                                           keyboardType: TextInputType.number,
                                           textAlign: TextAlign.center,
                                           decoration: InputDecoration(
@@ -2290,9 +2543,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                                 ),
                                           ),
                                           onChanged: (value) {
-                                            exSet.reps =
-                                                parseIntInput(value) ?? 0;
-                                            _saveCurrentSession();
+                                            final parsedReps = parseIntInput(
+                                              value,
+                                            );
+                                            if (parsedReps == null) {
+                                              return;
+                                            }
+                                            exSet.reps = parsedReps
+                                                .clamp(0, 200)
+                                                .toInt();
+                                            _saveCurrentSessionSilently();
                                           },
                                         ),
                                       ),
@@ -2506,9 +2766,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                         spacing: 8,
                         children: [
                           TextButton.icon(
-                            onPressed: () => _addSet(exercise),
-                            icon: const Icon(Icons.add),
-                            label: const Text('set'),
+                            onPressed: () => exercise.sets.isEmpty
+                                ? _addSet(exercise)
+                                : _copySet(exercise, exercise.sets.length - 1),
+                            icon: const Icon(Icons.copy),
+                            label: const Text('copia ultimo'),
                           ),
                           TextButton.icon(
                             onPressed: () => _addSet(exercise, isWarmup: true),
@@ -2535,6 +2797,101 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
           label: const Text('Esercizio'),
         ),
       ),
+    );
+  }
+}
+
+class _ExerciseJumpBar extends StatelessWidget {
+  final List<WorkoutExercise> exercises;
+  final ValueChanged<String> onSelected;
+
+  const _ExerciseJumpBar({required this.exercises, required this.onSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: SizedBox(
+        height: 58,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          itemBuilder: (context, index) {
+            final exercise = exercises[index];
+            return ActionChip(
+              avatar: Icon(
+                Icons.keyboard_arrow_down,
+                color: colorScheme.primary,
+              ),
+              label: Text(exercise.name),
+              onPressed: () => onSelected(exercise.id),
+            );
+          },
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemCount: exercises.length,
+        ),
+      ),
+    );
+  }
+}
+
+class _StableSetTextField extends StatefulWidget {
+  final String text;
+  final TextInputType keyboardType;
+  final TextAlign textAlign;
+  final InputDecoration decoration;
+  final ValueChanged<String> onChanged;
+
+  const _StableSetTextField({
+    super.key,
+    required this.text,
+    required this.keyboardType,
+    required this.textAlign,
+    required this.decoration,
+    required this.onChanged,
+  });
+
+  @override
+  State<_StableSetTextField> createState() => _StableSetTextFieldState();
+}
+
+class _StableSetTextFieldState extends State<_StableSetTextField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.text);
+    _focusNode = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StableSetTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && _controller.text != widget.text) {
+      _controller.text = widget.text;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFormField(
+      controller: _controller,
+      focusNode: _focusNode,
+      keyboardType: widget.keyboardType,
+      textInputAction: TextInputAction.next,
+      textAlign: widget.textAlign,
+      decoration: widget.decoration,
+      onChanged: widget.onChanged,
     );
   }
 }

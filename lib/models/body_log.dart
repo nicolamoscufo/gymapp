@@ -11,6 +11,8 @@ class BodyLog {
   int? sleepHours;
   int? readiness;
   String notes;
+  String? photoPath;
+  String? photoName;
 
   BodyLog({
     String? id,
@@ -23,6 +25,8 @@ class BodyLog {
     this.sleepHours,
     this.readiness,
     this.notes = '',
+    this.photoPath,
+    this.photoName,
   }) : id = id ?? newModelId('body_log');
 
   Map<String, dynamic> toJson() => {
@@ -36,6 +40,8 @@ class BodyLog {
     'sleepHours': sleepHours,
     'readiness': readiness,
     'notes': notes,
+    'photoPath': photoPath,
+    'photoName': photoName,
   };
 
   factory BodyLog.fromJson(Map<String, dynamic> json) => BodyLog(
@@ -49,5 +55,7 @@ class BodyLog {
     sleepHours: json['sleepHours'] as int?,
     readiness: json['readiness'] as int?,
     notes: json['notes'] as String? ?? '',
+    photoPath: json['photoPath'] as String?,
+    photoName: json['photoName'] as String?,
   );
 }

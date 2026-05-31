@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_preferences.dart';
+import 'local_notifications.dart';
 import 'screens/home.dart';
 
 const _brandSeedColor = Color(0xFF6C4DFF);
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await LocalNotificationService.initialize();
   runApp(const MainApp());
 }
 
@@ -150,7 +153,13 @@ ThemeData _buildTheme(Brightness brightness) {
       ),
       labelStyle: TextStyle(color: colorScheme.onSurfaceVariant),
       hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      floatingLabelStyle: TextStyle(
+        color: colorScheme.primary,
+        fontWeight: FontWeight.w700,
+      ),
+      errorMaxLines: 3,
+      helperMaxLines: 3,
+      contentPadding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
     ),
     listTileTheme: ListTileThemeData(
       iconColor: colorScheme.primary,
@@ -197,6 +206,8 @@ ThemeData _buildTheme(Brightness brightness) {
     dialogTheme: DialogThemeData(
       backgroundColor: cardColor,
       surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       titleTextStyle: TextStyle(
         color: colorScheme.onSurface,
