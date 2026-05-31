@@ -860,6 +860,25 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
               buildDefaultDragHandles: false,
               onReorder: _reorderExercise,
+              proxyDecorator: (child, index, animation) {
+                return AnimatedBuilder(
+                  animation: animation,
+                  builder: (context, child) {
+                    final t = Curves.easeOut.transform(animation.value);
+                    return Transform.scale(
+                      scale: 1 + (t * 0.03),
+                      child: Material(
+                        elevation: 8 + (t * 8),
+                        color: Colors.transparent,
+                        shadowColor: colorScheme.shadow.withValues(alpha: 0.28),
+                        borderRadius: BorderRadius.circular(26),
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: child,
+                );
+              },
               itemCount: widget.schedule.exercises.length,
               itemBuilder: (context, index) {
                 final exercise = widget.schedule.exercises[index];
@@ -934,24 +953,38 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                           indexToEdit: index,
                           exerciseToEdit: exercise,
                         ),
-                        trailing: GestureDetector(
+                        trailing: Listener(
                           key: ValueKey('exercise-reorder-${exercise.id}'),
                           behavior: HitTestBehavior.opaque,
-                          onVerticalDragUpdate: (details) {
-                            dragDelta += details.delta.dy;
+                          onPointerMove: (event) {
+                            dragDelta += event.delta.dy;
                           },
-                          onVerticalDragEnd: (_) {
-                            if (dragDelta > 40 &&
-                                index < widget.schedule.exercises.length - 1) {
-                              _reorderExercise(index, index + 2);
-                            } else if (dragDelta < -40 && index > 0) {
-                              _reorderExercise(index, index - 1);
+                          onPointerUp: (_) {
+                            final currentIndex = widget.schedule.exercises
+                                .indexWhere((entry) => entry.id == exercise.id);
+                            if (currentIndex == index) {
+                              if (dragDelta > 40 &&
+                                  currentIndex <
+                                      widget.schedule.exercises.length - 1) {
+                                _reorderExercise(
+                                  currentIndex,
+                                  currentIndex + 2,
+                                );
+                              } else if (dragDelta < -40 && currentIndex > 0) {
+                                _reorderExercise(
+                                  currentIndex,
+                                  currentIndex - 1,
+                                );
+                              }
                             }
                             dragDelta = 0;
                           },
-                          child: const SizedBox.square(
-                            dimension: 48,
-                            child: Center(child: Icon(Icons.drag_handle)),
+                          child: ReorderableDragStartListener(
+                            index: index,
+                            child: const SizedBox.square(
+                              dimension: 48,
+                              child: Center(child: Icon(Icons.drag_handle)),
+                            ),
                           ),
                         ),
                       ),

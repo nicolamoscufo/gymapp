@@ -6,24 +6,29 @@ import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../app_data_store.dart';
+import '../exercise_catalog.dart';
 import '../models/exercise.dart';
 import '../models/schedule.dart';
 import '../models/workout.dart';
 import '../number_input.dart';
 import '../top_set_backoff.dart';
+import 'exercise_picker.dart';
+import 'session_summary.dart';
 
 class ActiveWorkoutScreen extends StatefulWidget {
   final Schedule? schedule;
   final WorkoutSession? resumedSession;
   final List<WorkoutSession> history;
   final int defaultRestSeconds;
+  final bool editCompletedSession;
 
   const ActiveWorkoutScreen({
     super.key,
     required this.schedule,
     this.history = const [],
     required this.defaultRestSeconds,
-  }) : resumedSession = null;
+  }) : resumedSession = null,
+       editCompletedSession = false;
 
   const ActiveWorkoutScreen.resume({
     super.key,
@@ -31,7 +36,17 @@ class ActiveWorkoutScreen extends StatefulWidget {
     this.history = const [],
     required this.defaultRestSeconds,
   }) : schedule = null,
+       editCompletedSession = false,
        assert(resumedSession != null);
+
+  const ActiveWorkoutScreen.editCompleted({
+    super.key,
+    required WorkoutSession session,
+    this.history = const [],
+    required this.defaultRestSeconds,
+  }) : schedule = null,
+       resumedSession = session,
+       editCompletedSession = true;
 
   @override
   State<ActiveWorkoutScreen> createState() => _ActiveWorkoutScreenState();
@@ -45,6 +60,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   int _elapsedSeconds = 0;
   final Map<String, int> _restSecondsByExerciseId = {};
   final Map<String, int> _weightFieldVersions = {};
+  final Set<String> _exerciseIdsAddedToScheduleThisFinish = {};
   DateTime? _lastSavedAt;
   bool _isSaving = false;
 
@@ -56,6 +72,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       colorScheme.error,
     ];
     return accents[index % accents.length];
+  }
+
+  Iterable<WorkoutSession> get _comparisonHistory {
+    return widget.history.where(
+      (historySession) => historySession.id != session.id,
+    );
   }
 
   String _formatDuration(int totalSeconds) {
@@ -116,6 +138,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   String _saveStatusLabel() {
+    if (widget.editCompletedSession) {
+      return _lastSavedAt == null ? 'Modifica storico' : 'Modifiche locali';
+    }
     if (_isSaving) {
       return 'Salvataggio...';
     }
@@ -150,8 +175,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   Iterable<WorkoutExercise> _historicalExercisesFor(WorkoutExercise exercise) {
     final exerciseName = _normalizeExerciseName(exercise.name);
-    return widget.history.expand((session) {
-      return session.exercises.where(
+    return _comparisonHistory.expand((historySession) {
+      return historySession.exercises.where(
         (historicalExercise) =>
             _normalizeExerciseName(historicalExercise.name) == exerciseName,
       );
@@ -486,6 +511,83 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     );
   }
 
+  WorkoutExercise _workoutExerciseFromExercise(
+    Exercise exercise,
+    WorkoutSession? previousSession, {
+    bool keepSourceExerciseId = true,
+  }) {
+    final previousExercise = _previousExerciseFor(exercise, previousSession);
+    final previousWeights = _previousWeightsFor(previousExercise);
+    final previousReps = _previousRepsFor(previousExercise);
+
+    return WorkoutExercise(
+      sourceExerciseId: keepSourceExerciseId ? exercise.id : null,
+      name: exercise.name,
+      notes: exercise.notes,
+      muscleGroup: exercise.muscleGroup,
+      equipment: exercise.equipment,
+      movementPattern: exercise.movementPattern,
+      targetMinReps: exercise.targetMinReps,
+      targetMaxReps: exercise.targetMaxReps,
+      technique: exercise.technique,
+      restSeconds: exercise.restSeconds,
+      supersetGroup: exercise.supersetGroup,
+      progressionKgStep: exercise.progressionKgStep,
+      progressionRepStep: exercise.progressionRepStep,
+      sets: _setsForExercise(exercise, previousWeights),
+      previousWeights: previousWeights,
+      previousReps: previousReps,
+    );
+  }
+
+  Exercise _exerciseFromCatalogEntry(ExerciseCatalogEntry entry) {
+    return Exercise(
+      name: entry.name,
+      set: 3,
+      reps: 10,
+      weight: 0,
+      muscleGroup: entry.muscleGroup,
+      equipment: entry.equipment,
+      movementPattern: entry.movementPattern,
+      notes: '',
+      technique: IntensityTechnique.none,
+      restSeconds: widget.defaultRestSeconds,
+      progressionKgStep: 2.5,
+      progressionRepStep: 1,
+    );
+  }
+
+  Exercise _exerciseFromWorkoutExercise(WorkoutExercise exercise) {
+    final workSets = exercise.sets.where((set) => !set.isWarmup).toList();
+    final sourceSet = workSets.isNotEmpty
+        ? workSets.first
+        : (exercise.sets.isNotEmpty ? exercise.sets.first : null);
+    final isBackoff = exercise.technique == IntensityTechnique.topsetBackoff;
+    final reps = sourceSet?.reps ?? exercise.targetMinReps ?? 10;
+    final backoffReps = isBackoff
+        ? (workSets.length > 1 ? workSets[1].reps : reps)
+        : null;
+
+    return Exercise(
+      name: exercise.name,
+      set: isBackoff ? 2 : math.max(1, workSets.length),
+      reps: reps,
+      weight: sourceSet?.weight ?? 0,
+      muscleGroup: exercise.muscleGroup,
+      equipment: exercise.equipment,
+      movementPattern: exercise.movementPattern,
+      targetMinReps: exercise.targetMinReps,
+      targetMaxReps: exercise.targetMaxReps,
+      notes: exercise.notes,
+      technique: exercise.technique,
+      backoffReps: backoffReps,
+      restSeconds: exercise.restSeconds,
+      supersetGroup: exercise.supersetGroup,
+      progressionKgStep: exercise.progressionKgStep,
+      progressionRepStep: exercise.progressionRepStep,
+    );
+  }
+
   void _applyDeloadToSession() {
     for (final exercise in session.exercises) {
       for (final set in exercise.sets) {
@@ -660,7 +762,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _restoreRestTimersFromSession(notifyExpired: true);
+      if (!widget.editCompletedSession) {
+        _restoreRestTimersFromSession(notifyExpired: true);
+      }
+      if (mounted) {
+        setState(() {
+          _elapsedSeconds = _elapsedSecondsFromClock();
+        });
+      }
     }
   }
 
@@ -668,10 +777,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WakelockPlus.enable();
+    if (!widget.editCompletedSession) {
+      WakelockPlus.enable();
+    }
     if (widget.resumedSession != null) {
-      session = widget.resumedSession!;
-      _restoreRestTimersFromSession();
+      session = widget.editCompletedSession
+          ? WorkoutSession.fromJson(widget.resumedSession!.toJson())
+          : widget.resumedSession!;
+      if (!widget.editCompletedSession) {
+        _restoreRestTimersFromSession();
+      }
     } else if (widget.schedule != null) {
       final previousSession = _latestSessionForSchedule(widget.schedule!);
       session = WorkoutSession(
@@ -679,33 +794,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         scheduleTitle: widget.schedule!.title,
         startTime: DateTime.now(),
         endTime: DateTime.now(),
-        exercises: widget.schedule!.exercises.map((exercise) {
-          final previousExercise = _previousExerciseFor(
-            exercise,
-            previousSession,
-          );
-          final previousWeights = _previousWeightsFor(previousExercise);
-          final previousReps = _previousRepsFor(previousExercise);
-
-          return WorkoutExercise(
-            sourceExerciseId: exercise.id,
-            name: exercise.name,
-            notes: exercise.notes,
-            muscleGroup: exercise.muscleGroup,
-            equipment: exercise.equipment,
-            movementPattern: exercise.movementPattern,
-            targetMinReps: exercise.targetMinReps,
-            targetMaxReps: exercise.targetMaxReps,
-            technique: exercise.technique,
-            restSeconds: exercise.restSeconds,
-            supersetGroup: exercise.supersetGroup,
-            progressionKgStep: exercise.progressionKgStep,
-            progressionRepStep: exercise.progressionRepStep,
-            sets: _setsForExercise(exercise, previousWeights),
-            previousWeights: previousWeights,
-            previousReps: previousReps,
-          );
-        }).toList(),
+        exercises: widget.schedule!.exercises
+            .map(
+              (exercise) =>
+                  _workoutExerciseFromExercise(exercise, previousSession),
+            )
+            .toList(),
       );
       if (widget.schedule!.isDeloadWeek()) {
         _applyDeloadToSession();
@@ -724,7 +818,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   void _startDurationTimer() {
-    _elapsedSeconds = DateTime.now().difference(session.startTime).inSeconds;
+    _elapsedSeconds = _elapsedSecondsFromClock();
+    if (widget.editCompletedSession) {
+      return;
+    }
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) {
         _durationTimer?.cancel();
@@ -732,9 +829,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         return;
       }
       setState(() {
-        _elapsedSeconds++;
+        _elapsedSeconds = _elapsedSecondsFromClock();
       });
     });
+  }
+
+  int _elapsedSecondsFromClock() {
+    final endTime = widget.editCompletedSession
+        ? session.endTime
+        : DateTime.now();
+    return math.max(0, endTime.difference(session.startTime).inSeconds);
   }
 
   Future<void> _restoreIfNeeded() async {
@@ -770,9 +874,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     if (confirm == true) {
       setState(() {
         session = savedSession;
-        _elapsedSeconds = DateTime.now()
-            .difference(session.startTime)
-            .inSeconds;
+        _elapsedSeconds = _elapsedSecondsFromClock();
       });
       _restoreRestTimersFromSession();
     } else {
@@ -781,6 +883,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   Future<void> _saveCurrentSession() async {
+    if (widget.editCompletedSession) {
+      if (mounted) {
+        setState(() => _lastSavedAt = DateTime.now());
+      }
+      return;
+    }
     if (mounted) {
       setState(() => _isSaving = true);
     }
@@ -794,6 +902,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   Future<void> _clearSavedSession() async {
+    if (widget.editCompletedSession) {
+      return;
+    }
     await AppDataStore.clearCurrentSession();
   }
 
@@ -819,26 +930,138 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     return workSets.any((set) => set.reps < minReps);
   }
 
-  Future<void> _applyProgressionToSchedule() async {
-    final sourceSchedule = widget.schedule;
-    if (sourceSchedule == null) {
+  Schedule? _storedScheduleForSession(List<Schedule> schedules) {
+    final scheduleId = session.scheduleId ?? widget.schedule?.id;
+    if (scheduleId != null) {
+      for (final schedule in schedules) {
+        if (schedule.id == scheduleId) {
+          return schedule;
+        }
+      }
+    }
+
+    final scheduleTitle = widget.schedule?.title ?? session.scheduleTitle;
+    for (final schedule in schedules) {
+      if (schedule.title == scheduleTitle) {
+        return schedule;
+      }
+    }
+    return null;
+  }
+
+  bool _workoutExerciseExistsInSchedule(
+    WorkoutExercise workoutExercise,
+    Schedule schedule,
+  ) {
+    for (final exercise in schedule.exercises) {
+      final sameId =
+          workoutExercise.sourceExerciseId != null &&
+          exercise.id == workoutExercise.sourceExerciseId;
+      final sameName =
+          exercise.name.trim().toLowerCase() ==
+          workoutExercise.name.trim().toLowerCase();
+      if (sameId || sameName) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  List<WorkoutExercise> _newExercisesForSchedule(Schedule schedule) {
+    return session.exercises
+        .where(
+          (exercise) => !_workoutExerciseExistsInSchedule(exercise, schedule),
+        )
+        .toList();
+  }
+
+  Future<bool> _confirmSaveAddedExercises(Schedule? schedule) async {
+    if (schedule == null || !mounted) {
+      return false;
+    }
+
+    final newExercises = _newExercisesForSchedule(schedule);
+    if (newExercises.isEmpty) {
+      return false;
+    }
+
+    final count = newExercises.length;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          count == 1 ? 'Salvare nuovo esercizio?' : 'Salvare nuovi esercizi?',
+        ),
+        content: Text(
+          count == 1
+              ? 'Hai aggiunto ${newExercises.first.name}. Vuoi sovrascrivere la scheda ${schedule.title} con questo esercizio?'
+              : 'Hai aggiunto $count esercizi. Vuoi sovrascrivere la scheda ${schedule.title} con questi esercizi?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Solo sessione'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sovrascrivi scheda'),
+          ),
+        ],
+      ),
+    );
+
+    return result == true;
+  }
+
+  Future<void> _saveAddedExercisesToSchedule() async {
+    final bundle = await AppDataStore.loadBundle();
+    final storedSchedule = _storedScheduleForSession(bundle.schedules);
+    if (storedSchedule == null) {
       return;
     }
 
-    final bundle = await AppDataStore.loadBundle();
-    Schedule? storedSchedule;
-    for (final schedule in bundle.schedules) {
-      if (schedule.id == sourceSchedule.id ||
-          schedule.title == sourceSchedule.title) {
-        storedSchedule = schedule;
-        break;
-      }
+    final newExercises = _newExercisesForSchedule(storedSchedule);
+    if (newExercises.isEmpty) {
+      return;
     }
+
+    for (final workoutExercise in newExercises) {
+      final scheduleExercise = _exerciseFromWorkoutExercise(workoutExercise);
+      storedSchedule.exercises.add(scheduleExercise);
+      workoutExercise.sourceExerciseId = scheduleExercise.id;
+      _exerciseIdsAddedToScheduleThisFinish.add(scheduleExercise.id);
+    }
+
+    final liveSchedule = widget.schedule;
+    if (liveSchedule != null &&
+        (liveSchedule.id == storedSchedule.id ||
+            liveSchedule.title == storedSchedule.title)) {
+      liveSchedule.exercises
+        ..clear()
+        ..addAll(
+          storedSchedule.exercises.map(
+            (exercise) => Exercise.fromJson(exercise.toJson()),
+          ),
+        );
+    }
+
+    await AppDataStore.saveSchedules(bundle.schedules);
+  }
+
+  Future<void> _applyProgressionToSchedule() async {
+    final bundle = await AppDataStore.loadBundle();
+    final storedSchedule = _storedScheduleForSession(bundle.schedules);
     if (storedSchedule == null) {
       return;
     }
 
     for (final completedExercise in session.exercises) {
+      if (_exerciseIdsAddedToScheduleThisFinish.contains(
+        completedExercise.sourceExerciseId,
+      )) {
+        continue;
+      }
+
       Exercise? targetExercise;
       for (final exercise in storedSchedule.exercises) {
         final sameId =
@@ -880,21 +1103,295 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     WidgetsBinding.instance.removeObserver(this);
     _restTimer?.cancel();
     _durationTimer?.cancel();
-    WakelockPlus.disable();
+    if (!widget.editCompletedSession) {
+      WakelockPlus.disable();
+    }
     super.dispose();
   }
 
   Future<void> _finishWorkout() async {
+    if (widget.editCompletedSession) {
+      await _saveEditedCompletedSession();
+      return;
+    }
+
     session.endTime = DateTime.now();
 
+    final bundle = await AppDataStore.loadBundle();
+    final saveAddedExercises = await _confirmSaveAddedExercises(
+      _storedScheduleForSession(bundle.schedules),
+    );
+    if (saveAddedExercises) {
+      await _saveAddedExercisesToSchedule();
+    }
+
     final history = await AppDataStore.loadHistory();
+    final previousHistory = List<WorkoutSession>.from(history);
     history.add(session);
     await AppDataStore.saveHistory(history);
     await _applyProgressionToSchedule();
     await AppDataStore.clearCurrentSession();
 
     if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SessionSummaryScreen(
+            session: session,
+            previousHistory: previousHistory,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _saveEditedCompletedSession() async {
+    final history = await AppDataStore.loadHistory();
+    final index = history.indexWhere(
+      (historySession) => historySession.id == session.id,
+    );
+
+    if (index == -1) {
+      history.add(session);
+    } else {
+      history[index] = session;
+    }
+
+    await AppDataStore.saveHistory(history);
+    if (mounted) {
       Navigator.pop(context, true);
+    }
+  }
+
+  WorkoutSession? _previousSessionForAddedExercises() {
+    WorkoutSession? latestSession;
+    for (final historySession in widget.history) {
+      if (historySession.id == session.id ||
+          historySession.scheduleTitle != session.scheduleTitle ||
+          !historySession.endTime.isBefore(session.endTime)) {
+        continue;
+      }
+
+      if (latestSession == null ||
+          historySession.endTime.isAfter(latestSession.endTime)) {
+        latestSession = historySession;
+      }
+    }
+    return latestSession;
+  }
+
+  void _addExercisesToSession(List<Exercise> exercises) {
+    if (exercises.isEmpty) {
+      return;
+    }
+
+    final previousSession = _previousSessionForAddedExercises();
+    setState(() {
+      session.exercises.addAll(
+        exercises.map(
+          (exercise) => _workoutExerciseFromExercise(
+            exercise,
+            previousSession,
+            keepSourceExerciseId: false,
+          ),
+        ),
+      );
+    });
+    _saveCurrentSession();
+  }
+
+  void _addCatalogExercisesToSession(List<ExerciseCatalogEntry> entries) {
+    _addExercisesToSession(entries.map(_exerciseFromCatalogEntry).toList());
+  }
+
+  Future<void> _openExercisePicker() async {
+    final result = await Navigator.push<ExercisePickerResult>(
+      context,
+      MaterialPageRoute(builder: (context) => const ExercisePickerScreen()),
+    );
+
+    if (!mounted || result == null) {
+      return;
+    }
+
+    if (result.addCustom) {
+      final customExercise = await _showCustomExerciseDialog();
+      if (customExercise != null) {
+        _addExercisesToSession([customExercise]);
+      }
+      return;
+    }
+
+    _addCatalogExercisesToSession(result.entries);
+  }
+
+  Future<Exercise?> _showCustomExerciseDialog() async {
+    MuscleGroup? selectedMuscleGroup;
+    final nameController = TextEditingController();
+    final setsController = TextEditingController(text: '3');
+    final repsController = TextEditingController(text: '10');
+    final weightController = TextEditingController(text: '0');
+    final restSecondsController = TextEditingController(
+      text: widget.defaultRestSeconds.toString(),
+    );
+    final equipmentController = TextEditingController();
+    final notesController = TextEditingController();
+    String? validationMessage;
+    Exercise? createdExercise;
+
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Nuovo esercizio'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<MuscleGroup>(
+                    initialValue: selectedMuscleGroup,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Gruppo'),
+                    items: selectableMuscleGroups
+                        .map(
+                          (group) => DropdownMenuItem<MuscleGroup>(
+                            value: group,
+                            child: Text(group.label),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) => setDialogState(() {
+                      selectedMuscleGroup = value;
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Nome'),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: setsController,
+                          decoration: const InputDecoration(labelText: 'Serie'),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: repsController,
+                          decoration: const InputDecoration(labelText: 'Reps'),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: weightController,
+                          decoration: const InputDecoration(labelText: 'Kg'),
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: restSecondsController,
+                          decoration: const InputDecoration(
+                            labelText: 'Recupero sec',
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: equipmentController,
+                    decoration: const InputDecoration(labelText: 'Attrezzo'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: notesController,
+                    decoration: const InputDecoration(labelText: 'Note'),
+                  ),
+                  if (validationMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      validationMessage!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Annulla'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  final name = nameController.text.trim();
+                  final sets = parseIntInput(setsController.text);
+                  final reps = parseIntInput(repsController.text);
+                  final weight = parseDecimalInput(weightController.text);
+                  final restSeconds = parseIntInput(restSecondsController.text);
+
+                  if (name.isEmpty ||
+                      sets == null ||
+                      reps == null ||
+                      weight == null ||
+                      restSeconds == null) {
+                    setDialogState(() {
+                      validationMessage =
+                          'Completa nome, serie, reps, kg e recupero.';
+                    });
+                    return;
+                  }
+
+                  createdExercise = Exercise(
+                    name: name,
+                    set: math.max(1, sets),
+                    reps: math.max(0, reps),
+                    weight: math.max(0, weight).toDouble(),
+                    muscleGroup: selectedMuscleGroup ?? MuscleGroup.unassigned,
+                    equipment: equipmentController.text.trim(),
+                    notes: notesController.text.trim(),
+                    technique: IntensityTechnique.none,
+                    restSeconds: restSeconds.clamp(0, 3600).toInt(),
+                    progressionKgStep: 2.5,
+                    progressionRepStep: 1,
+                  );
+                  Navigator.pop(context, true);
+                },
+                child: const Text('Aggiungi'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      return saved == true ? createdExercise : null;
+    } finally {
+      nameController.dispose();
+      setsController.dispose();
+      repsController.dispose();
+      weightController.dispose();
+      restSecondsController.dispose();
+      equipmentController.dispose();
+      notesController.dispose();
     }
   }
 
@@ -1253,8 +1750,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         final confirm = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('Annullare allenamento?'),
-            content: const Text('I progressi non salvati andranno persi.'),
+            title: Text(
+              widget.editCompletedSession
+                  ? 'Uscire dalla modifica?'
+                  : 'Annullare allenamento?',
+            ),
+            content: Text(
+              widget.editCompletedSession
+                  ? 'Le modifiche non salvate andranno perse.'
+                  : 'I progressi non salvati andranno persi.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
@@ -1262,7 +1767,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Annulla'),
+                child: Text(widget.editCompletedSession ? 'Esci' : 'Annulla'),
               ),
             ],
           ),
@@ -1305,9 +1810,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
-                    title: const Text('Annullare allenamento?'),
-                    content: const Text(
-                      'I progressi non salvati andranno persi.',
+                    title: Text(
+                      widget.editCompletedSession
+                          ? 'Uscire dalla modifica?'
+                          : 'Annullare allenamento?',
+                    ),
+                    content: Text(
+                      widget.editCompletedSession
+                          ? 'Le modifiche non salvate andranno perse.'
+                          : 'I progressi non salvati andranno persi.',
                     ),
                     actions: [
                       TextButton(
@@ -1316,7 +1827,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                       ),
                       ElevatedButton(
                         onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Annulla'),
+                        child: Text(
+                          widget.editCompletedSession ? 'Esci' : 'Annulla',
+                        ),
                       ),
                     ],
                   ),
@@ -1328,7 +1841,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                 if (mounted) navigator.pop();
               },
               style: TextButton.styleFrom(foregroundColor: colorScheme.error),
-              child: const Text('Stop'),
+              child: Text(widget.editCompletedSession ? 'Chiudi' : 'Stop'),
             ),
             TextButton(
               onPressed: () async {
@@ -1338,7 +1851,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
-                    title: const Text('Riepilogo allenamento'),
+                    title: Text(
+                      widget.editCompletedSession
+                          ? 'Salvare modifiche?'
+                          : 'Riepilogo allenamento',
+                    ),
                     content: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1371,7 +1888,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                       ),
                       ElevatedButton(
                         onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Salva'),
+                        child: Text(
+                          widget.editCompletedSession
+                              ? 'Salva modifiche'
+                              : 'Salva',
+                        ),
                       ),
                     ],
                   ),
@@ -1382,7 +1903,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                 await _finishWorkout();
               },
               style: TextButton.styleFrom(foregroundColor: colorScheme.primary),
-              child: const Text('Fine'),
+              child: Text(widget.editCompletedSession ? 'Salva' : 'Fine'),
             ),
           ],
           bottom: PreferredSize(
@@ -1402,7 +1923,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
           ),
         ),
         body: ListView.builder(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.only(bottom: 96),
           itemCount: session.exercises.length,
           itemBuilder: (context, exIndex) {
             final exercise = session.exercises[exIndex];
@@ -2007,6 +2528,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
               ),
             );
           },
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _openExercisePicker,
+          icon: const Icon(Icons.add),
+          label: const Text('Esercizio'),
         ),
       ),
     );

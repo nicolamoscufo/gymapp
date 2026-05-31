@@ -2490,6 +2490,22 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _editCompletedWorkout(WorkoutSession session) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ActiveWorkoutScreen.editCompleted(
+          session: session,
+          history: history,
+          defaultRestSeconds: _defaultRestSeconds,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _loadData();
+    }
+  }
+
   Future<void> _showHistorySessionDialog(WorkoutSession session) async {
     final titleController = TextEditingController(text: session.scheduleTitle);
     final dateController = TextEditingController(
@@ -2794,6 +2810,11 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       if (hasSessionPr)
                         Icon(Icons.emoji_events, color: colorScheme.tertiary),
+                      IconButton(
+                        tooltip: 'Modifica allenamento',
+                        icon: const Icon(Icons.fitness_center),
+                        onPressed: () => _editCompletedWorkout(session),
+                      ),
                       IconButton(
                         tooltip: 'Modifica sessione',
                         icon: const Icon(Icons.edit_calendar),
