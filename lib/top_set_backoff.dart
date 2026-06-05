@@ -1,13 +1,9 @@
 const double defaultBackoffReductionPercent = 10;
 
-double backoffReductionPercentFor({double? rpe, int? rir}) {
-  if ((rpe != null && rpe >= 9) || (rir != null && rir <= 1)) {
-    return 12.5;
-  }
-  if ((rpe != null && rpe <= 7) || (rir != null && rir >= 3)) {
-    return 7.5;
-  }
-  return defaultBackoffReductionPercent;
+double backoffReductionPercentFor({
+  double reductionPercent = defaultBackoffReductionPercent,
+}) {
+  return reductionPercent.clamp(0, 100).toDouble();
 }
 
 double recommendedBackoffWeight(

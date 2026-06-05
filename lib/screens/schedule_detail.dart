@@ -13,6 +13,7 @@ class ScheduleDetailScreen extends StatefulWidget {
   final Schedule schedule;
   final List<WorkoutSession> history;
   final int defaultRestSeconds;
+  final double defaultBackoffReductionPercent;
   final VoidCallback onUpdate;
 
   const ScheduleDetailScreen({
@@ -20,6 +21,7 @@ class ScheduleDetailScreen extends StatefulWidget {
     required this.schedule,
     this.history = const [],
     required this.defaultRestSeconds,
+    required this.defaultBackoffReductionPercent,
     required this.onUpdate,
   });
 
@@ -283,6 +285,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     String notes,
     IntensityTechnique technique,
     int? backoffReps,
+    double backoffReductionPercent,
     int? restSeconds,
     int? supersetGroup,
     double progressionKgStep,
@@ -302,6 +305,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
       notes: notes,
       technique: technique,
       backoffReps: backoffReps,
+      backoffReductionPercent: backoffReductionPercent,
       restSeconds: restSeconds,
       supersetGroup: supersetGroup,
       progressionKgStep: progressionKgStep,
@@ -333,6 +337,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
             movementPattern: entry.movementPattern,
             notes: '',
             technique: IntensityTechnique.none,
+            backoffReductionPercent: widget.defaultBackoffReductionPercent,
             restSeconds: widget.defaultRestSeconds,
             progressionKgStep: 2.5,
             progressionRepStep: 1,
@@ -392,6 +397,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
     String notes,
     IntensityTechnique technique,
     int? backoffReps,
+    double backoffReductionPercent,
     int? restSeconds,
     int? supersetGroup,
     double progressionKgStep,
@@ -411,6 +417,8 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
       widget.schedule.exercises[index].notes = notes;
       widget.schedule.exercises[index].technique = technique;
       widget.schedule.exercises[index].backoffReps = backoffReps;
+      widget.schedule.exercises[index].backoffReductionPercent =
+          backoffReductionPercent;
       widget.schedule.exercises[index].restSeconds = restSeconds;
       widget.schedule.exercises[index].supersetGroup = supersetGroup;
       widget.schedule.exercises[index].progressionKgStep = progressionKgStep;
@@ -818,9 +826,36 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                   return;
                 }
 
+                final hasInvalidRange =
+                    parsedSets < 1 ||
+                    parsedReps < 1 ||
+                    parsedWeight < 0 ||
+                    parsedRestSeconds < 0 ||
+                    parsedRestSeconds > 3600 ||
+                    (parsedBackoffReps != null && parsedBackoffReps < 1) ||
+                    (parsedTargetMinReps != null && parsedTargetMinReps < 1) ||
+                    (parsedTargetMaxReps != null && parsedTargetMaxReps < 1) ||
+                    (parsedTargetMinReps != null &&
+                        parsedTargetMaxReps != null &&
+                        parsedTargetMinReps > parsedTargetMaxReps) ||
+                    (parsedSupersetGroup != null && parsedSupersetGroup < 1) ||
+                    parsedProgressionKgStep < 0 ||
+                    parsedProgressionRepStep < 1;
+                if (hasInvalidRange) {
+                  setDialogState(() {
+                    validationMessage =
+                        'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi, range reps coerente.';
+                  });
+                  return;
+                }
+
                 setDialogState(() {
                   validationMessage = null;
                 });
+
+                final backoffReductionPercent = isEditing
+                    ? exerciseToEdit.backoffReductionPercent
+                    : widget.defaultBackoffReductionPercent;
 
                 if (isEditing) {
                   _editExercise(
@@ -837,6 +872,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     notesController.text,
                     selectedTechnique,
                     parsedBackoffReps,
+                    backoffReductionPercent,
                     parsedRestSeconds,
                     parsedSupersetGroup,
                     parsedProgressionKgStep,
@@ -857,6 +893,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     notesController.text,
                     selectedTechnique,
                     parsedBackoffReps,
+                    backoffReductionPercent,
                     parsedRestSeconds,
                     parsedSupersetGroup,
                     parsedProgressionKgStep,
@@ -922,6 +959,8 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     schedule: widget.schedule,
                     history: widget.history,
                     defaultRestSeconds: widget.defaultRestSeconds,
+                    defaultBackoffReductionPercent:
+                        widget.defaultBackoffReductionPercent,
                   ),
                 ),
               );
@@ -965,6 +1004,12 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
+                    ),
+                    const SizedBox(height: 18),
+                    FilledButton.icon(
+                      onPressed: _openExercisePicker,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Aggiungi esercizi'),
                     ),
                   ],
                 ),

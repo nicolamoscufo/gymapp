@@ -457,7 +457,32 @@ class _VolumeChartCard extends StatelessWidget {
                 BarChartData(
                   maxY: maxY,
                   alignment: BarChartAlignment.spaceAround,
-                  barTouchData: BarTouchData(enabled: true),
+                  barTouchData: BarTouchData(
+                    enabled: true,
+                    touchTooltipData: BarTouchTooltipData(
+                      fitInsideHorizontally: true,
+                      fitInsideVertically: true,
+                      tooltipMargin: 6,
+                      tooltipPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      tooltipBorderRadius: BorderRadius.circular(10),
+                      maxContentWidth: 120,
+                      getTooltipColor: (_) => colorScheme.inverseSurface,
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        final entry = entries[groupIndex];
+                        return BarTooltipItem(
+                          '${entry.label}\n${_formatCompactKg(rod.toY)}',
+                          TextStyle(
+                            color: colorScheme.onInverseSurface,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                   titlesData: FlTitlesData(
                     show: true,
                     bottomTitles: AxisTitles(

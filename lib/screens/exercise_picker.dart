@@ -113,7 +113,10 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
   }
 
   Future<void> _toggleFavorite(ExerciseCatalogEntry entry) async {
-    final key = _entryKey(entry);
+    await _toggleFavoriteId(_entryKey(entry));
+  }
+
+  Future<void> _toggleFavoriteId(String key) async {
     setState(() {
       if (_favoriteEntryIds.contains(key)) {
         _favoriteEntryIds.remove(key);
@@ -179,7 +182,9 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
             final groupMatches =
                 _selectedGroup == null ||
                 exercise.muscleGroup == _selectedGroup;
-            return queryMatches && groupMatches && !_showFavoritesOnly;
+            final favoriteMatches =
+                !_showFavoritesOnly || _favoriteEntryIds.contains(exercise.id);
+            return queryMatches && groupMatches && favoriteMatches;
           }).toList();
           final baseEntries = filterExerciseCatalog(
             catalog,
@@ -307,7 +312,28 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
               ),
               Expanded(
                 child: visibleEntries.isEmpty && visibleCustomExercises.isEmpty
-                    ? const Center(child: Text('Nessun esercizio trovato.'))
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Nessun esercizio trovato.'),
+                              const SizedBox(height: 12),
+                              FilledButton.icon(
+                                onPressed: () {
+                                  Navigator.pop(
+                                    context,
+                                    const ExercisePickerResult.custom(),
+                                  );
+                                },
+                                icon: const Icon(Icons.add),
+                                label: const Text('Crea personalizzato'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                         itemCount:
@@ -318,6 +344,9 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
                             final exercise = visibleCustomExercises[index];
                             final selected = _selectedCustomExercises
                                 .containsKey(exercise.id);
+                            final favorite = _favoriteEntryIds.contains(
+                              exercise.id,
+                            );
 
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 8),
@@ -349,10 +378,30 @@ class _ExercisePickerScreenState extends State<ExercisePickerScreen> {
                                       color: colorScheme.onSurfaceVariant,
                                     ),
                                   ),
-                                  trailing: Checkbox(
-                                    value: selected,
-                                    onChanged: (_) =>
-                                        _toggleCustomExercise(exercise),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        tooltip: favorite
+                                            ? 'Rimuovi preferito'
+                                            : 'Aggiungi preferito',
+                                        icon: Icon(
+                                          favorite
+                                              ? Icons.star
+                                              : Icons.star_border,
+                                        ),
+                                        color: favorite
+                                            ? colorScheme.tertiary
+                                            : colorScheme.onSurfaceVariant,
+                                        onPressed: () =>
+                                            _toggleFavoriteId(exercise.id),
+                                      ),
+                                      Checkbox(
+                                        value: selected,
+                                        onChanged: (_) =>
+                                            _toggleCustomExercise(exercise),
+                                      ),
+                                    ],
                                   ),
                                   onTap: () => _toggleCustomExercise(exercise),
                                 ),

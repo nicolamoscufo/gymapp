@@ -13,7 +13,7 @@ import '../models/exercise.dart';
 import '../models/schedule.dart';
 import '../models/workout.dart';
 import '../number_input.dart';
-import '../top_set_backoff.dart';
+import '../top_set_backoff.dart' as top_set_backoff;
 import 'exercise_picker.dart';
 import 'session_summary.dart';
 
@@ -22,6 +22,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
   final WorkoutSession? resumedSession;
   final List<WorkoutSession> history;
   final int defaultRestSeconds;
+  final double defaultBackoffReductionPercent;
   final bool editCompletedSession;
 
   const ActiveWorkoutScreen({
@@ -29,6 +30,8 @@ class ActiveWorkoutScreen extends StatefulWidget {
     required this.schedule,
     this.history = const [],
     required this.defaultRestSeconds,
+    this.defaultBackoffReductionPercent =
+        top_set_backoff.defaultBackoffReductionPercent,
   }) : resumedSession = null,
        editCompletedSession = false;
 
@@ -37,6 +40,8 @@ class ActiveWorkoutScreen extends StatefulWidget {
     required this.resumedSession,
     this.history = const [],
     required this.defaultRestSeconds,
+    this.defaultBackoffReductionPercent =
+        top_set_backoff.defaultBackoffReductionPercent,
   }) : schedule = null,
        editCompletedSession = false,
        assert(resumedSession != null);
@@ -46,6 +51,8 @@ class ActiveWorkoutScreen extends StatefulWidget {
     required WorkoutSession session,
     this.history = const [],
     required this.defaultRestSeconds,
+    this.defaultBackoffReductionPercent =
+        top_set_backoff.defaultBackoffReductionPercent,
   }) : schedule = null,
        resumedSession = session,
        editCompletedSession = true;
@@ -65,6 +72,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   final Set<String> _exerciseIdsAddedToScheduleThisFinish = {};
   DateTime? _lastSavedAt;
   bool _isSaving = false;
+  bool _allowCurrentSessionSaves = true;
+  Future<void> _pendingCurrentSessionSave = Future.value();
 
   Color _accentForIndex(ColorScheme colorScheme, int index) {
     final accents = [
@@ -122,8 +131,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       return null;
     }
 
-    final topSet = exercise.sets.first;
-    return backoffReductionPercentFor(rpe: topSet.rpe, rir: topSet.rir);
+    return top_set_backoff.backoffReductionPercentFor(
+      reductionPercent: exercise.backoffReductionPercent,
+    );
   }
 
   double? _recommendedBackoffWeightFor(WorkoutExercise exercise, int setIndex) {
@@ -137,7 +147,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       return null;
     }
 
-    return recommendedBackoffWeight(topSetWeight, reductionPercent: reduction);
+    return top_set_backoff.recommendedBackoffWeight(
+      topSetWeight,
+      reductionPercent: reduction,
+    );
   }
 
   String? _backoffHintFor(WorkoutExercise exercise, int setIndex) {
@@ -168,20 +181,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       return 'Autosave attivo';
     }
     return 'Salvato ${savedAt.hour.toString().padLeft(2, '0')}:${savedAt.minute.toString().padLeft(2, '0')}';
-  }
-
-  String _plateSummaryFor(double targetWeight, {double barWeight = 20}) {
-    final perSide = ((targetWeight - barWeight) / 2).clamp(0, 999).toDouble();
-    var remaining = perSide;
-    final plates = <String>[];
-    for (final plate in const [25, 20, 15, 10, 5, 2.5, 1.25]) {
-      final count = remaining ~/ plate;
-      if (count > 0) {
-        plates.add('${count}x ${_formatWeight(plate.toDouble())}');
-        remaining -= count * plate;
-      }
-    }
-    return plates.isEmpty ? 'nessun disco' : plates.join(' + ');
   }
 
   double _setVolume(ExerciseSet set) => set.weight * set.reps;
@@ -583,7 +582,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         ),
         ExerciseSet(
           weight: _weightForSet(exercise, previousWeights, previousReps, 1),
-          reps: _repsForSet(exercise, previousReps, 1),
+          reps: exercise.backoffReps!,
         ),
       ];
     }
@@ -616,6 +615,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       targetMinReps: exercise.targetMinReps,
       targetMaxReps: exercise.targetMaxReps,
       technique: exercise.technique,
+      backoffReductionPercent: exercise.backoffReductionPercent,
       restSeconds: exercise.restSeconds,
       supersetGroup: exercise.supersetGroup,
       progressionKgStep: exercise.progressionKgStep,
@@ -638,6 +638,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       movementPattern: entry.movementPattern,
       notes: '',
       technique: IntensityTechnique.none,
+      backoffReductionPercent: widget.defaultBackoffReductionPercent,
       restSeconds: widget.defaultRestSeconds,
       progressionKgStep: 2.5,
       progressionRepStep: 1,
@@ -672,6 +673,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       targetMaxReps: exercise.targetMaxReps,
       notes: exercise.notes,
       technique: exercise.technique,
+      backoffReductionPercent: exercise.backoffReductionPercent,
       backoffReps: backoffReps,
       restSeconds: exercise.restSeconds,
       supersetGroup: exercise.supersetGroup,
@@ -821,6 +823,31 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _saveCurrentSession();
   }
 
+  Future<void> _cancelAllRestTimers() async {
+    _restTimer?.cancel();
+    _restTimer = null;
+    final exerciseIds = <String>{
+      ..._restSecondsByExerciseId.keys,
+      ...session.exercises
+          .where(
+            (exercise) =>
+                exercise.activeRestStartedAt != null ||
+                exercise.activeRestSeconds != null,
+          )
+          .map((exercise) => exercise.id),
+    };
+    _restSecondsByExerciseId.clear();
+    for (final exercise in session.exercises) {
+      exercise.activeRestSeconds = null;
+      exercise.activeRestStartedAt = null;
+    }
+    for (final exerciseId in exerciseIds) {
+      await LocalNotificationService.cancel(
+        LocalNotificationService.restNotificationId(exerciseId),
+      );
+    }
+  }
+
   void _updateExerciseRestSeconds(WorkoutExercise exercise, String value) {
     final parsedSeconds = parseIntInput(value);
     if (parsedSeconds == null) {
@@ -828,14 +855,31 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
 
     final normalizedSeconds = parsedSeconds.clamp(0, 3600).toInt();
+    final wasActive = _restSecondsByExerciseId.containsKey(exercise.id);
+    if (wasActive && normalizedSeconds == 0) {
+      _stopRestForExercise(exercise);
+      return;
+    }
+
     setState(() {
       exercise.restSeconds = normalizedSeconds;
-      if (_restSecondsByExerciseId.containsKey(exercise.id)) {
+      if (wasActive) {
         _restSecondsByExerciseId[exercise.id] = normalizedSeconds;
         exercise.activeRestSeconds = normalizedSeconds;
         exercise.activeRestStartedAt = DateTime.now();
       }
     });
+    if (wasActive) {
+      final notificationId = LocalNotificationService.restNotificationId(
+        exercise.id,
+      );
+      LocalNotificationService.cancel(notificationId);
+      LocalNotificationService.scheduleRestFinished(
+        id: notificationId,
+        endTime: DateTime.now().add(Duration(seconds: normalizedSeconds)),
+        exerciseName: exercise.name,
+      );
+    }
     _saveCurrentSession();
   }
 
@@ -1004,16 +1048,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       }
       return;
     }
+    if (!_allowCurrentSessionSaves) {
+      return;
+    }
     if (mounted) {
       setState(() => _isSaving = true);
     }
-    await AppDataStore.saveCurrentSession(session);
-    if (mounted) {
-      setState(() {
-        _lastSavedAt = DateTime.now();
-        _isSaving = false;
-      });
-    }
+    await _queueCurrentSessionSave(showSaving: true);
   }
 
   Future<void> _saveCurrentSessionSilently() async {
@@ -1021,9 +1062,38 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       _lastSavedAt = DateTime.now();
       return;
     }
+    if (!_allowCurrentSessionSaves) {
+      return;
+    }
 
-    await AppDataStore.saveCurrentSession(session);
-    _lastSavedAt = DateTime.now();
+    await _queueCurrentSessionSave();
+  }
+
+  Future<void> _queueCurrentSessionSave({bool showSaving = false}) {
+    final nextSave = _pendingCurrentSessionSave.catchError((_) {}).then((
+      _,
+    ) async {
+      if (!_allowCurrentSessionSaves) {
+        return;
+      }
+      await AppDataStore.saveCurrentSession(session);
+      if (mounted) {
+        setState(() {
+          _lastSavedAt = DateTime.now();
+          if (showSaving) {
+            _isSaving = false;
+          }
+        });
+      } else {
+        _lastSavedAt = DateTime.now();
+      }
+    });
+    _pendingCurrentSessionSave = nextSave;
+    return nextSave;
+  }
+
+  Future<void> _drainCurrentSessionSaves() async {
+    await _pendingCurrentSessionSave.catchError((_) {});
   }
 
   Future<void> _clearSavedSession() async {
@@ -1033,13 +1103,22 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     await AppDataStore.clearCurrentSession();
   }
 
+  List<ExerciseSet> _workSets(WorkoutExercise exercise) {
+    return exercise.sets.where((set) => !set.isWarmup).toList();
+  }
+
+  bool _allWorkSetsCompleted(WorkoutExercise exercise, Exercise target) {
+    final workSets = _workSets(exercise);
+    final requiredSets = math.max(1, target.set);
+    return workSets.length >= requiredSets &&
+        workSets.every((set) => set.isCompleted);
+  }
+
   bool _allCompletedAtTop(WorkoutExercise exercise, Exercise target) {
-    final workSets = exercise.sets.where(
-      (set) => set.isCompleted && !set.isWarmup,
-    );
-    if (workSets.isEmpty) {
+    if (!_allWorkSetsCompleted(exercise, target)) {
       return false;
     }
+    final workSets = _workSets(exercise);
     final targetReps = target.targetMaxReps ?? target.reps;
     return workSets.every((set) => set.reps >= targetReps);
   }
@@ -1209,9 +1288,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       }
 
       if (targetExercise.progressionScheme == ProgressionScheme.linear) {
-        if (completedExercise.sets.any(
-          (set) => set.isCompleted && !set.isWarmup,
-        )) {
+        if (_allWorkSetsCompleted(completedExercise, targetExercise)) {
           targetExercise.weight += targetExercise.progressionKgStep;
         }
         continue;
@@ -1225,7 +1302,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       }
 
       if (targetExercise.progressionScheme == ProgressionScheme.repsOnly) {
-        if (targetExercise.targetMaxReps != null &&
+        if (_allWorkSetsCompleted(completedExercise, targetExercise) &&
+            !_anyCompletedBelowMin(completedExercise, targetExercise) &&
+            targetExercise.targetMaxReps != null &&
             targetExercise.reps < targetExercise.targetMaxReps!) {
           targetExercise.reps = math.min(
             targetExercise.targetMaxReps!,
@@ -1242,7 +1321,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
           0,
           targetExercise.weight - targetExercise.progressionKgStep,
         );
-      } else if (targetExercise.targetMaxReps != null &&
+      } else if (_allWorkSetsCompleted(completedExercise, targetExercise) &&
+          targetExercise.targetMaxReps != null &&
           targetExercise.reps < targetExercise.targetMaxReps!) {
         targetExercise.reps = math.min(
           targetExercise.targetMaxReps!,
@@ -1271,6 +1351,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       return;
     }
 
+    _allowCurrentSessionSaves = false;
+    await _drainCurrentSessionSaves();
+    await _cancelAllRestTimers();
     session.endTime = DateTime.now();
 
     final bundle = await AppDataStore.loadBundle();
@@ -1522,11 +1605,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                     return;
                   }
 
+                  if (sets < 1 || reps < 1 || weight < 0 || restSeconds < 0) {
+                    setDialogState(() {
+                      validationMessage =
+                          'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi.';
+                    });
+                    return;
+                  }
+
                   createdExercise = Exercise(
                     name: name,
-                    set: math.max(1, sets),
-                    reps: math.max(0, reps),
-                    weight: math.max(0, weight).toDouble(),
+                    set: sets,
+                    reps: reps,
+                    weight: weight.toDouble(),
                     muscleGroup: selectedMuscleGroup ?? MuscleGroup.unassigned,
                     equipment: equipmentController.text.trim(),
                     notes: notesController.text.trim(),
@@ -1688,21 +1779,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     setState(() {
       exercise.sets.removeWhere((set) => set.isWarmup && !set.isCompleted);
       exercise.sets.insertAll(0, warmups);
-    });
-    _saveCurrentSession();
-  }
-
-  void _addQuickSetNote(ExerciseSet set, String note) {
-    final notes = set.notes
-        .split(' • ')
-        .map((entry) => entry.trim())
-        .where((entry) => entry.isNotEmpty)
-        .toList();
-    if (!notes.contains(note)) {
-      notes.add(note);
-    }
-    setState(() {
-      set.notes = notes.join(' • ');
     });
     _saveCurrentSession();
   }
@@ -2249,15 +2325,30 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                             ),
                         ],
                       ),
-                      if (exercise.notes.trim().isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          exercise.notes,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        key: ValueKey('exercise-notes-${exercise.id}'),
+                        initialValue: exercise.notes,
+                        minLines: 1,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          labelText: 'Note esercizio',
+                          hintText: 'Tecnica, setup, cue...',
+                          isDense: true,
+                          border: compactInputBorder,
+                          enabledBorder: compactInputBorder,
+                          focusedBorder: compactInputBorder.copyWith(
+                            borderSide: BorderSide(
+                              color: colorScheme.primary,
+                              width: 1.5,
+                            ),
                           ),
                         ),
-                      ],
+                        onChanged: (value) {
+                          exercise.notes = value;
+                          _saveCurrentSessionSilently();
+                        },
+                      ),
                       if (exercise.previousWeights.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Text(
@@ -2408,10 +2499,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                           exSet,
                           setIndex,
                         );
-                        final plateSummary = exSet.weight <= 0
-                            ? null
-                            : _plateSummaryFor(exSet.weight);
-
                         return Dismissible(
                           key: ValueKey(exSet.id),
                           direction: DismissDirection.endToStart,
@@ -2605,20 +2692,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                           ),
                                     ),
                                   ),
-                                if (plateSummary != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 72,
-                                      top: 2,
-                                    ),
-                                    child: Text(
-                                      'Dischi: $plateSummary per lato',
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ),
                                 if (nextSetHint != null)
                                   Padding(
                                     padding: const EdgeInsets.only(
@@ -2634,44 +2707,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                           ),
                                     ),
                                   ),
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    left: 72,
-                                    top: 4,
-                                  ),
-                                  child: PopupMenuButton<String>(
-                                    tooltip: 'Note rapide',
-                                    onSelected: (note) =>
-                                        _addQuickSetNote(exSet, note),
-                                    itemBuilder: (context) => const [
-                                      PopupMenuItem(
-                                        value: 'facile',
-                                        child: Text('facile'),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'duro',
-                                        child: Text('duro'),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'dolore',
-                                        child: Text('dolore'),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'tecnica ok',
-                                        child: Text('tecnica ok'),
-                                      ),
-                                    ],
-                                    child: Chip(
-                                      avatar: Icon(
-                                        Icons.note_add,
-                                        color: colorScheme.primary,
-                                        size: 16,
-                                      ),
-                                      label: const Text('note rapida'),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                  ),
-                                ),
                                 if (setVolumeDelta != null &&
                                     setVolumeDelta > 0)
                                   Padding(
@@ -2766,9 +2801,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                         spacing: 8,
                         children: [
                           TextButton.icon(
-                            onPressed: () => exercise.sets.isEmpty
-                                ? _addSet(exercise)
-                                : _copySet(exercise, exercise.sets.length - 1),
+                            onPressed: () => _addSet(exercise),
+                            icon: const Icon(Icons.add),
+                            label: const Text('serie'),
+                          ),
+                          TextButton.icon(
+                            onPressed: exercise.sets.isEmpty
+                                ? null
+                                : () => _copySet(
+                                    exercise,
+                                    exercise.sets.length - 1,
+                                  ),
                             icon: const Icon(Icons.copy),
                             label: const Text('copia ultimo'),
                           ),

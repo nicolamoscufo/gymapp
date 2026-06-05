@@ -25,6 +25,8 @@ class AppDataBundle {
   final List<WorkoutSession> history;
   final WorkoutSession? currentSession;
   final List<BodyLog> bodyLogs;
+  final List<Exercise> customExercises;
+  final Set<String> favoriteExerciseIds;
   final bool recoveredFromCorruption;
 
   const AppDataBundle({
@@ -32,11 +34,30 @@ class AppDataBundle {
     required this.history,
     required this.currentSession,
     required this.bodyLogs,
+    this.customExercises = const [],
+    this.favoriteExerciseIds = const <String>{},
     required this.recoveredFromCorruption,
   });
 }
 
 class AppDataStore {
+  static dynamic _decodeJsonOr(
+    SharedPreferences prefs,
+    String key,
+    dynamic fallback,
+  ) {
+    final raw = prefs.getString(key);
+    if (raw == null || raw.trim().isEmpty) {
+      return fallback;
+    }
+
+    try {
+      return jsonDecode(raw);
+    } catch (_) {
+      return fallback;
+    }
+  }
+
   static AppDataBundle? _bundleFromAutoBackup(SharedPreferences prefs) {
     final rawBackup = prefs.getString(AppDataKeys.autoBackupJson);
     if (rawBackup == null || rawBackup.trim().isEmpty) {
@@ -66,6 +87,13 @@ class AppDataStore {
             .whereType<Map>()
             .map((entry) => BodyLog.fromJson(Map<String, dynamic>.from(entry)))
             .toList(),
+        customExercises: (backupMap['customExercises'] as List? ?? [])
+            .whereType<Map>()
+            .map((entry) => Exercise.fromJson(Map<String, dynamic>.from(entry)))
+            .toList(),
+        favoriteExerciseIds: (backupMap['favoriteExerciseIds'] as List? ?? [])
+            .map((entry) => entry.toString())
+            .toSet(),
         recoveredFromCorruption: true,
       );
     } catch (_) {
@@ -78,12 +106,18 @@ class AppDataStore {
       'version': 4,
       'auto': true,
       'exportedAt': DateTime.now().toIso8601String(),
-      'schedules': jsonDecode(prefs.getString(AppDataKeys.schedules) ?? '[]'),
-      'history': jsonDecode(prefs.getString(AppDataKeys.history) ?? '[]'),
-      'bodyLogs': jsonDecode(prefs.getString(AppDataKeys.bodyLogs) ?? '[]'),
+      'schedules': _decodeJsonOr(prefs, AppDataKeys.schedules, []),
+      'history': _decodeJsonOr(prefs, AppDataKeys.history, []),
+      'bodyLogs': _decodeJsonOr(prefs, AppDataKeys.bodyLogs, []),
       'currentSession': prefs.getString(AppDataKeys.currentSession) == null
           ? null
-          : jsonDecode(prefs.getString(AppDataKeys.currentSession)!),
+          : _decodeJsonOr(prefs, AppDataKeys.currentSession, null),
+      'customExercises': _decodeJsonOr(prefs, AppDataKeys.customExercises, []),
+      'favoriteExerciseIds': _decodeJsonOr(
+        prefs,
+        AppDataKeys.favoriteExerciseIds,
+        [],
+      ),
     };
 
     await prefs.setString(AppDataKeys.autoBackupJson, jsonEncode(payload));
@@ -214,6 +248,7 @@ class AppDataStore {
       AppDataKeys.favoriteExerciseIds,
       jsonEncode(ids.toList()),
     );
+    await _writeAutoBackupSnapshot(prefs);
   }
 
   static Future<List<Exercise>> loadCustomExercises() async {
@@ -239,6 +274,7 @@ class AppDataStore {
       AppDataKeys.customExercises,
       jsonEncode(exercises.map((entry) => entry.toJson()).toList()),
     );
+    await _writeAutoBackupSnapshot(prefs);
   }
 
   static Future<void> addCustomExercise(Exercise exercise) async {
@@ -293,6 +329,30 @@ class AppDataStore {
   static Future<AppDataBundle?> loadAutoBackupBundle() async {
     final prefs = await SharedPreferences.getInstance();
     return _bundleFromAutoBackup(prefs);
+  }
+
+  static Future<Map<String, dynamic>> buildExportPayload({
+    required List<Schedule> schedules,
+    required List<WorkoutSession> history,
+    required List<BodyLog> bodyLogs,
+    WorkoutSession? currentSession,
+  }) async {
+    final favoriteExerciseIds = (await loadFavoriteExerciseIds()).toList()
+      ..sort();
+    final customExercises = await loadCustomExercises();
+
+    return {
+      'version': 5,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'schedules': schedules.map((schedule) => schedule.toJson()).toList(),
+      'history': history.map((session) => session.toJson()).toList(),
+      'bodyLogs': bodyLogs.map((entry) => entry.toJson()).toList(),
+      'currentSession': currentSession?.toJson(),
+      'customExercises': customExercises
+          .map((exercise) => exercise.toJson())
+          .toList(),
+      'favoriteExerciseIds': favoriteExerciseIds,
+    };
   }
 
   static Future<void> saveAll({

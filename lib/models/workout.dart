@@ -1,5 +1,6 @@
 import 'model_id.dart';
 import 'exercise.dart';
+import '../top_set_backoff.dart';
 
 class ExerciseSet {
   final String id;
@@ -56,6 +57,7 @@ class WorkoutExercise {
   int? targetMinReps;
   int? targetMaxReps;
   IntensityTechnique technique;
+  double backoffReductionPercent;
   int? restSeconds;
   int? activeRestSeconds;
   DateTime? activeRestStartedAt;
@@ -78,6 +80,7 @@ class WorkoutExercise {
     this.targetMinReps,
     this.targetMaxReps,
     required this.technique,
+    this.backoffReductionPercent = defaultBackoffReductionPercent,
     this.restSeconds,
     this.activeRestSeconds,
     this.activeRestStartedAt,
@@ -101,6 +104,7 @@ class WorkoutExercise {
     'targetMinReps': targetMinReps,
     'targetMaxReps': targetMaxReps,
     'technique': technique.name,
+    'backoffReductionPercent': backoffReductionPercent,
     'restSeconds': restSeconds,
     'activeRestSeconds': activeRestSeconds,
     'activeRestStartedAt': activeRestStartedAt?.toIso8601String(),
@@ -134,6 +138,9 @@ class WorkoutExercise {
       targetMinReps: json['targetMinReps'] as int?,
       targetMaxReps: json['targetMaxReps'] as int?,
       technique: parsedTechnique,
+      backoffReductionPercent:
+          (json['backoffReductionPercent'] as num?)?.toDouble() ??
+          defaultBackoffReductionPercent,
       restSeconds: json['restSeconds'] as int?,
       activeRestSeconds: json['activeRestSeconds'] as int?,
       activeRestStartedAt: json['activeRestStartedAt'] == null

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gymapp/app_data_store.dart';
+import 'package:gymapp/models/body_log.dart';
 import 'package:gymapp/models/exercise.dart';
 import 'package:gymapp/models/schedule.dart';
 import 'package:gymapp/models/workout.dart';
@@ -61,6 +62,118 @@ void main() {
     final storedSchedules =
         jsonDecode(prefs.getString('schedules')!) as List<dynamic>;
     expect(storedSchedules.single['id'], 'schedule_1');
+  });
+
+  testWidgets('schedule can be renamed from actions menu', (tester) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: const [],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Azioni'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rinomina'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Push forza');
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Salva'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Push forza'), findsOneWidget);
+    expect(find.text('Push'), findsNothing);
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedSchedules =
+        jsonDecode(prefs.getString('schedules')!) as List<dynamic>;
+    expect(storedSchedules.single['title'], 'Push forza');
+  });
+
+  testWidgets('settings back off percent updates schedules and exercises', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 2,
+          notes: '',
+          weight: 100,
+          technique: IntensityTechnique.topsetBackoff,
+          backoffReps: 8,
+          backoffReductionPercent: 10,
+        ),
+      ],
+    );
+    final session = WorkoutSession(
+      id: 'session_1',
+      scheduleTitle: 'Push',
+      startTime: DateTime(2026, 5, 1, 10),
+      endTime: DateTime(2026, 5, 1, 11),
+      exercises: [
+        WorkoutExercise(
+          id: 'workout_exercise_1',
+          name: 'Panca',
+          notes: '',
+          technique: IntensityTechnique.topsetBackoff,
+          backoffReductionPercent: 10,
+          sets: [
+            ExerciseSet(id: 'set_1', weight: 100, reps: 8, isCompleted: true),
+          ],
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': jsonEncode([session.toJson()]),
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Impostazioni'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Back off'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Riduzione back off %'),
+      '15',
+    );
+    await tester.tap(find.text('Salva e aggiorna schede'));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getDouble('defaultBackoffReductionPercent'), 15);
+
+    final storedSchedules =
+        jsonDecode(prefs.getString('schedules')!) as List<dynamic>;
+    final storedExercise =
+        (storedSchedules.single['exercises'] as List<dynamic>).single
+            as Map<String, dynamic>;
+    expect(storedExercise['backoffReductionPercent'], 15);
+
+    final storedHistory =
+        jsonDecode(prefs.getString('history')!) as List<dynamic>;
+    final storedWorkoutExercise =
+        (storedHistory.single['exercises'] as List<dynamic>).single
+            as Map<String, dynamic>;
+    expect(storedWorkoutExercise['backoffReductionPercent'], 15);
   });
 
   testWidgets('unassigned exercise can be edited and saved', (tester) async {
@@ -314,7 +427,9 @@ void main() {
     expect(find.text('Scegli template'), findsNothing);
   });
 
-  testWidgets('agenda shows planned workout and starts it', (tester) async {
+  testWidgets('calendar tab shows planned workout and starts it', (
+    tester,
+  ) async {
     final schedule = Schedule(
       id: 'schedule_1',
       title: 'Push',
@@ -342,8 +457,22 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: HomePage()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Agenda prossimi 7 giorni'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, 'Start').first);
+    expect(find.text('Agenda prossimi 7 giorni'), findsNothing);
+    expect(find.text('Calendario allenamenti'), findsNothing);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(BottomNavigationBar),
+        matching: find.byIcon(Icons.calendar_month),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Oggi: 1 schede - 0 svolti'), findsOneWidget);
+    final startButton = find.widgetWithText(FilledButton, 'Start').first;
+    await tester.ensureVisible(startButton);
+    await tester.pumpAndSettle();
+    await tester.tap(startButton);
     await tester.pumpAndSettle();
 
     expect(find.text('Panca'), findsOneWidget);
@@ -406,14 +535,14 @@ void main() {
 
     expect(
       tester
-          .widget<EditableText>(find.byType(EditableText).at(1))
+          .widget<EditableText>(find.byType(EditableText).at(2))
           .controller
           .text,
       '82.5',
     );
     expect(
       tester
-          .widget<EditableText>(find.byType(EditableText).at(2))
+          .widget<EditableText>(find.byType(EditableText).at(3))
           .controller
           .text,
       '8',
@@ -441,6 +570,200 @@ void main() {
 
     expect(bundle?.schedules.single.title, 'Push');
     expect(bundle?.recoveredFromCorruption, isTrue);
+  });
+
+  test('full export payload includes sessions and app data', () async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: const [],
+    );
+    final session = WorkoutSession(
+      id: 'session_1',
+      scheduleTitle: 'Push',
+      startTime: DateTime(2026, 5, 1, 10),
+      endTime: DateTime(2026, 5, 1, 11),
+      exercises: [
+        WorkoutExercise(
+          id: 'workout_exercise_1',
+          name: 'Panca',
+          notes: '',
+          muscleGroup: MuscleGroup.chest,
+          technique: IntensityTechnique.none,
+          sets: [
+            ExerciseSet(id: 'set_1', weight: 80, reps: 8, isCompleted: true),
+          ],
+        ),
+      ],
+    );
+    final bodyLog = BodyLog(
+      id: 'body_1',
+      date: DateTime(2026, 5, 1),
+      bodyWeight: 82,
+    );
+    final customExercise = Exercise(
+      id: 'custom_1',
+      name: 'Chest press macchina',
+      reps: 10,
+      set: 3,
+      notes: '',
+      weight: 60,
+      muscleGroup: MuscleGroup.chest,
+      technique: IntensityTechnique.none,
+    );
+    await AppDataStore.saveCustomExercises([customExercise]);
+    await AppDataStore.saveFavoriteExerciseIds({'custom_1'});
+
+    final payload = await AppDataStore.buildExportPayload(
+      schedules: [schedule],
+      history: [session],
+      bodyLogs: [bodyLog],
+      currentSession: session,
+    );
+
+    expect(payload['version'], 5);
+    expect((payload['schedules'] as List).single['title'], 'Push');
+    expect((payload['history'] as List).single['scheduleTitle'], 'Push');
+    expect((payload['bodyLogs'] as List).single['bodyWeight'], 82);
+    expect((payload['currentSession'] as Map)['id'], 'session_1');
+    expect((payload['customExercises'] as List).single['id'], 'custom_1');
+    expect(payload['favoriteExerciseIds'], ['custom_1']);
+  });
+
+  test('auto backup includes custom exercises and favorites', () async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: const [],
+    );
+    final customExercise = Exercise(
+      id: 'custom_1',
+      name: 'Chest press macchina',
+      reps: 10,
+      set: 3,
+      notes: '',
+      weight: 60,
+      muscleGroup: MuscleGroup.chest,
+      technique: IntensityTechnique.none,
+    );
+
+    await AppDataStore.saveCustomExercises([customExercise]);
+    await AppDataStore.saveFavoriteExerciseIds({'custom_1'});
+    await AppDataStore.saveSchedules([schedule]);
+
+    final bundle = await AppDataStore.loadAutoBackupBundle();
+
+    expect(bundle?.customExercises.single.id, 'custom_1');
+    expect(bundle?.favoriteExerciseIds, contains('custom_1'));
+  });
+
+  testWidgets('partial workout does not progress schedule load', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 2,
+          notes: '',
+          weight: 80,
+          targetMinReps: 8,
+          targetMaxReps: 8,
+          technique: IntensityTechnique.none,
+          progressionScheme: ProgressionScheme.loadOnly,
+          progressionKgStep: 2.5,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.check).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fine'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Salva'));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedSchedules =
+        jsonDecode(prefs.getString('schedules')!) as List<dynamic>;
+    final storedExercise =
+        (storedSchedules.single['exercises'] as List<dynamic>).single
+            as Map<String, dynamic>;
+    expect(storedExercise['weight'], 80);
+  });
+
+  testWidgets('unfinished reps-only workout does not progress reps', (
+    tester,
+  ) async {
+    final schedule = Schedule(
+      id: 'schedule_1',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026),
+      exercises: [
+        Exercise(
+          id: 'exercise_1',
+          name: 'Panca',
+          reps: 8,
+          set: 1,
+          notes: '',
+          weight: 80,
+          targetMinReps: 8,
+          targetMaxReps: 10,
+          technique: IntensityTechnique.none,
+          progressionScheme: ProgressionScheme.repsOnly,
+          progressionRepStep: 1,
+        ),
+      ],
+    );
+
+    SharedPreferences.setMockInitialValues({
+      'schedules': jsonEncode([schedule.toJson()]),
+      'history': '[]',
+    });
+
+    await tester.pumpWidget(const MaterialApp(home: HomePage()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fine'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Salva'));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedSchedules =
+        jsonDecode(prefs.getString('schedules')!) as List<dynamic>;
+    final storedExercise =
+        (storedSchedules.single['exercises'] as List<dynamic>).single
+            as Map<String, dynamic>;
+    expect(storedExercise['reps'], 8);
   });
 
   testWidgets('schedule exercises can be reordered from detail', (
@@ -703,13 +1026,13 @@ void main() {
     await tester.tap(find.text('Start'));
     await tester.pumpAndSettle();
 
-    final weightField = find.byType(TextFormField).at(1);
+    final weightField = find.byType(TextFormField).at(2);
     await tester.tap(weightField);
     await tester.pump();
 
     expect(
       tester
-          .widget<EditableText>(find.byType(EditableText).at(1))
+          .widget<EditableText>(find.byType(EditableText).at(2))
           .focusNode
           .hasFocus,
       isTrue,
@@ -720,7 +1043,7 @@ void main() {
 
     expect(
       tester
-          .widget<EditableText>(find.byType(EditableText).at(1))
+          .widget<EditableText>(find.byType(EditableText).at(2))
           .focusNode
           .hasFocus,
       isTrue,
@@ -729,7 +1052,7 @@ void main() {
     tester.testTextInput.enterText('87.5');
     await tester.pump();
 
-    final repsField = find.byType(TextFormField).at(2);
+    final repsField = find.byType(TextFormField).at(3);
     await tester.tap(repsField);
     await tester.pump();
     tester.testTextInput.enterText('12');
@@ -737,7 +1060,7 @@ void main() {
 
     expect(
       tester
-          .widget<EditableText>(find.byType(EditableText).at(2))
+          .widget<EditableText>(find.byType(EditableText).at(3))
           .focusNode
           .hasFocus,
       isTrue,
@@ -808,7 +1131,7 @@ void main() {
     await tester.tap(find.text('Start'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextFormField).at(1), '80');
+    await tester.enterText(find.byType(TextFormField).at(2), '80');
     await tester.tap(find.byIcon(Icons.check).last);
     await tester.pump();
 
@@ -859,7 +1182,12 @@ void main() {
 
     await tester.pumpWidget(const MaterialApp(home: HomePage()));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Cronologia'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(BottomNavigationBar),
+        matching: find.byIcon(Icons.history),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Progressi esercizi'), findsOneWidget);
@@ -918,7 +1246,12 @@ void main() {
 
     await tester.pumpWidget(const MaterialApp(home: HomePage()));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Cronologia'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(BottomNavigationBar),
+        matching: find.byIcon(Icons.history),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Pull'), findsOneWidget);
@@ -1084,7 +1417,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Push accessibile'), findsWidgets);
-    expect(find.textContaining('Agenda'), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byType(BottomNavigationBar),
+        matching: find.byIcon(Icons.calendar_month),
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 }

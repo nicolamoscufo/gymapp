@@ -1,4 +1,5 @@
 import 'model_id.dart';
+import '../top_set_backoff.dart';
 
 enum MuscleGroup {
   unassigned,
@@ -131,6 +132,7 @@ class Exercise {
   int? targetMaxReps;
   IntensityTechnique technique; // Aggiornato per usare l'enum
   int? backoffReps;
+  double backoffReductionPercent;
   int? restSeconds;
   int? supersetGroup;
   double progressionKgStep;
@@ -151,6 +153,7 @@ class Exercise {
     this.targetMaxReps,
     required this.technique,
     this.backoffReps,
+    this.backoffReductionPercent = defaultBackoffReductionPercent,
     this.restSeconds,
     this.supersetGroup,
     this.progressionKgStep = 2.5,
@@ -182,6 +185,7 @@ class Exercise {
     'targetMaxReps': targetMaxReps,
     'technique': technique.name, // Salviamo l'enum come Stringa (es: "dropSet")
     'backoffReps': backoffReps,
+    'backoffReductionPercent': backoffReductionPercent,
     'restSeconds': restSeconds,
     'supersetGroup': supersetGroup,
     'progressionKgStep': progressionKgStep,
@@ -217,6 +221,9 @@ class Exercise {
       targetMaxReps: json['targetMaxReps'] as int?,
       technique: parsedTechnique, // Ripristiniamo l'enum
       backoffReps: json['backoffReps'] as int?,
+      backoffReductionPercent:
+          (json['backoffReductionPercent'] as num?)?.toDouble() ??
+          defaultBackoffReductionPercent,
       restSeconds: json['restSeconds'] as int?,
       supersetGroup: json['supersetGroup'] as int?,
       progressionKgStep: (json['progressionKgStep'] as num?)?.toDouble() ?? 2.5,

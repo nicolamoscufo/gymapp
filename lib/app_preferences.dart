@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'top_set_backoff.dart' as top_set_backoff;
+
 class WorkoutReminderSettings {
   final bool enabled;
   final int hour;
@@ -16,6 +18,8 @@ class WorkoutReminderSettings {
 class AppPreferences {
   static const themeModeKey = 'themeMode';
   static const defaultRestSecondsKey = 'defaultRestSeconds';
+  static const defaultBackoffReductionPercentKey =
+      'defaultBackoffReductionPercent';
   static const workoutRemindersEnabledKey = 'workoutRemindersEnabled';
   static const workoutReminderHourKey = 'workoutReminderHour';
   static const workoutReminderMinuteKey = 'workoutReminderMinute';
@@ -24,6 +28,10 @@ class AppPreferences {
   static const defaultRestSeconds = 90;
   static const minRestSeconds = 30;
   static const maxRestSeconds = 300;
+  static const defaultBackoffReductionPercent =
+      top_set_backoff.defaultBackoffReductionPercent;
+  static const minBackoffReductionPercent = 0.0;
+  static const maxBackoffReductionPercent = 100.0;
   static const defaultWorkoutReminderHour = 8;
   static const defaultWorkoutReminderMinute = 0;
 
@@ -41,6 +49,28 @@ class AppPreferences {
       ThemeMode.dark => 'dark',
       ThemeMode.system => 'system',
     };
+  }
+
+  static double normalizeBackoffReductionPercent(double value) {
+    return value
+        .clamp(minBackoffReductionPercent, maxBackoffReductionPercent)
+        .toDouble();
+  }
+
+  static Future<double> loadDefaultBackoffReductionPercent() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getDouble(defaultBackoffReductionPercentKey);
+    return normalizeBackoffReductionPercent(
+      value ?? defaultBackoffReductionPercent,
+    );
+  }
+
+  static Future<void> saveDefaultBackoffReductionPercent(double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(
+      defaultBackoffReductionPercentKey,
+      normalizeBackoffReductionPercent(value),
+    );
   }
 
   static Future<WorkoutReminderSettings> loadWorkoutReminderSettings() async {

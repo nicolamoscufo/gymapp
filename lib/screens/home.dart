@@ -21,17 +21,18 @@ import 'settings.dart';
 import 'stats.dart';
 import 'active_workout.dart';
 import 'exercise_detail.dart';
+import 'calendar_screen.dart';
 
 enum _HomeAction {
   importCsv,
   exportCsv,
   exportHistoryCsv,
   exportBodyCsv,
-  exportBackup,
+  exportAllJson,
   restoreBackup,
 }
 
-enum _ScheduleMenuAction { toggleArchive, delete }
+enum _ScheduleMenuAction { rename, duplicate, toggleArchive, delete }
 
 enum _HistoryRangeFilter { all, last30, last90 }
 
@@ -55,6 +56,7 @@ class _HomePageState extends State<HomePage> {
   final List<Schedule> schedules = [];
   final List<WorkoutSession> history = [];
   final List<BodyLog> bodyLogs = [];
+  final TextEditingController _searchController = TextEditingController();
   WorkoutSession? _savedSession;
 
   int _currentIndex = 0;
@@ -64,25 +66,32 @@ class _HomePageState extends State<HomePage> {
   _HistoryRangeFilter _historyRangeFilter = _HistoryRangeFilter.all;
   bool _historyOnlyPr = false;
   bool _showArchived = false;
-  late DateTime _visibleCalendarMonth;
-  late DateTime _selectedCalendarDay;
   final int _defaultRestSeconds = AppPreferences.defaultRestSeconds;
+  double _defaultBackoffReductionPercent =
+      AppPreferences.defaultBackoffReductionPercent;
 
   @override
   void initState() {
     super.initState();
-    final today = DateTime.now();
-    _visibleCalendarMonth = DateTime(today.year, today.month);
-    _selectedCalendarDay = DateTime(today.year, today.month, today.day);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
     final bundle = await AppDataStore.loadBundle();
+    final defaultBackoffReductionPercent =
+        await AppPreferences.loadDefaultBackoffReductionPercent();
 
     if (!mounted) {
       return;
     }
+
+    var backoffDataChanged = false;
 
     setState(() {
       schedules
@@ -95,8 +104,23 @@ class _HomePageState extends State<HomePage> {
         ..clear()
         ..addAll(bundle.bodyLogs);
       _savedSession = bundle.currentSession;
+      _defaultBackoffReductionPercent = defaultBackoffReductionPercent;
+      backoffDataChanged =
+          _applyBackoffReductionToSchedules(defaultBackoffReductionPercent) |
+          _applyBackoffReductionToHistory(defaultBackoffReductionPercent) |
+          _applyBackoffReductionToSession(
+            _savedSession,
+            defaultBackoffReductionPercent,
+          );
       _sortSchedules();
     });
+
+    if (backoffDataChanged) {
+      await _saveAllData();
+      if (_savedSession != null) {
+        await AppDataStore.saveCurrentSession(_savedSession!);
+      }
+    }
 
     if (bundle.recoveredFromCorruption) {
       _showInfo('Alcuni dati corrotti sono stati ignorati per evitare crash.');
@@ -124,6 +148,94 @@ class _HomePageState extends State<HomePage> {
       bodyLogs: bodyLogs,
     );
     await _refreshWorkoutReminders();
+  }
+
+  bool _applyBackoffReductionToExercises(
+    List<Exercise> exercises,
+    double reductionPercent,
+  ) {
+    var changed = false;
+    final normalized = AppPreferences.normalizeBackoffReductionPercent(
+      reductionPercent,
+    );
+    for (final exercise in exercises) {
+      if (exercise.backoffReductionPercent != normalized) {
+        exercise.backoffReductionPercent = normalized;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  bool _applyBackoffReductionToSchedules(double reductionPercent) {
+    var changed = false;
+    for (final schedule in schedules) {
+      changed |= _applyBackoffReductionToExercises(
+        schedule.exercises,
+        reductionPercent,
+      );
+    }
+    return changed;
+  }
+
+  bool _applyBackoffReductionToWorkoutExercises(
+    List<WorkoutExercise> exercises,
+    double reductionPercent,
+  ) {
+    var changed = false;
+    final normalized = AppPreferences.normalizeBackoffReductionPercent(
+      reductionPercent,
+    );
+    for (final exercise in exercises) {
+      if (exercise.backoffReductionPercent != normalized) {
+        exercise.backoffReductionPercent = normalized;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  bool _applyBackoffReductionToSession(
+    WorkoutSession? session,
+    double reductionPercent,
+  ) {
+    if (session == null) {
+      return false;
+    }
+    return _applyBackoffReductionToWorkoutExercises(
+      session.exercises,
+      reductionPercent,
+    );
+  }
+
+  bool _applyBackoffReductionToHistory(double reductionPercent) {
+    var changed = false;
+    for (final session in history) {
+      changed |= _applyBackoffReductionToSession(session, reductionPercent);
+    }
+    return changed;
+  }
+
+  Future<void> _saveBackoffReductionPercent(double reductionPercent) async {
+    final normalized = AppPreferences.normalizeBackoffReductionPercent(
+      reductionPercent,
+    );
+    setState(() {
+      _defaultBackoffReductionPercent = normalized;
+      _applyBackoffReductionToSchedules(normalized);
+      _applyBackoffReductionToHistory(normalized);
+      _applyBackoffReductionToSession(_savedSession, normalized);
+    });
+    await AppPreferences.saveDefaultBackoffReductionPercent(normalized);
+    await _saveAllData();
+    if (_savedSession != null) {
+      await AppDataStore.saveCurrentSession(_savedSession!);
+    }
+
+    final customExercises = await AppDataStore.loadCustomExercises();
+    if (_applyBackoffReductionToExercises(customExercises, normalized)) {
+      await AppDataStore.saveCustomExercises(customExercises);
+    }
   }
 
   Future<void> _refreshWorkoutReminders() async {
@@ -234,24 +346,11 @@ class _HomePageState extends State<HomePage> {
           schedule: schedule,
           history: history,
           defaultRestSeconds: _defaultRestSeconds,
+          defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
           onUpdate: () {
             setState(() {});
             _saveSchedules();
           },
-        ),
-      ),
-    );
-    _loadData();
-  }
-
-  Future<void> _startSchedule(Schedule schedule) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ActiveWorkoutScreen(
-          schedule: schedule,
-          history: history,
-          defaultRestSeconds: _defaultRestSeconds,
         ),
       ),
     );
@@ -374,13 +473,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showToolsSheet() {
-    final targetWeightController = TextEditingController(text: '100');
-    final barWeightController = TextEditingController(text: '20');
     final warmupWeightController = TextEditingController(text: '100');
     final warmupRepsController = TextEditingController(text: '8');
     final topSetWeightController = TextEditingController(text: '100');
     final backoffReductionController = TextEditingController(
-      text: defaultBackoffReductionPercent.toStringAsFixed(0),
+      text: formatDecimal(_defaultBackoffReductionPercent),
     );
     showModalBottomSheet(
       context: context,
@@ -388,22 +485,6 @@ class _HomePageState extends State<HomePage> {
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) {
-          final targetWeight =
-              parseDecimalInput(targetWeightController.text) ?? 0;
-          final barWeight = parseDecimalInput(barWeightController.text) ?? 20;
-          final perSide = ((targetWeight - barWeight) / 2)
-              .clamp(0, 999)
-              .toDouble();
-          var remaining = perSide;
-          final plates = <String>[];
-          for (final plate in const [25, 20, 15, 10, 5, 2.5, 1.25]) {
-            final count = remaining ~/ plate;
-            if (count > 0) {
-              plates.add('${count}x ${plate}kg');
-              remaining -= count * plate;
-            }
-          }
-
           final warmupWeight =
               parseDecimalInput(warmupWeightController.text) ?? 0;
           final warmupReps = parseIntInput(warmupRepsController.text) ?? 8;
@@ -441,52 +522,6 @@ class _HomePageState extends State<HomePage> {
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 12),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Plate calculator',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 8),
-                        AppFieldRow(
-                          children: [
-                            TextField(
-                              controller: targetWeightController,
-                              decoration: const InputDecoration(
-                                labelText: 'Totale kg',
-                              ),
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              onChanged: (_) => setSheetState(() {}),
-                            ),
-                            TextField(
-                              controller: barWeightController,
-                              decoration: const InputDecoration(
-                                labelText: 'Bilanciere kg',
-                              ),
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              onChanged: (_) => setSheetState(() {}),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Per lato: ${plates.isEmpty ? 'nessun disco' : plates.join(' + ')}',
-                        ),
-                      ],
-                    ),
-                  ),
                 ),
                 const SizedBox(height: 12),
                 Card(
@@ -661,6 +696,8 @@ class _HomePageState extends State<HomePage> {
           exercise.set == candidate.set &&
           exercise.reps == candidate.reps &&
           exercise.backoffReps == candidate.backoffReps &&
+          exercise.backoffReductionPercent ==
+              candidate.backoffReductionPercent &&
           exercise.restSeconds == candidate.restSeconds &&
           exercise.muscleGroup == candidate.muscleGroup &&
           exercise.equipment == candidate.equipment &&
@@ -698,6 +735,7 @@ class _HomePageState extends State<HomePage> {
         'movementPattern',
         'technique',
         'backoffReps',
+        'backoffReductionPercent',
         'restSeconds',
         'notes',
         'supersetGroup',
@@ -728,6 +766,7 @@ class _HomePageState extends State<HomePage> {
           exercise.movementPattern,
           exercise.technique.name,
           exercise.backoffReps,
+          exercise.backoffReductionPercent,
           exercise.restSeconds,
           exercise.notes,
           exercise.supersetGroup,
@@ -840,17 +879,6 @@ class _HomePageState extends State<HomePage> {
       fieldDelimiter: ',',
       eol: '\n',
     ).convert(rows);
-  }
-
-  Map<String, dynamic> _buildBackupPayload() {
-    return {
-      'version': 4,
-      'exportedAt': DateTime.now().toIso8601String(),
-      'schedules': schedules.map((schedule) => schedule.toJson()).toList(),
-      'history': history.map((session) => session.toJson()).toList(),
-      'bodyLogs': bodyLogs.map((entry) => entry.toJson()).toList(),
-      'currentSession': _savedSession?.toJson(),
-    };
   }
 
   List<Schedule> _cloneSchedules(List<Schedule> source) {
@@ -1107,8 +1135,15 @@ class _HomePageState extends State<HomePage> {
         final weight = parseDecimalInput(
           row[hasFullSchema ? 12 : 5].toString(),
         );
+        final hasBackoffReductionColumn = hasFullSchema && row.length > 24;
+        final notesIndex = hasBackoffReductionColumn ? 20 : 19;
+        final restSecondsIndex = hasBackoffReductionColumn ? 19 : 18;
+        final supersetGroupIndex = hasBackoffReductionColumn ? 21 : 20;
+        final progressionKgStepIndex = hasBackoffReductionColumn ? 22 : 21;
+        final progressionRepStepIndex = hasBackoffReductionColumn ? 23 : 22;
+        final progressionSchemeIndex = hasBackoffReductionColumn ? 24 : 23;
         final notes = hasFullSchema
-            ? row[19].toString().trim()
+            ? row[notesIndex].toString().trim()
             : row[6].toString().trim();
         final muscleGroup = row.length > (hasFullSchema ? 13 : 7)
             ? muscleGroupFromJson(row[hasFullSchema ? 13 : 7])
@@ -1121,20 +1156,27 @@ class _HomePageState extends State<HomePage> {
         final backoffReps = hasFullSchema
             ? parseIntInput(row[17].toString())
             : null;
+        final backoffReductionPercent = hasBackoffReductionColumn
+            ? (parseDecimalInput(row[18].toString()) ??
+                  _defaultBackoffReductionPercent)
+            : _defaultBackoffReductionPercent;
         final restSeconds = hasFullSchema
-            ? parseIntInput(row[18].toString())
+            ? parseIntInput(row[restSecondsIndex].toString())
             : null;
-        final supersetGroup = hasFullSchema && row.length > 20
-            ? parseIntInput(row[20].toString())
+        final supersetGroup = hasFullSchema && row.length > supersetGroupIndex
+            ? parseIntInput(row[supersetGroupIndex].toString())
             : null;
-        final progressionKgStep = hasFullSchema && row.length > 21
-            ? (parseDecimalInput(row[21].toString()) ?? 2.5)
+        final progressionKgStep =
+            hasFullSchema && row.length > progressionKgStepIndex
+            ? (parseDecimalInput(row[progressionKgStepIndex].toString()) ?? 2.5)
             : 2.5;
-        final progressionRepStep = hasFullSchema && row.length > 22
-            ? (parseIntInput(row[22].toString()) ?? 1)
+        final progressionRepStep =
+            hasFullSchema && row.length > progressionRepStepIndex
+            ? (parseIntInput(row[progressionRepStepIndex].toString()) ?? 1)
             : 1;
-        final progressionScheme = hasFullSchema && row.length > 23
-            ? progressionSchemeFromJson(row[23])
+        final progressionScheme =
+            hasFullSchema && row.length > progressionSchemeIndex
+            ? progressionSchemeFromJson(row[progressionSchemeIndex])
             : ProgressionScheme.doubleProgression;
 
         if (scheduleTitle.isEmpty ||
@@ -1160,6 +1202,7 @@ class _HomePageState extends State<HomePage> {
           notes: notes,
           technique: technique,
           backoffReps: backoffReps,
+          backoffReductionPercent: backoffReductionPercent,
           restSeconds: restSeconds,
           supersetGroup: supersetGroup,
           progressionKgStep: progressionKgStep,
@@ -1223,7 +1266,7 @@ class _HomePageState extends State<HomePage> {
       }
 
       final savedPath = await FilePicker.saveFile(
-        dialogTitle: 'Esporta CSV',
+        dialogTitle: 'Esporta schede CSV',
         fileName: 'gymapp_schede.csv',
         type: FileType.custom,
         allowedExtensions: ['csv'],
@@ -1234,9 +1277,9 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      await _showInfo('CSV esportato con successo.');
+      await _showInfo('Schede esportate in CSV con successo.');
     } catch (e) {
-      await _showInfo('Errore durante export CSV: $e');
+      await _showInfo('Errore durante export schede CSV: $e');
     }
   }
 
@@ -1294,14 +1337,16 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _exportBackupJson() async {
     try {
-      final payload = _buildBackupPayload();
-      payload['customExercises'] = (await AppDataStore.loadCustomExercises())
-          .map((exercise) => exercise.toJson())
-          .toList();
-      final backupText = jsonEncode(payload);
+      final payload = await AppDataStore.buildExportPayload(
+        schedules: schedules,
+        history: history,
+        bodyLogs: bodyLogs,
+        currentSession: _savedSession,
+      );
+      final backupText = const JsonEncoder.withIndent('  ').convert(payload);
       final savedPath = await FilePicker.saveFile(
-        dialogTitle: 'Esporta backup',
-        fileName: 'gymapp_backup.json',
+        dialogTitle: 'Esporta tutto (JSON)',
+        fileName: 'gymapp_export_completo.json',
         type: FileType.custom,
         allowedExtensions: ['json'],
         bytes: Uint8List.fromList(utf8.encode(backupText)),
@@ -1311,9 +1356,11 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      await _showInfo('Backup esportato con successo.');
+      await _showInfo(
+        'Export completo: ${schedules.length} schede, ${history.length} allenamenti, ${bodyLogs.length} misure corpo.',
+      );
     } catch (e) {
-      await _showInfo('Errore durante export backup: $e');
+      await _showInfo('Errore durante export completo: $e');
     }
   }
 
@@ -1369,11 +1416,14 @@ class _HomePageState extends State<HomePage> {
           ? null
           : WorkoutSession.fromJson(_savedSession!.toJson());
       final previousCustomExercises = await AppDataStore.loadCustomExercises();
+      final previousFavoriteExerciseIds =
+          await AppDataStore.loadFavoriteExerciseIds();
 
       List<Schedule> restoredSchedules = [];
       List<WorkoutSession> restoredHistory = [];
       List<BodyLog> restoredBodyLogs = [];
-      List<Exercise> restoredCustomExercises = [];
+      List<Exercise>? restoredCustomExercises;
+      Set<String>? restoredFavoriteExerciseIds;
       WorkoutSession? restoredCurrentSession;
 
       if (decoded is Map) {
@@ -1390,9 +1440,21 @@ class _HomePageState extends State<HomePage> {
         restoredBodyLogs = (backupMap['bodyLogs'] as List? ?? [])
             .map((e) => BodyLog.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
-        restoredCustomExercises = (backupMap['customExercises'] as List? ?? [])
-            .map((e) => Exercise.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
+        if (backupMap.containsKey('customExercises')) {
+          restoredCustomExercises =
+              (backupMap['customExercises'] as List? ?? [])
+                  .map(
+                    (e) =>
+                        Exercise.fromJson(Map<String, dynamic>.from(e as Map)),
+                  )
+                  .toList();
+        }
+        if (backupMap.containsKey('favoriteExerciseIds')) {
+          restoredFavoriteExerciseIds =
+              (backupMap['favoriteExerciseIds'] as List? ?? [])
+                  .map((entry) => entry.toString())
+                  .toSet();
+        }
         restoredCurrentSession = backupMap['currentSession'] == null
             ? null
             : WorkoutSession.fromJson(
@@ -1422,7 +1484,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context) => AlertDialog(
           title: const Text('Come importare?'),
           content: Text(
-            'File: ${restoredSchedules.length} schede, ${restoredHistory.length} allenamenti, ${restoredBodyLogs.length} misure corpo.\n\nMerge dedup: +${mergePreview.addedSchedules} schede, ${mergePreview.mergedSchedules} schede unite, +${mergePreview.addedExercises} esercizi, ${mergePreview.skippedExercises} esercizi duplicati saltati, +${mergePreview.addedHistory} allenamenti, ${mergePreview.skippedHistory} allenamenti duplicati, +${mergePreview.addedBodyLogs} misure, ${mergePreview.skippedBodyLogs} misure duplicate.',
+            'File: ${restoredSchedules.length} schede, ${restoredHistory.length} allenamenti, ${restoredBodyLogs.length} misure corpo, ${restoredCustomExercises?.length ?? 0} esercizi custom, ${restoredFavoriteExerciseIds?.length ?? 0} preferiti esercizi.\n\nMerge dedup: +${mergePreview.addedSchedules} schede, ${mergePreview.mergedSchedules} schede unite, +${mergePreview.addedExercises} esercizi, ${mergePreview.skippedExercises} esercizi duplicati saltati, +${mergePreview.addedHistory} allenamenti, ${mergePreview.skippedHistory} allenamenti duplicati, +${mergePreview.addedBodyLogs} misure, ${mergePreview.skippedBodyLogs} misure duplicate.',
           ),
           actions: [
             TextButton(
@@ -1458,12 +1520,19 @@ class _HomePageState extends State<HomePage> {
       final appliedCurrentSession = importMode == _BackupImportMode.merge
           ? mergePreview.currentSession
           : restoredCurrentSession;
-      final appliedCustomExercises = importMode == _BackupImportMode.merge
+      final appliedCustomExercises = restoredCustomExercises == null
+          ? previousCustomExercises
+          : importMode == _BackupImportMode.merge
           ? _mergeCustomExerciseTemplates(
               previousCustomExercises,
               restoredCustomExercises,
             )
           : restoredCustomExercises;
+      final appliedFavoriteExerciseIds = restoredFavoriteExerciseIds == null
+          ? previousFavoriteExerciseIds
+          : importMode == _BackupImportMode.merge
+          ? {...previousFavoriteExerciseIds, ...restoredFavoriteExerciseIds}
+          : restoredFavoriteExerciseIds;
 
       setState(() {
         schedules
@@ -1486,6 +1555,7 @@ class _HomePageState extends State<HomePage> {
         await AppDataStore.saveCurrentSession(appliedCurrentSession);
       }
       await AppDataStore.saveCustomExercises(appliedCustomExercises);
+      await AppDataStore.saveFavoriteExerciseIds(appliedFavoriteExerciseIds);
       _showUndoSnackBar(
         message: importMode == _BackupImportMode.merge
             ? 'Backup unito.'
@@ -1515,6 +1585,7 @@ class _HomePageState extends State<HomePage> {
             AppDataStore.saveCurrentSession(previousCurrentSession);
           }
           AppDataStore.saveCustomExercises(previousCustomExercises);
+          AppDataStore.saveFavoriteExerciseIds(previousFavoriteExerciseIds);
         },
       );
     } catch (e) {
@@ -1539,7 +1610,7 @@ class _HomePageState extends State<HomePage> {
             builder: (context) => AlertDialog(
               title: const Text('Ripristinare auto-backup?'),
               content: Text(
-                'Verranno ripristinate ${backupBundle.schedules.length} schede, ${backupBundle.history.length} allenamenti e ${backupBundle.bodyLogs.length} misure corpo dall ultimo snapshot locale.',
+                'Verranno ripristinate ${backupBundle.schedules.length} schede, ${backupBundle.history.length} allenamenti, ${backupBundle.bodyLogs.length} misure corpo, ${backupBundle.customExercises.length} esercizi custom e ${backupBundle.favoriteExerciseIds.length} preferiti dall ultimo snapshot locale.',
               ),
               actions: [
                 TextButton(
@@ -1579,6 +1650,10 @@ class _HomePageState extends State<HomePage> {
       } else {
         await AppDataStore.saveCurrentSession(_savedSession!);
       }
+      await AppDataStore.saveCustomExercises(backupBundle.customExercises);
+      await AppDataStore.saveFavoriteExerciseIds(
+        backupBundle.favoriteExerciseIds,
+      );
       await _showInfo('Auto-backup ripristinato.');
     } catch (e) {
       await _showInfo('Errore ripristino auto-backup: $e');
@@ -1656,6 +1731,7 @@ class _HomePageState extends State<HomePage> {
             notes: exercise.notes,
             technique: exercise.technique,
             backoffReps: exercise.backoffReps,
+            backoffReductionPercent: exercise.backoffReductionPercent,
             restSeconds: exercise.restSeconds,
             supersetGroup: exercise.supersetGroup,
             progressionKgStep: exercise.progressionKgStep,
@@ -1681,6 +1757,57 @@ class _HomePageState extends State<HomePage> {
           cycleNotes: schedule.cycleNotes,
         ),
       );
+      _sortSchedules();
+    });
+    _saveSchedules();
+  }
+
+  Future<void> _renameSchedule(Schedule schedule) async {
+    final titleController = TextEditingController(text: schedule.title);
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rinomina scheda'),
+        content: AppDialogContent(
+          children: [
+            TextField(
+              controller: titleController,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Titolo'),
+              textInputAction: TextInputAction.done,
+              onSubmitted: (value) {
+                final title = value.trim();
+                if (title.isNotEmpty) {
+                  Navigator.pop(context, title);
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final title = titleController.text.trim();
+              if (title.isNotEmpty) {
+                Navigator.pop(context, title);
+              }
+            },
+            child: const Text('Salva'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || newTitle == null || newTitle == schedule.title) {
+      return;
+    }
+
+    setState(() {
+      schedule.title = newTitle;
       _sortSchedules();
     });
     _saveSchedules();
@@ -1851,6 +1978,7 @@ class _HomePageState extends State<HomePage> {
           onExportBackup: _exportBackupJson,
           onRestoreBackup: _restoreBackupJson,
           onRestoreAutoBackup: _restoreAutoBackupSnapshot,
+          onBackoffReductionChanged: _saveBackoffReductionPercent,
           schedules: schedules,
         ),
       ),
@@ -1940,245 +2068,6 @@ class _HomePageState extends State<HomePage> {
   DateTime _dateOnly(DateTime date) =>
       DateTime(date.year, date.month, date.day);
 
-  List<_AgendaEntry> _agendaEntries({DateTime? now, int days = 7}) {
-    final start = _dateOnly(now ?? DateTime.now());
-    final entries = <_AgendaEntry>[];
-    for (var offset = 0; offset < days; offset++) {
-      final date = start.add(Duration(days: offset));
-      for (final schedule in schedules) {
-        if (!schedule.isArchived && schedule.isPlannedOn(date)) {
-          entries.add(_AgendaEntry(date: date, schedule: schedule));
-        }
-      }
-    }
-    return entries;
-  }
-
-  String _agendaDateLabel(DateTime date) {
-    final today = _dateOnly(DateTime.now());
-    final normalized = _dateOnly(date);
-    if (normalized == today) {
-      return 'Oggi';
-    }
-    if (normalized == today.add(const Duration(days: 1))) {
-      return 'Domani';
-    }
-    return '${_weekdayLabel(date.weekday)} ${date.day}/${date.month}';
-  }
-
-  List<DateTime?> _calendarMonthCells(DateTime month) {
-    final firstDay = DateTime(month.year, month.month);
-    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
-    final leadingEmptyCells = firstDay.weekday - 1;
-    final cells = <DateTime?>[
-      ...List<DateTime?>.filled(leadingEmptyCells, null),
-      ...List.generate(
-        daysInMonth,
-        (index) => DateTime(month.year, month.month, index + 1),
-      ),
-    ];
-    while (cells.length % 7 != 0) {
-      cells.add(null);
-    }
-    return cells;
-  }
-
-  List<Schedule> _schedulesForDate(DateTime date) {
-    return schedules
-        .where((schedule) => !schedule.isArchived && schedule.isPlannedOn(date))
-        .toList();
-  }
-
-  String _monthTitle(DateTime month) {
-    const names = [
-      'Gennaio',
-      'Febbraio',
-      'Marzo',
-      'Aprile',
-      'Maggio',
-      'Giugno',
-      'Luglio',
-      'Agosto',
-      'Settembre',
-      'Ottobre',
-      'Novembre',
-      'Dicembre',
-    ];
-    return '${names[month.month - 1]} ${month.year}';
-  }
-
-  Widget _buildMonthCalendarCard() {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final cells = _calendarMonthCells(_visibleCalendarMonth);
-    final selectedSchedules = _schedulesForDate(_selectedCalendarDay);
-    final today = _dateOnly(DateTime.now());
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.calendar_month, color: colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _monthTitle(_visibleCalendarMonth),
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Mese precedente',
-                    icon: const Icon(Icons.chevron_left),
-                    onPressed: () => setState(() {
-                      _visibleCalendarMonth = DateTime(
-                        _visibleCalendarMonth.year,
-                        _visibleCalendarMonth.month - 1,
-                      );
-                    }),
-                  ),
-                  IconButton(
-                    tooltip: 'Mese successivo',
-                    icon: const Icon(Icons.chevron_right),
-                    onPressed: () => setState(() {
-                      _visibleCalendarMonth = DateTime(
-                        _visibleCalendarMonth.year,
-                        _visibleCalendarMonth.month + 1,
-                      );
-                    }),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: List.generate(7, (index) {
-                  return Expanded(
-                    child: Center(
-                      child: Text(
-                        _weekdayLabel(index + 1),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-              const SizedBox(height: 6),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: cells.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7,
-                  crossAxisSpacing: 6,
-                  mainAxisSpacing: 6,
-                  childAspectRatio: 1,
-                ),
-                itemBuilder: (context, index) {
-                  final day = cells[index];
-                  if (day == null) {
-                    return const SizedBox.shrink();
-                  }
-                  final normalizedDay = _dateOnly(day);
-                  final planned = _schedulesForDate(day);
-                  final isSelected = normalizedDay == _selectedCalendarDay;
-                  final isToday = normalizedDay == today;
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => setState(() {
-                      _selectedCalendarDay = normalizedDay;
-                    }),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? colorScheme.primary
-                            : planned.isNotEmpty
-                            ? colorScheme.primaryContainer
-                            : colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isToday
-                              ? colorScheme.tertiary
-                              : colorScheme.outlineVariant,
-                          width: isToday ? 2 : 1,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            '${day.day}',
-                            style: TextStyle(
-                              color: isSelected
-                                  ? colorScheme.onPrimary
-                                  : colorScheme.onSurface,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          if (planned.isNotEmpty)
-                            Text(
-                              '${planned.length}',
-                              style: TextStyle(
-                                color: isSelected
-                                    ? colorScheme.onPrimary
-                                    : colorScheme.primary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '${_agendaDateLabel(_selectedCalendarDay)}: ${selectedSchedules.length} schede',
-                style: theme.textTheme.labelLarge,
-              ),
-              if (selectedSchedules.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    'Nessun allenamento programmato nel giorno selezionato.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                )
-              else
-                ...selectedSchedules.map(
-                  (schedule) => ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(schedule.title),
-                    subtitle: Text(
-                      'Week ${schedule.currentWeek(now: _selectedCalendarDay)}${schedule.isDeloadWeek(now: _selectedCalendarDay) ? ' - deload' : ''}',
-                    ),
-                    trailing: FilledButton(
-                      onPressed: () => _startSchedule(schedule),
-                      child: const Text('Start'),
-                    ),
-                    onTap: () => _openScheduleDetail(schedule),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildOnboardingTab() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -2200,7 +2089,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Crea la prima scheda, imposta obiettivo e giorni: il calendario usera questi dati per mostrarti prossimi allenamenti.',
+                  'Crea la prima scheda, imposta obiettivo e giorni di allenamento.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -2255,62 +2144,15 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildAgendaCard() {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final entries = _agendaEntries();
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.event_available, color: colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Agenda prossimi 7 giorni',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (entries.isEmpty)
-                Text(
-                  'Nessun giorno programmato. Apri una scheda e aggiungi giorni allenamento.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                )
-              else
-                ...entries.take(5).map((entry) {
-                  return ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(child: Text('${entry.date.day}')),
-                    title: Text(entry.schedule.title),
-                    subtitle: Text(
-                      '${_agendaDateLabel(entry.date)} • Week ${entry.schedule.currentWeek(now: entry.date)}${entry.schedule.isDeloadWeek(now: entry.date) ? ' • deload' : ''}',
-                    ),
-                    trailing: FilledButton(
-                      onPressed: () => _startSchedule(entry.schedule),
-                      child: const Text('Start'),
-                    ),
-                    onTap: () => _openScheduleDetail(entry.schedule),
-                  );
-                }),
-            ],
-          ),
-        ),
-      ),
+  Widget _buildCalendarTab() {
+    return CalendarScreen(
+      schedules: schedules,
+      history: history,
+      defaultRestSeconds: _defaultRestSeconds,
+      defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
+      onRefresh: _loadData,
+      onSaveSchedules: _saveSchedules,
+      showAppBar: false,
     );
   }
 
@@ -2329,129 +2171,133 @@ class _HomePageState extends State<HomePage> {
         : null;
     return Column(
       children: [
-        SizedBox(
-          height: math.min(420, MediaQuery.sizeOf(context).height * 0.48),
-          child: ListView(
-            children: [
+        ListView(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _searchQuery = value),
+                decoration: InputDecoration(
+                  hintText: 'Cerca',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                          },
+                        ),
+                ),
+              ),
+            ),
+            if (_savedSession != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: TextField(
-                  onChanged: (value) => setState(() => _searchQuery = value),
-                  decoration: InputDecoration(
-                    hintText: 'Cerca',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchQuery.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () => setState(() => _searchQuery = ''),
-                          ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Card(
+                  color: Theme.of(context).colorScheme.secondaryContainer,
+                  child: ListTile(
+                    title: Text(
+                      'Riprendi allenamento: ${_savedSession!.scheduleTitle}',
+                    ),
+                    subtitle: Text(
+                      'Iniziato ${_savedSession!.startTime.day}/${_savedSession!.startTime.month}/${_savedSession!.startTime.year}',
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FilledButton(
+                          onPressed: () async {
+                            final session = _savedSession!;
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    ActiveWorkoutScreen.resume(
+                                      resumedSession: session,
+                                      history: history,
+                                      defaultRestSeconds: _defaultRestSeconds,
+                                      defaultBackoffReductionPercent:
+                                          _defaultBackoffReductionPercent,
+                                    ),
+                              ),
+                            );
+                            _loadData();
+                          },
+                          child: const Text('Riprendi'),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: _discardSavedSession,
+                          child: const Text('Scarta'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-              if (_savedSession != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: Card(
-                    color: Theme.of(context).colorScheme.secondaryContainer,
-                    child: ListTile(
-                      title: Text(
-                        'Riprendi allenamento: ${_savedSession!.scheduleTitle}',
-                      ),
-                      subtitle: Text(
-                        'Iniziato ${_savedSession!.startTime.day}/${_savedSession!.startTime.month}/${_savedSession!.startTime.year}',
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          FilledButton(
-                            onPressed: () async {
-                              final session = _savedSession!;
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      ActiveWorkoutScreen.resume(
-                                        resumedSession: session,
-                                        history: history,
-                                        defaultRestSeconds: _defaultRestSeconds,
-                                      ),
-                                ),
-                              );
-                              _loadData();
-                            },
-                            child: const Text('Riprendi'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 190,
+                    child: DropdownButtonFormField<int?>(
+                      initialValue: selectedWeekValue,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Week'),
+                      items: [
+                        const DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text('Tutte'),
+                        ),
+                        ...availableWeeks.map(
+                          (week) => DropdownMenuItem<int?>(
+                            value: week,
+                            child: Text('W$week'),
                           ),
-                          const SizedBox(width: 8),
-                          TextButton(
-                            onPressed: _discardSavedSession,
-                            child: const Text('Scarta'),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _selectedWeekFilter = value),
                     ),
                   ),
-                ),
-              _buildAgendaCard(),
-              _buildMonthCalendarCard(),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 190,
-                      child: DropdownButtonFormField<int?>(
-                        initialValue: selectedWeekValue,
-                        isExpanded: true,
-                        decoration: const InputDecoration(labelText: 'Week'),
-                        items: [
-                          const DropdownMenuItem<int?>(
-                            value: null,
-                            child: Text('Tutte'),
-                          ),
-                          ...availableWeeks.map(
-                            (week) => DropdownMenuItem<int?>(
-                              value: week,
-                              child: Text('W$week'),
-                            ),
-                          ),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _selectedWeekFilter = value),
-                      ),
+                  FilterChip(
+                    label: const Text('Archiviate'),
+                    selected: _showArchived,
+                    onSelected: (selected) =>
+                        setState(() => _showArchived = selected),
+                  ),
+                  if (_searchQuery.isNotEmpty ||
+                      _selectedWeekFilter != null ||
+                      _showArchived)
+                    IconButton(
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {
+                          _searchQuery = '';
+                          _selectedWeekFilter = null;
+                          _showArchived = false;
+                        });
+                      },
+                      tooltip: 'Reset filtri',
+                      icon: const Icon(Icons.refresh),
                     ),
-                    FilterChip(
-                      label: const Text('Archiviate'),
-                      selected: _showArchived,
-                      onSelected: (selected) =>
-                          setState(() => _showArchived = selected),
-                    ),
-                    if (_searchQuery.isNotEmpty ||
-                        _selectedWeekFilter != null ||
-                        _showArchived)
-                      IconButton(
-                        onPressed: () {
-                          setState(() {
-                            _searchQuery = '';
-                            _selectedWeekFilter = null;
-                            _showArchived = false;
-                          });
-                        },
-                        tooltip: 'Reset filtri',
-                        icon: const Icon(Icons.refresh),
-                      ),
-                  ],
-                ),
+                ],
               ),
-              const SizedBox(height: 8),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
         Expanded(
           child: visibleSchedules.isEmpty
@@ -2559,44 +2405,63 @@ class _HomePageState extends State<HomePage> {
                                 '${schedule.exercises.length} esercizi${schedule.isDeloadWeek() ? ' • deload' : ''} • Ciclo ${schedule.cycleNumber}${schedule.programBlock.trim().isEmpty ? '' : ' • ${schedule.programBlock}'}${schedule.goal.trim().isNotEmpty ? '\n${schedule.goal}' : ''}${schedule.isArchived ? ' • archiviata' : ''}',
                               ),
                             ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Duplica',
-                                  icon: const Icon(Icons.copy),
-                                  onPressed: () => _duplicateSchedule(schedule),
-                                ),
-                                PopupMenuButton<_ScheduleMenuAction>(
-                                  tooltip: 'Azioni',
-                                  onSelected: (action) {
-                                    switch (action) {
-                                      case _ScheduleMenuAction.toggleArchive:
-                                        _toggleArchiveSchedule(schedule);
-                                        break;
-                                      case _ScheduleMenuAction.delete:
-                                        if (actualIndex != -1) {
-                                          _deleteSchedule(actualIndex);
-                                        }
-                                        break;
+                            trailing: PopupMenuButton<_ScheduleMenuAction>(
+                              tooltip: 'Azioni',
+                              onSelected: (action) {
+                                switch (action) {
+                                  case _ScheduleMenuAction.rename:
+                                    _renameSchedule(schedule);
+                                    break;
+                                  case _ScheduleMenuAction.duplicate:
+                                    _duplicateSchedule(schedule);
+                                    break;
+                                  case _ScheduleMenuAction.toggleArchive:
+                                    _toggleArchiveSchedule(schedule);
+                                    break;
+                                  case _ScheduleMenuAction.delete:
+                                    if (actualIndex != -1) {
+                                      _deleteSchedule(actualIndex);
                                     }
-                                  },
-                                  itemBuilder: (context) => [
-                                    PopupMenuItem(
-                                      value: _ScheduleMenuAction.toggleArchive,
-                                      child: Text(
-                                        schedule.isArchived
-                                            ? 'Ripristina'
-                                            : 'Archivia',
-                                      ),
-                                    ),
-                                    const PopupMenuItem(
-                                      value: _ScheduleMenuAction.delete,
-                                      child: Text('Elimina'),
-                                    ),
-                                  ],
+                                    break;
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: _ScheduleMenuAction.rename,
+                                  child: ListTile(
+                                    leading: Icon(Icons.edit),
+                                    title: Text('Rinomina'),
+                                  ),
                                 ),
-                                const Icon(Icons.chevron_right),
+                                const PopupMenuItem(
+                                  value: _ScheduleMenuAction.duplicate,
+                                  child: ListTile(
+                                    leading: Icon(Icons.copy),
+                                    title: Text('Duplica'),
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: _ScheduleMenuAction.toggleArchive,
+                                  child: ListTile(
+                                    leading: Icon(
+                                      schedule.isArchived
+                                          ? Icons.unarchive
+                                          : Icons.archive,
+                                    ),
+                                    title: Text(
+                                      schedule.isArchived
+                                          ? 'Ripristina'
+                                          : 'Archivia',
+                                    ),
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: _ScheduleMenuAction.delete,
+                                  child: ListTile(
+                                    leading: Icon(Icons.delete),
+                                    title: Text('Elimina'),
+                                  ),
+                                ),
                               ],
                             ),
                             onTap: () => _openScheduleDetail(schedule),
@@ -2891,6 +2756,7 @@ class _HomePageState extends State<HomePage> {
           session: session,
           history: history,
           defaultRestSeconds: _defaultRestSeconds,
+          defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
         ),
       ),
     );
@@ -3793,10 +3659,17 @@ class _HomePageState extends State<HomePage> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final title = switch (_currentIndex) {
+      1 => 'Calendario',
+      2 => 'Cronologia',
+      3 => 'Statistiche',
+      4 => 'Corpo',
+      _ => 'Gym',
+    };
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gym'),
+        title: Text(title),
         actions: [
           IconButton(
             tooltip: 'Ricerca globale',
@@ -3829,7 +3702,7 @@ class _HomePageState extends State<HomePage> {
                 case _HomeAction.exportBodyCsv:
                   _exportBodyCsv();
                   break;
-                case _HomeAction.exportBackup:
+                case _HomeAction.exportAllJson:
                   _exportBackupJson();
                   break;
                 case _HomeAction.restoreBackup:
@@ -3849,7 +3722,7 @@ class _HomePageState extends State<HomePage> {
                 value: _HomeAction.exportCsv,
                 child: ListTile(
                   leading: Icon(Icons.download),
-                  title: Text('Esporta CSV'),
+                  title: Text('Esporta schede CSV'),
                 ),
               ),
               PopupMenuItem(
@@ -3867,10 +3740,10 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               PopupMenuItem(
-                value: _HomeAction.exportBackup,
+                value: _HomeAction.exportAllJson,
                 child: ListTile(
-                  leading: Icon(Icons.backup),
-                  title: Text('Esporta backup'),
+                  leading: Icon(Icons.inventory_2),
+                  title: Text('Esporta tutto (JSON)'),
                 ),
               ),
               PopupMenuItem(
@@ -3888,13 +3761,13 @@ class _HomePageState extends State<HomePage> {
         duration: const Duration(milliseconds: 220),
         child: KeyedSubtree(
           key: ValueKey(_currentIndex),
-          child: _currentIndex == 0
-              ? _buildSchedulesTab()
-              : _currentIndex == 1
-              ? _buildHistoryTab()
-              : _currentIndex == 2
-              ? StatsScreen(history: history)
-              : _buildBodyTab(),
+          child: switch (_currentIndex) {
+            0 => _buildSchedulesTab(),
+            1 => _buildCalendarTab(),
+            2 => _buildHistoryTab(),
+            3 => StatsScreen(history: history),
+            _ => _buildBodyTab(),
+          },
         ),
       ),
       floatingActionButton: _currentIndex == 0
@@ -3902,7 +3775,7 @@ class _HomePageState extends State<HomePage> {
               onPressed: _showAddScheduleDialog,
               child: const Icon(Icons.add),
             )
-          : _currentIndex == 3
+          : _currentIndex == 4
           ? FloatingActionButton(
               onPressed: () => _showBodyLogDialog(),
               child: const Icon(Icons.monitor_weight),
@@ -3931,11 +3804,17 @@ class _HomePageState extends State<HomePage> {
                 onTap: (index) => setState(() => _currentIndex = index),
                 backgroundColor: theme.bottomNavigationBarTheme.backgroundColor,
                 selectedItemColor: colorScheme.primary,
+                showSelectedLabels: false,
+                showUnselectedLabels: false,
                 unselectedItemColor: colorScheme.onSurfaceVariant,
                 items: const [
                   BottomNavigationBarItem(
                     icon: Icon(Icons.list_alt),
                     label: 'Schede',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.calendar_month),
+                    label: 'Calendario',
                   ),
                   BottomNavigationBarItem(
                     icon: Icon(Icons.history),
@@ -3964,13 +3843,6 @@ class _ExerciseOccurrence {
   final WorkoutExercise exercise;
 
   const _ExerciseOccurrence({required this.session, required this.exercise});
-}
-
-class _AgendaEntry {
-  final DateTime date;
-  final Schedule schedule;
-
-  const _AgendaEntry({required this.date, required this.schedule});
 }
 
 class _ExerciseProgressSummary {

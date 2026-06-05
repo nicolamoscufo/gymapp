@@ -4,6 +4,7 @@ import '../app_data_store.dart';
 import '../app_preferences.dart';
 import '../local_notifications.dart';
 import '../models/schedule.dart';
+import '../number_input.dart';
 
 class SettingsScreen extends StatefulWidget {
   final ThemeMode themeMode;
@@ -11,6 +12,8 @@ class SettingsScreen extends StatefulWidget {
   final Future<void> Function() onExportBackup;
   final Future<void> Function() onRestoreBackup;
   final Future<void> Function() onRestoreAutoBackup;
+  final Future<void> Function(double reductionPercent)
+  onBackoffReductionChanged;
   final List<Schedule> schedules;
 
   const SettingsScreen({
@@ -20,6 +23,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onExportBackup,
     required this.onRestoreBackup,
     required this.onRestoreAutoBackup,
+    required this.onBackoffReductionChanged,
     required this.schedules,
   });
 
@@ -33,10 +37,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isRestoringBackup = false;
   bool _isRestoringAutoBackup = false;
   bool _isSchedulingReminders = false;
+  bool _isSavingBackoffReduction = false;
   bool _remindersEnabled = false;
   int _reminderHour = AppPreferences.defaultWorkoutReminderHour;
   int _reminderMinute = AppPreferences.defaultWorkoutReminderMinute;
+  double _backoffReductionPercent =
+      AppPreferences.defaultBackoffReductionPercent;
   DateTime? _lastAutoBackupAt;
+  final TextEditingController _backoffReductionController =
+      TextEditingController(
+        text: formatDecimal(AppPreferences.defaultBackoffReductionPercent),
+      );
 
   @override
   void initState() {
@@ -44,6 +55,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _themeMode = widget.themeMode;
     _loadAutoBackupInfo();
     _loadReminderSettings();
+    _loadBackoffReductionPercent();
+  }
+
+  @override
+  void dispose() {
+    _backoffReductionController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAutoBackupInfo() async {
@@ -62,6 +80,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _reminderHour = settings.hour;
       _reminderMinute = settings.minute;
     });
+  }
+
+  Future<void> _loadBackoffReductionPercent() async {
+    final value = await AppPreferences.loadDefaultBackoffReductionPercent();
+    if (!mounted) return;
+    setState(() {
+      _backoffReductionPercent = value;
+      _backoffReductionController.text = formatDecimal(value);
+    });
+  }
+
+  Future<void> _saveBackoffReductionPercent() async {
+    final parsed = parseDecimalInput(_backoffReductionController.text);
+    if (parsed == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inserisci una percentuale valida.')),
+      );
+      return;
+    }
+
+    final normalized = AppPreferences.normalizeBackoffReductionPercent(parsed);
+    setState(() {
+      _isSavingBackoffReduction = true;
+      _backoffReductionPercent = normalized;
+      _backoffReductionController.text = formatDecimal(normalized);
+    });
+    await widget.onBackoffReductionChanged(normalized);
+    if (!mounted) return;
+    setState(() => _isSavingBackoffReduction = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Back off aggiornato su tutte le schede.')),
+    );
   }
 
   Future<void> _saveReminderSettings({
@@ -197,33 +247,111 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  SegmentedButton<ThemeMode>(
-                    segments: const [
-                      ButtonSegment(
-                        value: ThemeMode.system,
-                        icon: Icon(Icons.brightness_auto),
-                        label: Text('Sistema'),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SegmentedButton<ThemeMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: ThemeMode.system,
+                          icon: Icon(Icons.brightness_auto),
+                          label: Text('Sistema'),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.light,
+                          icon: Icon(Icons.light_mode),
+                          label: Text('Chiaro'),
+                        ),
+                        ButtonSegment(
+                          value: ThemeMode.dark,
+                          icon: Icon(Icons.dark_mode),
+                          label: Text('Scuro'),
+                        ),
+                      ],
+                      selected: {_themeMode},
+                      onSelectionChanged: (selection) {
+                        final selectedThemeMode = selection.first;
+                        setState(() {
+                          _themeMode = selectedThemeMode;
+                        });
+                        widget.onThemeModeChanged?.call(selectedThemeMode);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: colorScheme.tertiaryContainer,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(
+                          Icons.trending_down,
+                          color: colorScheme.onTertiaryContainer,
+                        ),
                       ),
-                      ButtonSegment(
-                        value: ThemeMode.light,
-                        icon: Icon(Icons.light_mode),
-                        label: Text('Chiaro'),
-                      ),
-                      ButtonSegment(
-                        value: ThemeMode.dark,
-                        icon: Icon(Icons.dark_mode),
-                        label: Text('Scuro'),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Back off',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Riduzione usata nei calcoli top set / back off.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
-                    selected: {_themeMode},
-                    onSelectionChanged: (selection) {
-                      final selectedThemeMode = selection.first;
-                      setState(() {
-                        _themeMode = selectedThemeMode;
-                      });
-                      widget.onThemeModeChanged?.call(selectedThemeMode);
-                    },
                   ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _backoffReductionController,
+                    decoration: InputDecoration(
+                      labelText: 'Riduzione back off %',
+                      helperText:
+                          'Valore attuale: ${formatDecimal(_backoffReductionPercent)}%',
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onSubmitted: (_) => _isSavingBackoffReduction
+                        ? null
+                        : _saveBackoffReductionPercent(),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _isSavingBackoffReduction
+                        ? null
+                        : _saveBackoffReductionPercent,
+                    icon: const Icon(Icons.save),
+                    label: const Text('Salva e aggiorna schede'),
+                  ),
+                  if (_isSavingBackoffReduction) ...[
+                    const SizedBox(height: 8),
+                    const LinearProgressIndicator(),
+                  ],
                 ],
               ),
             ),
@@ -343,7 +471,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Backup locale, ripristino su file e backup auto.',
+                              'Export completo, ripristino su file e backup auto.',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
@@ -378,8 +506,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   _isExportingBackup = value;
                                 });
                               }),
-                    icon: const Icon(Icons.backup),
-                    label: const Text('Esporta'),
+                    icon: const Icon(Icons.inventory_2),
+                    label: const Text('Esporta tutto'),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
