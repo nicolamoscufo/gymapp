@@ -1,6 +1,9 @@
-# gymapp
+# FitFlow (gymapp)
 
-Workout tracker Flutter app for training schedules, workout history, and statistics.
+Privacy-first Flutter workout tracker for schedules, training history, body logs,
+statistics, and optional on-device coaching with Gemma 4 E2B. Workout and chat
+data stay on the device; the model is downloaded only when the user enables the
+AI coach.
 
 ## Main features
 
@@ -10,6 +13,24 @@ Workout tracker Flutter app for training schedules, workout history, and statist
 - Export and restore a full JSON backup, including history.
 - Archive, duplicate, search, and filter schedules by week.
 - Track completed workouts and view volume statistics.
+- Generate conservative workout recaps and weekly reports locally with Gemma.
+- Chat with an on-device coach that uses the user's logged training context.
+- Compare progress photos locally, with explicit non-medical safety guidance.
+
+## Local development
+
+Requirements: Flutter compatible with Dart 3.9 and an Android device/emulator
+for the LiteRT-LM model flow.
+
+```bash
+flutter pub get
+flutter analyze
+flutter test
+flutter run
+```
+
+The optional Gemma model is about 2.4 GB. Do not commit model files, generated
+build output, IDE indexes, or personal training exports.
 
 ## CSV format
 

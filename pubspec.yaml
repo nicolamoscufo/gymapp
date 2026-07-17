@@ -1,5 +1,5 @@
 name: gymapp
-description: "A new Flutter project."
+description: "Privacy-first Flutter workout tracker with an on-device Gemma AI coach."
 publish_to: 'none'
 version: 0.1.0
 
@@ -12,6 +12,7 @@ dependencies:
   fl_chart: ^1.2.0
   flutter:
     sdk: flutter
+  flutter_gemma: ^0.15.1
   flutter_local_notifications: ^19.5.0
   share_plus: ^12.0.2
   shared_preferences: ^2.5.5
