@@ -531,7 +531,6 @@ class FlutterGemmaLocalLlmEngine implements LocalLlmEngine {
       maxTokens: config.maxTokens,
       supportImage: supportImage,
       maxNumImages: supportImage ? 4 : null,
-      maxConcurrentSessions: 1,
       enableSpeculativeDecoding: true,
     );
     _modelSupportsImages = supportImage;
