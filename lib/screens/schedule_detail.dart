@@ -1018,6 +1018,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
           : ReorderableListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
               buildDefaultDragHandles: false,
+              // ignore: deprecated_member_use
               onReorder: _reorderExercise,
               proxyDecorator: (child, index, animation) {
                 return AnimatedBuilder(
