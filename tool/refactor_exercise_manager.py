@@ -25,9 +25,6 @@ replace_once(
     'manager getter',
 )
 
-# Conversion from schedule template to live exercise is now used only by the
-# manager. Keep workout->template conversion because finishing a workout still
-# uses it when adding new exercises back to a routine.
 workout_from_exercise = re.compile(
     r"  WorkoutExercise _workoutExerciseFromExercise\(\n"
     r".*?"
@@ -94,11 +91,7 @@ superset_helpers = re.compile(
 match = superset_helpers.search(text)
 if not match:
     raise SystemExit('superset helper block not found')
-superset_replacement = '''  List<WorkoutExercise> _supersetMembers(WorkoutExercise exercise) {
-    return _exerciseManager.supersetMembers(exercise);
-  }
-
-  bool _shouldStartRestAfterSet(WorkoutExercise exercise) {
+superset_replacement = '''  bool _shouldStartRestAfterSet(WorkoutExercise exercise) {
     return _exerciseManager.shouldStartRestAfterSet(exercise);
   }
 
@@ -308,6 +301,7 @@ for forbidden in (
     '_nextSupersetGroupId(',
     '_cleanupSupersetGroup(',
     '_workoutExerciseFromExercise(',
+    '_supersetMembers(',
 ):
     if forbidden in text:
         lines = [
