@@ -170,7 +170,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Privacy e store'),
         content: const Text(
-          'Gym App salva schede, storico, misure corpo e backup solo sul dispositivo. Non usa backend, account o chiamate di rete. Per spostare i dati usa export/import backup JSON.',
+          'Gym App salva schede, storico, misure corpo e backup sul dispositivo. Non usa backend o account. La rete viene usata solo per scaricare il modello AI locale quando richiesto; allenamenti, profilo AI, chat e inferenza restano sul dispositivo. Per spostare i dati usa export/import backup JSON.',
         ),
         actions: [
           TextButton(
@@ -553,7 +553,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: Icon(Icons.privacy_tip, color: colorScheme.primary),
               title: const Text('Privacy locale'),
               subtitle: const Text(
-                'Dati offline: niente account, server o tracking.',
+                'Dati e AI locali: rete solo per il download del modello.',
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: _showPrivacyDialog,
