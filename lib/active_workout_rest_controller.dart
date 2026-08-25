@@ -3,11 +3,12 @@ import 'dart:async';
 import 'local_notifications.dart';
 import 'models/workout.dart';
 
-typedef RestNotificationScheduler = Future<void> Function({
-  required int id,
-  required DateTime endTime,
-  required String exerciseName,
-});
+typedef RestNotificationScheduler =
+    Future<void> Function({
+      required int id,
+      required DateTime endTime,
+      required String exerciseName,
+    });
 typedef RestNotificationCanceler = Future<void> Function(int id);
 typedef RestStateChanged = void Function();
 typedef RestFinished = void Function(String exerciseId, String? exerciseName);
@@ -32,8 +33,10 @@ class ActiveWorkoutRestController {
        _onChanged = onChanged,
        _onFinished = onFinished,
        _scheduleNotification =
-           scheduleNotification ?? LocalNotificationService.scheduleRestFinished,
-       _cancelNotification = cancelNotification ?? LocalNotificationService.cancel,
+           scheduleNotification ??
+           LocalNotificationService.scheduleRestFinished,
+       _cancelNotification =
+           cancelNotification ?? LocalNotificationService.cancel,
        _now = now ?? DateTime.now;
 
   final List<WorkoutExercise> Function() _exercises;
@@ -54,6 +57,9 @@ class ActiveWorkoutRestController {
 
   bool isActive(String exerciseId) =>
       _remainingByExerciseId.containsKey(exerciseId);
+
+  int configuredSecondsFor(WorkoutExercise exercise) =>
+      _restSecondsFor(exercise);
 
   WorkoutExercise? activeExercise() {
     for (final exercise in _exercises()) {
@@ -303,7 +309,9 @@ class ActiveWorkoutRestController {
       }
     }
     unawaited(
-      _cancelNotification(LocalNotificationService.restNotificationId(exerciseId)),
+      _cancelNotification(
+        LocalNotificationService.restNotificationId(exerciseId),
+      ),
     );
     _onFinished?.call(exerciseId, exerciseName);
   }

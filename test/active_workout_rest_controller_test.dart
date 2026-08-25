@@ -64,33 +64,36 @@ void main() {
     expect(changes, greaterThanOrEqualTo(3));
   });
 
-  test('rest controller stop clears runtime and persisted rest state', () async {
-    final exercise = _exercise(restSeconds: 60);
-    final cancelled = <int>[];
-    final controller = ActiveWorkoutRestController(
-      exercises: () => [exercise],
-      restSecondsFor: (exercise) => exercise.restSeconds ?? 0,
-      scheduleNotification:
-          ({
-            required int id,
-            required DateTime endTime,
-            required String exerciseName,
-          }) async {},
-      cancelNotification: (id) async => cancelled.add(id),
-    );
-    addTearDown(controller.dispose);
+  test(
+    'rest controller stop clears runtime and persisted rest state',
+    () async {
+      final exercise = _exercise(restSeconds: 60);
+      final cancelled = <int>[];
+      final controller = ActiveWorkoutRestController(
+        exercises: () => [exercise],
+        restSecondsFor: (exercise) => exercise.restSeconds ?? 0,
+        scheduleNotification:
+            ({
+              required int id,
+              required DateTime endTime,
+              required String exerciseName,
+            }) async {},
+        cancelNotification: (id) async => cancelled.add(id),
+      );
+      addTearDown(controller.dispose);
 
-    controller.start(exercise);
-    expect(controller.isActive(exercise.id), isTrue);
+      controller.start(exercise);
+      expect(controller.isActive(exercise.id), isTrue);
 
-    expect(controller.stop(exercise), isTrue);
-    await Future<void>.delayed(Duration.zero);
+      expect(controller.stop(exercise), isTrue);
+      await Future<void>.delayed(Duration.zero);
 
-    expect(controller.isActive(exercise.id), isFalse);
-    expect(exercise.activeRestSeconds, isNull);
-    expect(exercise.activeRestStartedAt, isNull);
-    expect(cancelled, hasLength(1));
-  });
+      expect(controller.isActive(exercise.id), isFalse);
+      expect(exercise.activeRestSeconds, isNull);
+      expect(exercise.activeRestStartedAt, isNull);
+      expect(cancelled, hasLength(1));
+    },
+  );
 
   test('rest controller restores remaining time from persisted metadata', () {
     final now = DateTime(2026, 8, 26, 0, 2);
