@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../active_workout_insights.dart';
+import '../active_workout_rest_controller.dart';
 import '../active_workout_session_controller.dart';
 import '../app_data_store.dart';
 import '../dialog_form.dart';
@@ -84,14 +85,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     with WidgetsBindingObserver {
   late WorkoutSession session;
   late List<BodyLog> _bodyLogs;
-  Timer? _restTimer;
   Timer? _durationTimer;
   int _elapsedSeconds = 0;
-  final Map<String, int> _restSecondsByExerciseId = {};
   final Map<String, GlobalKey> _exerciseCardKeys = {};
   final Set<String> _exerciseIdsAddedToScheduleThisFinish = {};
   final ActiveWorkoutSessionController _sessionPersistence =
       ActiveWorkoutSessionController();
+  late final ActiveWorkoutRestController _restController =
+      ActiveWorkoutRestController(
+        exercises: () => session.exercises,
+        restSecondsFor: (exercise) =>
+            exercise.restSeconds ?? widget.defaultRestSeconds,
+        onChanged: _notifyRestControllerChanged,
+        onFinished: _handleRestFinished,
+      );
 
   Color _accentForIndex(ColorScheme colorScheme, int index) {
     final accents = [
@@ -300,14 +307,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _saveCurrentSession();
   }
 
-  WorkoutExercise? _activeRestExercise() {
-    for (final exercise in session.exercises) {
-      if (_restSecondsByExerciseId.containsKey(exercise.id)) {
-        return exercise;
-      }
-    }
-    return null;
-  }
+  WorkoutExercise? _activeRestExercise() => _restController.activeExercise();
 
   String? _nextSetHintFor(
     WorkoutExercise exercise,
@@ -1044,70 +1044,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
   }
 
-  int _restSecondsFor(WorkoutExercise exercise) {
-    return exercise.restSeconds ?? widget.defaultRestSeconds;
-  }
-
-  void _ensureRestTimerRunning() {
-    if (_restTimer != null) return;
-
-    _restTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) {
-        _restTimer?.cancel();
-        _restTimer = null;
-        return;
-      }
-
-      final updatedCountdowns = <String, int>{};
-      final finishedExerciseIds = <String>[];
-      _restSecondsByExerciseId.forEach((exerciseId, remainingSeconds) {
-        if (remainingSeconds > 1) {
-          updatedCountdowns[exerciseId] = remainingSeconds - 1;
-        } else {
-          finishedExerciseIds.add(exerciseId);
-        }
-      });
-
-      setState(() {
-        _restSecondsByExerciseId
-          ..clear()
-          ..addAll(updatedCountdowns);
-      });
-
-      if (_restSecondsByExerciseId.isEmpty) {
-        _restTimer?.cancel();
-        _restTimer = null;
-      }
-
-      for (final exerciseId in finishedExerciseIds) {
-        _notifyRestFinished(exerciseId);
-      }
-    });
-  }
-
-  void _notifyRestFinished(String exerciseId) {
-    String? exerciseName;
-    for (final exercise in session.exercises) {
-      if (exercise.id == exerciseId) {
-        exerciseName = exercise.name;
-        exercise.activeRestSeconds = null;
-        exercise.activeRestStartedAt = null;
-        break;
-      }
+  void _notifyRestControllerChanged() {
+    if (mounted) {
+      setState(() {});
     }
-    _saveCurrentSession();
+  }
 
+  void _handleRestFinished(String exerciseId, String? exerciseName) {
+    _saveCurrentSession();
     HapticFeedback.mediumImpact();
     SystemSound.play(SystemSoundType.alert);
-    LocalNotificationService.cancel(
-      LocalNotificationService.restNotificationId(exerciseId),
-    );
     LocalNotificationService.showRestFinished(exerciseName ?? '');
 
-    if (!mounted) {
-      return;
-    }
-
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -1121,175 +1070,41 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   void _startRestForExercise(WorkoutExercise exercise) {
-    final restSeconds = _restSecondsFor(exercise);
-    if (restSeconds <= 0) return;
-
-    setState(() {
-      _restSecondsByExerciseId[exercise.id] = restSeconds;
-      exercise.activeRestSeconds = restSeconds;
-      exercise.activeRestStartedAt = DateTime.now();
-    });
-    LocalNotificationService.scheduleRestFinished(
-      id: LocalNotificationService.restNotificationId(exercise.id),
-      endTime: DateTime.now().add(Duration(seconds: restSeconds)),
-      exerciseName: exercise.name,
-    );
-    _ensureRestTimerRunning();
-    _saveCurrentSession();
+    if (_restController.start(exercise)) {
+      _saveCurrentSession();
+    }
   }
 
   void _addThirtySeconds(WorkoutExercise exercise) {
-    final currentSeconds = _restSecondsByExerciseId[exercise.id];
-    if (currentSeconds == null) {
-      _startRestForExercise(exercise);
-      return;
+    if (_restController.addThirtySeconds(exercise)) {
+      _saveCurrentSession();
     }
-
-    setState(() {
-      _restSecondsByExerciseId[exercise.id] = currentSeconds + 30;
-      exercise.activeRestSeconds = currentSeconds + 30;
-      exercise.activeRestStartedAt = DateTime.now();
-    });
-    LocalNotificationService.scheduleRestFinished(
-      id: LocalNotificationService.restNotificationId(exercise.id),
-      endTime: DateTime.now().add(Duration(seconds: currentSeconds + 30)),
-      exerciseName: exercise.name,
-    );
-    _ensureRestTimerRunning();
-    _saveCurrentSession();
   }
 
   void _subtractThirtySeconds(WorkoutExercise exercise) {
-    final currentSeconds = _restSecondsByExerciseId[exercise.id];
-    if (currentSeconds == null) return;
-    final nextSeconds = math.max(1, currentSeconds - 30);
-    setState(() {
-      _restSecondsByExerciseId[exercise.id] = nextSeconds;
-      exercise.activeRestSeconds = nextSeconds;
-      exercise.activeRestStartedAt = DateTime.now();
-    });
-    final notificationId = LocalNotificationService.restNotificationId(
-      exercise.id,
-    );
-    LocalNotificationService.cancel(notificationId);
-    LocalNotificationService.scheduleRestFinished(
-      id: notificationId,
-      endTime: DateTime.now().add(Duration(seconds: nextSeconds)),
-      exerciseName: exercise.name,
-    );
-    _saveCurrentSession();
+    if (_restController.subtractThirtySeconds(exercise)) {
+      _saveCurrentSession();
+    }
   }
 
   void _stopRestForExercise(WorkoutExercise exercise) {
-    setState(() {
-      _restSecondsByExerciseId.remove(exercise.id);
-      exercise.activeRestSeconds = null;
-      exercise.activeRestStartedAt = null;
-    });
-    LocalNotificationService.cancel(
-      LocalNotificationService.restNotificationId(exercise.id),
-    );
-
-    if (_restSecondsByExerciseId.isEmpty) {
-      _restTimer?.cancel();
-      _restTimer = null;
-    }
-    _saveCurrentSession();
-  }
-
-  Future<void> _cancelAllRestTimers() async {
-    _restTimer?.cancel();
-    _restTimer = null;
-    final exerciseIds = <String>{
-      ..._restSecondsByExerciseId.keys,
-      ...session.exercises
-          .where(
-            (exercise) =>
-                exercise.activeRestStartedAt != null ||
-                exercise.activeRestSeconds != null,
-          )
-          .map((exercise) => exercise.id),
-    };
-    _restSecondsByExerciseId.clear();
-    for (final exercise in session.exercises) {
-      exercise.activeRestSeconds = null;
-      exercise.activeRestStartedAt = null;
-    }
-    for (final exerciseId in exerciseIds) {
-      await LocalNotificationService.cancel(
-        LocalNotificationService.restNotificationId(exerciseId),
-      );
+    if (_restController.stop(exercise)) {
+      _saveCurrentSession();
     }
   }
+
+  Future<void> _cancelAllRestTimers() => _restController.cancelAll();
 
   void _updateExerciseRestSeconds(WorkoutExercise exercise, String value) {
     final parsedSeconds = parseIntInput(value);
-    if (parsedSeconds == null) {
-      return;
+    if (parsedSeconds == null) return;
+    if (_restController.updateConfiguredRest(exercise, parsedSeconds)) {
+      _saveCurrentSession();
     }
-
-    final normalizedSeconds = parsedSeconds.clamp(0, 3600).toInt();
-    final wasActive = _restSecondsByExerciseId.containsKey(exercise.id);
-    if (wasActive && normalizedSeconds == 0) {
-      _stopRestForExercise(exercise);
-      return;
-    }
-
-    setState(() {
-      exercise.restSeconds = normalizedSeconds;
-      if (wasActive) {
-        _restSecondsByExerciseId[exercise.id] = normalizedSeconds;
-        exercise.activeRestSeconds = normalizedSeconds;
-        exercise.activeRestStartedAt = DateTime.now();
-      }
-    });
-    if (wasActive) {
-      final notificationId = LocalNotificationService.restNotificationId(
-        exercise.id,
-      );
-      LocalNotificationService.cancel(notificationId);
-      LocalNotificationService.scheduleRestFinished(
-        id: notificationId,
-        endTime: DateTime.now().add(Duration(seconds: normalizedSeconds)),
-        exerciseName: exercise.name,
-      );
-    }
-    _saveCurrentSession();
   }
 
   void _restoreRestTimersFromSession({bool notifyExpired = false}) {
-    final now = DateTime.now();
-    final expiredExerciseIds = <String>[];
-    _restSecondsByExerciseId.clear();
-    for (final exercise in session.exercises) {
-      final startedAt = exercise.activeRestStartedAt;
-      final duration = exercise.activeRestSeconds;
-      if (startedAt == null || duration == null) {
-        continue;
-      }
-
-      final remaining = duration - now.difference(startedAt).inSeconds;
-      if (remaining > 0) {
-        _restSecondsByExerciseId[exercise.id] = remaining;
-        LocalNotificationService.scheduleRestFinished(
-          id: LocalNotificationService.restNotificationId(exercise.id),
-          endTime: now.add(Duration(seconds: remaining)),
-          exerciseName: exercise.name,
-        );
-      } else {
-        exercise.activeRestStartedAt = null;
-        exercise.activeRestSeconds = null;
-        if (notifyExpired) {
-          expiredExerciseIds.add(exercise.id);
-        }
-      }
-    }
-    if (_restSecondsByExerciseId.isNotEmpty) {
-      _ensureRestTimerRunning();
-    }
-    for (final exerciseId in expiredExerciseIds) {
-      _notifyRestFinished(exerciseId);
-    }
+    _restController.restore(notifyExpired: notifyExpired);
   }
 
   @override
@@ -1648,7 +1463,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _restTimer?.cancel();
+    _restController.dispose();
     _durationTimer?.cancel();
     if (!widget.editCompletedSession) {
       WakelockPlus.disable();
@@ -1850,15 +1665,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       keepSourceExerciseId: false,
     )..supersetGroup = exercise.supersetGroup;
 
-    final notificationId = LocalNotificationService.restNotificationId(
-      exercise.id,
-    );
+    _restController.stop(exercise);
     setState(() {
-      _restSecondsByExerciseId.remove(exercise.id);
       session.exercises[index] = replacement;
       _exerciseCardKeys.remove(exercise.id);
     });
-    await LocalNotificationService.cancel(notificationId);
     await _saveCurrentSession();
 
     if (replacements.length > 1 && mounted) {
@@ -1935,17 +1746,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         : session.exercises
               .where((item) => item.supersetGroup == deletedGroup)
               .toList();
-    final notificationId = LocalNotificationService.restNotificationId(
-      exercise.id,
-    );
-
+    _restController.stop(exercise);
     setState(() {
-      _restSecondsByExerciseId.remove(exercise.id);
       session.exercises.removeAt(index);
       _exerciseCardKeys.remove(exercise.id);
       _cleanupSupersetGroup(deletedGroup);
     });
-    LocalNotificationService.cancel(notificationId);
     _saveCurrentSession();
 
     _showUndoSnackBar(
@@ -2801,7 +2607,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final activeRestExercise = _activeRestExercise();
     final activeRestSeconds = activeRestExercise == null
         ? null
-        : _restSecondsByExerciseId[activeRestExercise.id];
+        : _restController.remainingFor(activeRestExercise.id);
     final workoutReadiness = _workoutReadiness();
 
     return PopScope(
@@ -3006,8 +2812,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                 ? itemIndex - 1
                 : itemIndex;
             final exercise = session.exercises[exIndex];
-            final activeRestSeconds = _restSecondsByExerciseId[exercise.id];
-            final restSeconds = activeRestSeconds ?? _restSecondsFor(exercise);
+            final activeRestSeconds = _restController.remainingFor(exercise.id);
+            final restSeconds =
+                activeRestSeconds ??
+                _restController.configuredSecondsFor(exercise);
             final accent = _accentForIndex(colorScheme, exIndex);
             final currentEstimatedOneRepMax = bestEstimatedOneRepMaxForSets(
               exercise.sets.where((set) => set.isCompleted && !set.isWarmup),
@@ -3282,9 +3090,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                             width: 96,
                             child: TextFormField(
                               key: ValueKey('rest-${exercise.id}'),
-                              initialValue: _restSecondsFor(
-                                exercise,
-                              ).toString(),
+                              initialValue: _restController
+                                  .configuredSecondsFor(exercise)
+                                  .toString(),
                               keyboardType: TextInputType.number,
                               textAlign: TextAlign.center,
                               decoration: InputDecoration(
