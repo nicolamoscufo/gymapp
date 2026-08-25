@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../active_workout_insights.dart';
 import '../app_data_store.dart';
 import '../dialog_form.dart';
 import '../exercise_catalog.dart';
@@ -120,12 +121,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     );
   }
 
-  Iterable<WorkoutSession> get _comparisonHistory {
-    return widget.history.where(
-      (historySession) => historySession.id != session.id,
-    );
-  }
-
   String _formatDuration(int totalSeconds) {
     final minutes = totalSeconds ~/ 60;
     final seconds = totalSeconds % 60;
@@ -201,147 +196,22 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     return 'Salvato ${savedAt.hour.toString().padLeft(2, '0')}:${savedAt.minute.toString().padLeft(2, '0')}';
   }
 
-  double _setVolume(ExerciseSet set) => set.weight * set.reps;
+  ActiveWorkoutInsights get _workoutInsights => ActiveWorkoutInsights(
+    history: widget.history,
+    currentSessionId: session.id,
+  );
 
-  double _completedExerciseVolume(WorkoutExercise exercise) {
-    return exercise.sets
-        .where((set) => set.isCompleted && !set.isWarmup)
-        .fold<double>(0, (total, set) => total + _setVolume(set));
-  }
-
-  Iterable<WorkoutExercise> _historicalExercisesFor(WorkoutExercise exercise) {
-    final exerciseName = _normalizeExerciseName(exercise.name);
-    return _comparisonHistory.expand((historySession) {
-      return historySession.exercises.where(
-        (historicalExercise) =>
-            _normalizeExerciseName(historicalExercise.name) == exerciseName,
-      );
-    });
-  }
-
-  Iterable<ExerciseSet> _historicalWorkSetsFor(WorkoutExercise exercise) {
-    return _historicalExercisesFor(exercise)
-        .expand((historicalExercise) => historicalExercise.sets)
-        .where((set) => set.isCompleted && !set.isWarmup);
-  }
-
-  double? _maxHistoricalWeightFor(WorkoutExercise exercise) {
-    double? maxWeight;
-    for (final set in _historicalWorkSetsFor(exercise)) {
-      if (maxWeight == null || set.weight > maxWeight) {
-        maxWeight = set.weight;
-      }
-    }
-    return maxWeight;
-  }
-
-  int? _maxHistoricalRepsFor(WorkoutExercise exercise) {
-    int? maxReps;
-    for (final set in _historicalWorkSetsFor(exercise)) {
-      if (maxReps == null || set.reps > maxReps) {
-        maxReps = set.reps;
-      }
-    }
-    return maxReps;
-  }
-
-  double? _bestHistoricalSetVolumeFor(WorkoutExercise exercise) {
-    double? bestVolume;
-    for (final set in _historicalWorkSetsFor(exercise)) {
-      final volume = _setVolume(set);
-      if (bestVolume == null || volume > bestVolume) {
-        bestVolume = volume;
-      }
-    }
-    return bestVolume;
-  }
-
-  double? _bestHistoricalExerciseVolumeFor(WorkoutExercise exercise) {
-    double? bestVolume;
-    for (final historicalExercise in _historicalExercisesFor(exercise)) {
-      final volume = _completedExerciseVolume(historicalExercise);
-      if (volume <= 0) {
-        continue;
-      }
-      if (bestVolume == null || volume > bestVolume) {
-        bestVolume = volume;
-      }
-    }
-    return bestVolume;
-  }
-
-  int? _lastCompletedWorkSetIndex(WorkoutExercise exercise) {
-    for (var index = exercise.sets.length - 1; index >= 0; index--) {
-      final set = exercise.sets[index];
-      if (set.isCompleted && !set.isWarmup) {
-        return index;
-      }
-    }
-    return null;
-  }
+  double _setVolume(ExerciseSet set) => _workoutInsights.setVolume(set);
 
   List<String> _personalRecordLabelsFor(
     WorkoutExercise exercise,
     ExerciseSet set,
     int setIndex,
   ) {
-    if (!set.isCompleted || set.isWarmup) {
-      return const [];
-    }
-
-    final labels = <String>[];
-    final maxWeight = _maxHistoricalWeightFor(exercise);
-    if (maxWeight != null && set.weight > maxWeight) {
-      labels.add('PR kg');
-    }
-
-    final maxReps = _maxHistoricalRepsFor(exercise);
-    if (maxReps != null && set.reps > maxReps) {
-      labels.add('PR reps');
-    }
-
-    final bestSetVolume = _bestHistoricalSetVolumeFor(exercise);
-    if (bestSetVolume != null && _setVolume(set) > bestSetVolume) {
-      labels.add('PR set');
-    }
-
-    final setEstimatedOneRepMax = estimateOneRepMax(set.weight, set.reps);
-    final historicalEstimatedOneRepMax = historicalBestEstimatedOneRepMax(
-      history: widget.history,
-      exerciseName: exercise.name,
-      excludeSessionId: session.id,
-    );
-    if (setEstimatedOneRepMax != null &&
-        historicalEstimatedOneRepMax != null &&
-        setEstimatedOneRepMax > historicalEstimatedOneRepMax + 0.05) {
-      labels.add('PR e1RM');
-    }
-
-    final bestExerciseVolume = _bestHistoricalExerciseVolumeFor(exercise);
-    if (bestExerciseVolume != null &&
-        _lastCompletedWorkSetIndex(exercise) == setIndex &&
-        _completedExerciseVolume(exercise) > bestExerciseVolume) {
-      labels.add('PR volume');
-    }
-
-    return labels;
+    return _workoutInsights.personalRecordLabelsFor(exercise, set, setIndex);
   }
 
-  int _sessionPrCount() {
-    var count = 0;
-    for (final exercise in session.exercises) {
-      for (var index = 0; index < exercise.sets.length; index++) {
-        if (_personalRecordLabelsFor(
-          exercise,
-          exercise.sets[index],
-          index,
-        ).isNotEmpty) {
-          count++;
-        }
-      }
-    }
-    return count;
-  }
+  int _sessionPrCount() => _workoutInsights.sessionPrCount(session);
 
   String? _previousSetLabelFor(WorkoutExercise exercise, int setIndex) {
     if (setIndex >= exercise.previousWeights.length ||
@@ -2379,7 +2249,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
                   if (sets < 1 || reps < 1 || weight < 0 || restSeconds < 0) {
                     setDialogState(() {
-                      validationMessage = 'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi.';
+                      validationMessage =
+                          'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi.';
                     });
                     return;
                   }
@@ -3443,8 +3314,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                             width: 96,
                             child: TextFormField(
                               key: ValueKey('rest-${exercise.id}'),
-                              initialValue: _restSecondsFor(exercise)
-                                  .toString(),
+                              initialValue: _restSecondsFor(
+                                exercise,
+                              ).toString(),
                               keyboardType: TextInputType.number,
                               textAlign: TextAlign.center,
                               decoration: InputDecoration(
