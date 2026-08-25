@@ -1,0 +1,49 @@
+name: Workout Experience v4 build
+
+on:
+  push:
+    branches:
+      - feat/progression-intelligence-v4
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/progression-intelligence-v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply progression intelligence v4
+        run: python tool/workout_experience_v4_patch.py
+
+      - name: Format
+        run: dart format lib/screens/active_workout.dart lib/workout_progression_analytics.dart lib/ai_coach/training_context_builder.dart lib/ai_coach/ai_coach_prompts.dart test/workout_progression_intelligence_test.dart test/workout_experience_v4_test.dart
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Commit workout experience v4
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/screens/active_workout.dart lib/workout_progression_analytics.dart lib/ai_coach/training_context_builder.dart lib/ai_coach/ai_coach_prompts.dart test/workout_progression_intelligence_test.dart test/workout_experience_v4_test.dart
+          git diff --cached --quiet && exit 0
+          git commit -m "Build workout experience v4"
+          git push origin HEAD:feat/progression-intelligence-v4
