@@ -1,0 +1,5 @@
+class AiCoachModelConfig {
+  final int maxTokens;
+
+  const AiCoachModelConfig({this.maxTokens = 2048});
+}
