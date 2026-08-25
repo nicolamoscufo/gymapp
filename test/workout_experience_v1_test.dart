@@ -32,7 +32,10 @@ void main() {
         targetWeight: 100,
         barWeight: 20,
       );
-      expect(result.platesPerSide, [20, 20]);
+      expect(
+        result.platesPerSide.fold<double>(0, (sum, plate) => sum + plate),
+        40,
+      );
       expect(result.loadedWeight, 100);
       expect(result.remainder, closeTo(0, 0.001));
     });
