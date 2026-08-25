@@ -24,6 +24,7 @@ class TrainingContextBuilder {
     final latest = sorted.isEmpty ? <WorkoutSession>[] : [sorted.last];
     return _build(
       history: latest,
+      analyticsHistory: sorted,
       schedules: schedules,
       bodyLogs: bodyLogs,
       profile: profile,
@@ -39,10 +40,12 @@ class TrainingContextBuilder {
     AiCoachMemory memory = const AiCoachMemory(),
   }) {
     final cutoff = _now.subtract(const Duration(days: 7));
+    final weeklyHistory = history
+        .where((entry) => !entry.startTime.isBefore(cutoff))
+        .toList();
     return _build(
-      history: history
-          .where((entry) => !entry.startTime.isBefore(cutoff))
-          .toList(),
+      history: weeklyHistory,
+      analyticsHistory: weeklyHistory,
       schedules: schedules,
       bodyLogs: bodyLogs,
       profile: profile,
@@ -59,8 +62,10 @@ class TrainingContextBuilder {
   }) {
     final sorted = [...history]
       ..sort((a, b) => b.startTime.compareTo(a.startTime));
+    final recentHistory = sorted.take(12).toList().reversed.toList();
     return _build(
-      history: sorted.take(12).toList().reversed.toList(),
+      history: recentHistory,
+      analyticsHistory: recentHistory,
       schedules: schedules,
       bodyLogs: bodyLogs,
       profile: profile,
@@ -84,6 +89,7 @@ class TrainingContextBuilder {
 
   Map<String, dynamic> _build({
     required List<WorkoutSession> history,
+    required List<WorkoutSession> analyticsHistory,
     required List<Schedule> schedules,
     required List<BodyLog> bodyLogs,
     required AiCoachUserProfile profile,
@@ -115,6 +121,9 @@ class TrainingContextBuilder {
       },
       'deterministic_analytics': {
         'exercise_progress': _exerciseProgress(history),
+        'progression_recommendations': _progressionRecommendations(
+          analyticsHistory,
+        ),
         'session_count': history.length,
         'latest_session_at': history.isEmpty
             ? null
@@ -260,5 +269,28 @@ class TrainingContextBuilder {
       }
     }
     return result;
+  }
+
+  List<Map<String, dynamic>> _progressionRecommendations(
+    List<WorkoutSession> history,
+  ) {
+    if (history.isEmpty) {
+      return const [];
+    }
+
+    final sorted = [...history]
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
+    final latest = sorted.last;
+    final previous = sorted
+        .where((session) => session.id != latest.id)
+        .toList();
+
+    return latest.exercises.map((exercise) {
+      final decision = buildProgressionDecision(
+        exercise: exercise,
+        history: previous,
+      );
+      return {'exercise': exercise.name, ...decision.toJson()};
+    }).toList();
   }
 }

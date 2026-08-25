@@ -14,18 +14,12 @@ class AiCoachPrompts {
     bool strictRetry = false,
   }) {
     final taskInstruction = switch (task) {
-      AiCoachTask.workoutRecap =>
-        'Generate a concise recap of the latest workout. Include what went well, what was worse than usual, notes summary, fatigue/stagnation signals, and next-session focus.',
-      AiCoachTask.weeklyReport =>
-        'Analyze the latest training week. Summarize sessions, muscle groups, volume trends, improvements, neglected areas, progressing exercises, and stalled exercises.',
-      AiCoachTask.weakPointAnalysis =>
-        'Identify possible weak points from recent history and notes: undertrained muscle groups, no progression, discomfort, poor stimulus, fatigue, or low energy.',
-      AiCoachTask.notesSummary =>
-        'Summarize all free-text training notes. Extract recurring themes and important notes useful for future training decisions.',
-      AiCoachTask.suggestedAdjustments =>
-        'Suggest possible workout adjustments as structured proposals. Do not claim changes were applied. Every suggestion must require user confirmation and include proposed_actions when applicable.',
-      AiCoachTask.bodyPhotoAnalysis =>
-        'Compare the supplied physique progress photos using only visible, non-sensitive observations. Highlight visible changes, likely improved areas, unchanged areas, evidence, and better check-in photo practices. Do not infer health status, body fat percentage, diagnoses, attractiveness, identity, or protected attributes.',
+      AiCoachTask.workoutRecap => 'Generate a concise recap of the latest workout. Include what went well, what was worse than usual, notes summary, fatigue/stagnation signals, and next-session focus.',
+      AiCoachTask.weeklyReport => 'Analyze the latest training week. Summarize sessions, muscle groups, volume trends, improvements, neglected areas, progressing exercises, and stalled exercises.',
+      AiCoachTask.weakPointAnalysis => 'Identify possible weak points from recent history and notes: undertrained muscle groups, no progression, discomfort, poor stimulus, fatigue, or low energy.',
+      AiCoachTask.notesSummary => 'Summarize all free-text training notes. Extract recurring themes and important notes useful for future training decisions.',
+      AiCoachTask.suggestedAdjustments => 'Suggest possible workout adjustments as structured proposals. Use deterministic progression recommendations when available and explain their evidence instead of replacing them with a conflicting load/reps/deload decision. Do not claim changes were applied. Every suggestion must require user confirmation and include proposed_actions when applicable.',
+      AiCoachTask.bodyPhotoAnalysis => 'Compare the supplied physique progress photos using only visible, non-sensitive observations. Highlight visible changes, likely improved areas, unchanged areas, evidence, and better check-in photo practices. Do not infer health status, body fat percentage, diagnoses, attractiveness, identity, or protected attributes.',
       AiCoachTask.freeChat => '',
     };
 
@@ -43,6 +37,8 @@ Rules:
 - Use only the provided context.
 - Use workout history, active plans, notes, RPE/RIR, and body_logs when present.
 - Use user_profile, deterministic_analytics, coach_memory, and image labels when present.
+- deterministic_analytics.progression_recommendations is the source of truth for increaseLoad, increaseReps, maintain, deload, or manual decisions when present. You may explain the decision and its uncertainty, but do not output a conflicting progression action.
+- If a deterministic recommendation is manual, do not invent an automatic progression change.
 - Never invent workout history, loads, reps, symptoms, or goals.
 - For photo analysis, discuss only visible training-related changes and photo quality/angle/lighting caveats.
 - Separate evidence from suggestions.
@@ -107,8 +103,7 @@ class AiCoachPromptSchemas {
   static const suggestedAdjustments = {
     'suggestions': [
       {
-        'type':
-            'load_progression|volume_adjustment|recovery|technique_review|exercise_review',
+        'type': 'load_progression|volume_adjustment|recovery|technique_review|exercise_review',
         'target': 'string',
         'suggestion': 'string',
         'reason': 'string',
@@ -117,8 +112,7 @@ class AiCoachPromptSchemas {
         'requires_user_confirmation': true,
         'proposed_actions': [
           {
-            'action':
-                'increase_load|reduce_load|change_volume|change_reps|change_rest|deload|keep',
+            'action': 'increase_load|reduce_load|change_volume|change_reps|change_rest|deload|keep',
             'target': 'exercise_or_plan_name',
             'field': 'weight|sets|reps|rest_seconds|notes|schedule',
             'current_value': 'string',
