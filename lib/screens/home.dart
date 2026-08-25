@@ -19,7 +19,7 @@ import '../top_set_backoff.dart';
 import '../workout_fatigue_analytics.dart';
 import 'schedule_detail.dart';
 import 'settings.dart';
-import 'stats.dart';
+import 'progress_center.dart';
 import 'active_workout.dart';
 import 'ai_coach.dart';
 import 'exercise_detail.dart';
@@ -4095,7 +4095,7 @@ class _HomePageState extends State<HomePage> {
             index: _progressIndex,
             children: [
               _buildHistoryTab(),
-              StatsScreen(history: history),
+              ProgressCenterScreen(history: history),
               _buildBodyTab(),
             ],
           ),
