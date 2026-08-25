@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../active_workout_insights.dart';
+import '../active_workout_session_controller.dart';
 import '../app_data_store.dart';
 import '../dialog_form.dart';
 import '../exercise_catalog.dart';
@@ -89,10 +90,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   final Map<String, int> _restSecondsByExerciseId = {};
   final Map<String, GlobalKey> _exerciseCardKeys = {};
   final Set<String> _exerciseIdsAddedToScheduleThisFinish = {};
-  DateTime? _lastSavedAt;
-  bool _isSaving = false;
-  bool _allowCurrentSessionSaves = true;
-  Future<void> _pendingCurrentSessionSave = Future.value();
+  final ActiveWorkoutSessionController _sessionPersistence =
+      ActiveWorkoutSessionController();
 
   Color _accentForIndex(ColorScheme colorScheme, int index) {
     final accents = [
@@ -182,18 +181,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         : volume.toStringAsFixed(1);
   }
 
-  String _saveStatusLabel() {
-    if (widget.editCompletedSession) {
-      return _lastSavedAt == null ? 'Modifica storico' : 'Modifiche locali';
+  String _saveStatusLabel() => _sessionPersistence.statusLabel(
+    editCompletedSession: widget.editCompletedSession,
+  );
+
+  void _notifySessionPersistenceChanged() {
+    if (mounted) {
+      setState(() {});
     }
-    if (_isSaving) {
-      return 'Salvataggio...';
-    }
-    final savedAt = _lastSavedAt;
-    if (savedAt == null) {
-      return 'Autosave attivo';
-    }
-    return 'Salvato ${savedAt.hour.toString().padLeft(2, '0')}:${savedAt.minute.toString().padLeft(2, '0')}';
   }
 
   ActiveWorkoutInsights get _workoutInsights => ActiveWorkoutInsights(
@@ -1434,64 +1429,37 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   Future<void> _saveCurrentSession() async {
     if (widget.editCompletedSession) {
-      if (mounted) {
-        setState(() => _lastSavedAt = DateTime.now());
-      }
+      _sessionPersistence.markLocalEdit(
+        onChanged: _notifySessionPersistenceChanged,
+      );
       return;
-    }
-    if (!_allowCurrentSessionSaves) {
-      return;
-    }
-    if (mounted) {
-      setState(() => _isSaving = true);
     }
     await _queueCurrentSessionSave(showSaving: true);
   }
 
   Future<void> _saveCurrentSessionSilently() async {
     if (widget.editCompletedSession) {
-      _lastSavedAt = DateTime.now();
+      _sessionPersistence.markLocalEdit();
       return;
     }
-    if (!_allowCurrentSessionSaves) {
-      return;
-    }
-
     await _queueCurrentSessionSave();
   }
 
   Future<void> _queueCurrentSessionSave({bool showSaving = false}) {
-    final nextSave = _pendingCurrentSessionSave.catchError((_) {}).then((
-      _,
-    ) async {
-      if (!_allowCurrentSessionSaves) {
-        return;
-      }
-      await AppDataStore.saveCurrentSession(session);
-      if (mounted) {
-        setState(() {
-          _lastSavedAt = DateTime.now();
-          if (showSaving) {
-            _isSaving = false;
-          }
-        });
-      } else {
-        _lastSavedAt = DateTime.now();
-      }
-    });
-    _pendingCurrentSessionSave = nextSave;
-    return nextSave;
+    return _sessionPersistence.save(
+      session,
+      showSaving: showSaving,
+      onChanged: _notifySessionPersistenceChanged,
+    );
   }
 
-  Future<void> _drainCurrentSessionSaves() async {
-    await _pendingCurrentSessionSave.catchError((_) {});
-  }
+  Future<void> _drainCurrentSessionSaves() => _sessionPersistence.drain();
 
   Future<void> _clearSavedSession() async {
     if (widget.editCompletedSession) {
       return;
     }
-    await AppDataStore.clearCurrentSession();
+    await _sessionPersistence.clear();
   }
 
   Schedule? _storedScheduleForSession(List<Schedule> schedules) {
@@ -1694,7 +1662,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       return;
     }
 
-    _allowCurrentSessionSaves = false;
+    _sessionPersistence.disable();
     await _drainCurrentSessionSaves();
     await _cancelAllRestTimers();
     session.endTime = DateTime.now();
