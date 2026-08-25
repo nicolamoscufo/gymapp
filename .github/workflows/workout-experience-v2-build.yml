@@ -1,0 +1,51 @@
+name: Workout Experience v2 build
+
+on:
+  push:
+    branches:
+      - feat/workout-experience-v2
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/workout-experience-v2
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply workout experience v2
+        run: |
+          python tool/workout_experience_v2_patch.py
+          python tool/workout_experience_v2_test_patch.py
+
+      - name: Format
+        run: dart format lib/screens/active_workout.dart lib/screens/home.dart test/workout_experience_v2_test.dart
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Commit workout experience v2
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/screens/active_workout.dart lib/screens/home.dart test/workout_experience_v2_test.dart
+          git diff --cached --quiet && exit 0
+          git commit -m "Build workout experience v2"
+          git push origin HEAD:feat/workout-experience-v2
