@@ -35,3 +35,11 @@ if test.exists():
     )
     text = text.replace("expect(find.text('Allenati'), findsOneWidget);", "expect(find.text('Allenati'), findsWidgets);")
     test.write_text(text)
+
+legacy_test = Path('test/home_undo_test.dart')
+text = legacy_test.read_text()
+text = text.replace(
+    "    expect(find.textContaining('Top set:'), findsNothing);\n\n    await tester.tap(find.byIcon(Icons.edit).first);",
+    "    expect(find.textContaining('Top set:'), findsNothing);\n\n    await tester.ensureVisible(find.byIcon(Icons.edit).first);\n    await tester.pumpAndSettle();\n    await tester.tap(find.byIcon(Icons.edit).first);",
+)
+legacy_test.write_text(text)
