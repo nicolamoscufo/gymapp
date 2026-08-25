@@ -28,10 +28,7 @@ void main() {
 
   group('plate calculator', () {
     test('calculates plates per side for 100 kg on a 20 kg bar', () {
-      final result = calculatePlatesPerSide(
-        targetWeight: 100,
-        barWeight: 20,
-      );
+      final result = calculatePlatesPerSide(targetWeight: 100, barWeight: 20);
       expect(
         result.platesPerSide.fold<double>(0, (sum, plate) => sum + plate),
         40,
@@ -41,10 +38,7 @@ void main() {
     });
 
     test('reports remainder when target cannot be loaded exactly', () {
-      final result = calculatePlatesPerSide(
-        targetWeight: 101,
-        barWeight: 20,
-      );
+      final result = calculatePlatesPerSide(targetWeight: 101, barWeight: 20);
       expect(result.loadedWeight, 100);
       expect(result.remainder, closeTo(1, 0.001));
     });

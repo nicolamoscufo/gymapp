@@ -14,6 +14,7 @@ import '../models/schedule.dart';
 import '../models/workout.dart';
 import '../number_input.dart';
 import '../top_set_backoff.dart' as top_set_backoff;
+import '../workout_plate_calculator.dart';
 import 'exercise_picker.dart';
 import 'session_summary.dart';
 
@@ -320,6 +321,98 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
 
     return 'Ultima: ${_formatWeight(exercise.previousWeights[setIndex])} kg x ${exercise.previousReps[setIndex]}';
+  }
+
+  void _applyPreviousSetValues(WorkoutExercise exercise, int setIndex) {
+    if (setIndex >= exercise.previousWeights.length ||
+        setIndex >= exercise.previousReps.length ||
+        setIndex >= exercise.sets.length) {
+      return;
+    }
+    setState(() {
+      exercise.sets[setIndex].weight = exercise.previousWeights[setIndex];
+      exercise.sets[setIndex].reps = exercise.previousReps[setIndex];
+    });
+    HapticFeedback.selectionClick();
+    _saveCurrentSession();
+  }
+
+  Future<void> _pickRpe(ExerciseSet set) async {
+    final value = await showModalBottomSheet<double>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ActionChip(
+                label: const Text('RPE —'),
+                onPressed: () => Navigator.pop(context, -1),
+              ),
+              for (final value in const [
+                6.0,
+                7.0,
+                7.5,
+                8.0,
+                8.5,
+                9.0,
+                9.5,
+                10.0,
+              ])
+                ActionChip(
+                  label: Text('RPE ${_formatWeight(value)}'),
+                  onPressed: () => Navigator.pop(context, value),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (value == null || !mounted) return;
+    setState(() => set.rpe = value < 0 ? null : value);
+    _saveCurrentSession();
+  }
+
+  Future<void> _pickRir(ExerciseSet set) async {
+    final value = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ActionChip(
+                label: const Text('RIR —'),
+                onPressed: () => Navigator.pop(context, -1),
+              ),
+              for (final value in const [0, 1, 2, 3, 4, 5])
+                ActionChip(
+                  label: Text('RIR $value'),
+                  onPressed: () => Navigator.pop(context, value),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (value == null || !mounted) return;
+    setState(() => set.rir = value < 0 ? null : value);
+    _saveCurrentSession();
+  }
+
+  WorkoutExercise? _activeRestExercise() {
+    for (final exercise in session.exercises) {
+      if (_restSecondsByExerciseId.containsKey(exercise.id)) {
+        return exercise;
+      }
+    }
+    return null;
   }
 
   String? _nextSetHintFor(
@@ -803,6 +896,27 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       exerciseName: exercise.name,
     );
     _ensureRestTimerRunning();
+    _saveCurrentSession();
+  }
+
+  void _subtractThirtySeconds(WorkoutExercise exercise) {
+    final currentSeconds = _restSecondsByExerciseId[exercise.id];
+    if (currentSeconds == null) return;
+    final nextSeconds = math.max(1, currentSeconds - 30);
+    setState(() {
+      _restSecondsByExerciseId[exercise.id] = nextSeconds;
+      exercise.activeRestSeconds = nextSeconds;
+      exercise.activeRestStartedAt = DateTime.now();
+    });
+    final notificationId = LocalNotificationService.restNotificationId(
+      exercise.id,
+    );
+    LocalNotificationService.cancel(notificationId);
+    LocalNotificationService.scheduleRestFinished(
+      id: notificationId,
+      endTime: DateTime.now().add(Duration(seconds: nextSeconds)),
+      exerciseName: exercise.name,
+    );
     _saveCurrentSession();
   }
 
@@ -1607,8 +1721,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
                   if (sets < 1 || reps < 1 || weight < 0 || restSeconds < 0) {
                     setDialogState(() {
-                      validationMessage =
-                          'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi.';
+                      validationMessage = 'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi.';
                     });
                     return;
                   }
@@ -1675,7 +1788,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         ExerciseSet(
           weight: source.weight,
           reps: source.reps,
-          isWarmup: source.isWarmup,
+          type: source.type,
           rpe: source.rpe,
           rir: source.rir,
           notes: source.notes,
@@ -1825,6 +1938,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       set.isCompleted = !set.isCompleted;
     });
     _saveCurrentSession();
+    if (willComplete && !widget.editCompletedSession) {
+      _startRestForExercise(exercise);
+    }
 
     final delta = _setVolumeDelta(exercise, set, setIndex);
     if (willComplete && delta != null && delta > 0 && mounted) {
@@ -2047,6 +2163,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       borderSide: BorderSide(color: colorScheme.outlineVariant),
     );
     final stats = _workoutStats;
+    final activeRestExercise = _activeRestExercise();
+    final activeRestSeconds = activeRestExercise == null
+        ? null
+        : _restSecondsByExerciseId[activeRestExercise.id];
 
     return PopScope(
       canPop: false,
@@ -2387,9 +2507,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                             width: 96,
                             child: TextFormField(
                               key: ValueKey('rest-${exercise.id}'),
-                              initialValue: _restSecondsFor(
-                                exercise,
-                              ).toString(),
+                              initialValue: _restSecondsFor(exercise)
+                                  .toString(),
                               keyboardType: TextInputType.number,
                               textAlign: TextAlign.center,
                               decoration: InputDecoration(
@@ -2476,9 +2595,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                 IntensityTechnique.topsetBackoff
                             ? (setIndex == 0 ? 'Top Set' : 'Back off')
                             : '${setIndex + 1}';
-                        final displaySetLabel = exSet.isWarmup
-                            ? 'W $setLabel'
-                            : setLabel;
+                        final displaySetLabel = exSet.type == SetType.normal
+                            ? setLabel
+                            : '${exSet.type.shortLabel} $setLabel';
                         final setVolumeDelta = _setVolumeDelta(
                           exercise,
                           exSet,
@@ -2682,14 +2801,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                   Padding(
                                     padding: const EdgeInsets.only(
                                       left: 72,
-                                      top: 2,
+                                      top: 4,
                                     ),
-                                    child: Text(
-                                      previousSetLabel,
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
-                                          ),
+                                    child: ActionChip(
+                                      avatar: const Icon(
+                                        Icons.history,
+                                        size: 16,
+                                      ),
+                                      label: Text(previousSetLabel),
+                                      tooltip:
+                                          'Usa i valori dell’ultima sessione',
+                                      visualDensity: VisualDensity.compact,
+                                      onPressed: () => _applyPreviousSetValues(
+                                        exercise,
+                                        setIndex,
+                                      ),
                                     ),
                                   ),
                                 if (nextSetHint != null)
@@ -2770,27 +2896,90 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                           .toList(),
                                     ),
                                   ),
-                                if (exSet.rpe != null ||
-                                    exSet.rir != null ||
-                                    exSet.notes.trim().isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 72,
-                                      top: 4,
-                                    ),
-                                    child: Wrap(
-                                      spacing: 6,
-                                      runSpacing: 4,
-                                      children: [
-                                        if (exSet.rpe != null)
-                                          Chip(label: Text('RPE ${exSet.rpe}')),
-                                        if (exSet.rir != null)
-                                          Chip(label: Text('RIR ${exSet.rir}')),
-                                        if (exSet.notes.trim().isNotEmpty)
-                                          Chip(label: Text(exSet.notes)),
-                                      ],
-                                    ),
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 72,
+                                    top: 4,
                                   ),
+                                  child: Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      PopupMenuButton<SetType>(
+                                        key: ValueKey('set-type-${exSet.id}'),
+                                        tooltip: 'Tipo di set',
+                                        onSelected: (type) {
+                                          setState(() => exSet.type = type);
+                                          _saveCurrentSession();
+                                        },
+                                        itemBuilder: (context) => SetType.values
+                                            .map(
+                                              (type) => PopupMenuItem<SetType>(
+                                                value: type,
+                                                child: Text(type.label),
+                                              ),
+                                            )
+                                            .toList(),
+                                        child: Chip(
+                                          avatar: Text(
+                                            exSet.type.shortLabel,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                          label: Text(exSet.type.label),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      ),
+                                      ActionChip(
+                                        key: ValueKey('rpe-${exSet.id}'),
+                                        label: Text(
+                                          exSet.rpe == null
+                                              ? 'RPE —'
+                                              : 'RPE ${_formatWeight(exSet.rpe!)}',
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () => _pickRpe(exSet),
+                                      ),
+                                      ActionChip(
+                                        key: ValueKey('rir-${exSet.id}'),
+                                        label: Text(
+                                          exSet.rir == null
+                                              ? 'RIR —'
+                                              : 'RIR ${exSet.rir}',
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () => _pickRir(exSet),
+                                      ),
+                                      ActionChip(
+                                        key: ValueKey('plates-${exSet.id}'),
+                                        avatar: const Icon(
+                                          Icons.calculate,
+                                          size: 16,
+                                        ),
+                                        label: const Text('Piastre'),
+                                        tooltip: 'Plate calculator',
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () =>
+                                            showWorkoutPlateCalculator(
+                                              context,
+                                              initialWeight: exSet.weight,
+                                            ),
+                                      ),
+                                      if (exSet.notes.trim().isNotEmpty)
+                                        Chip(
+                                          avatar: const Icon(
+                                            Icons.notes,
+                                            size: 16,
+                                          ),
+                                          label: Text(exSet.notes),
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -2834,6 +3023,66 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
             );
           },
         ),
+        bottomNavigationBar:
+            activeRestExercise == null || activeRestSeconds == null
+            ? null
+            : SafeArea(
+                top: false,
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: colorScheme.outlineVariant),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.timer, color: colorScheme.primary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Recupero ${_formatDuration(activeRestSeconds)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            Text(
+                              activeRestExercise.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '-30 sec',
+                        onPressed: () =>
+                            _subtractThirtySeconds(activeRestExercise),
+                        icon: const Icon(Icons.remove),
+                      ),
+                      IconButton(
+                        tooltip: '+30 sec',
+                        onPressed: () => _addThirtySeconds(activeRestExercise),
+                        icon: const Icon(Icons.add),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            _stopRestForExercise(activeRestExercise),
+                        child: const Text('Salta'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _openExercisePicker,
           icon: const Icon(Icons.add),
