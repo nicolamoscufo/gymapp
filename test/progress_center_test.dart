@@ -9,16 +9,8 @@ void main() {
     tester,
   ) async {
     final history = [
-      _session(
-        DateTime(2026, 8, 18, 18),
-        80,
-        8,
-      ),
-      _session(
-        DateTime(2026, 8, 25, 18),
-        85,
-        8,
-      ),
+      _session(DateTime(2026, 8, 18, 18), 80, 8),
+      _session(DateTime(2026, 8, 25, 18), 85, 8),
     ];
 
     await tester.pumpWidget(
@@ -57,6 +49,12 @@ void main() {
     expect(find.text('PR Dashboard'), findsOneWidget);
     expect(find.text('Report mensile'), findsOneWidget);
     expect(find.text('Year in review'), findsOneWidget);
+
+    final recordList = find.byType(ListView).last;
+    for (var i = 0; i < 3 && find.text('Record recenti').evaluate().isEmpty; i++) {
+      await tester.drag(recordList, const Offset(0, -350));
+      await tester.pumpAndSettle();
+    }
     expect(find.text('Record recenti'), findsOneWidget);
   });
 }
