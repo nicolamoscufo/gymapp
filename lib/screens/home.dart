@@ -361,6 +361,23 @@ class _HomePageState extends State<HomePage> {
     _loadData();
   }
 
+  Future<void> _startEmptyWorkout() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ActiveWorkoutScreen(
+          schedule: null,
+          history: history,
+          defaultRestSeconds: _defaultRestSeconds,
+          defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _loadData();
+    }
+  }
+
   String _weekdayLabel(int weekday) {
     return switch (weekday) {
       DateTime.monday => 'Lun',
@@ -2147,14 +2164,32 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildCalendarTab() {
-    return CalendarScreen(
-      schedules: schedules,
-      history: history,
-      defaultRestSeconds: _defaultRestSeconds,
-      defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
-      onRefresh: _loadData,
-      onSaveSchedules: _saveSchedules,
-      showAppBar: false,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const ValueKey('start-empty-workout'),
+              onPressed: _startEmptyWorkout,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Allenamento libero'),
+            ),
+          ),
+        ),
+        Expanded(
+          child: CalendarScreen(
+            schedules: schedules,
+            history: history,
+            defaultRestSeconds: _defaultRestSeconds,
+            defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
+            onRefresh: _loadData,
+            onSaveSchedules: _saveSchedules,
+            showAppBar: false,
+          ),
+        ),
+      ],
     );
   }
 
