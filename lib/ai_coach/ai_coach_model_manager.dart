@@ -36,15 +36,16 @@ class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
 
   @override
   Future<void> install({void Function(int progress)? onProgress}) async {
-    var builder = FlutterGemma.installModel(
+    final installer = FlutterGemma.installModel(
       modelType: ModelType.gemma4,
       fileType: ModelFileType.litertlm,
     ).fromNetwork(modelUrl, foreground: true);
 
     if (onProgress != null) {
-      builder = builder.withProgress(onProgress);
+      await installer.withProgress(onProgress).install();
+    } else {
+      await installer.install();
     }
-    await builder.install();
   }
 
   @override
@@ -52,7 +53,7 @@ class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
     if (!await isInstalled()) {
       throw StateError('$modelName is not installed.');
     }
-    // The modern flutter_gemma installer automatically persists and activates
-    // the installed model. getActiveModel() restores it on subsequent runs.
+    // The modern flutter_gemma installer persists the active model so
+    // getActiveModel() can restore it on subsequent runs.
   }
 }
