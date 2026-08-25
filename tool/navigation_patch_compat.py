@@ -11,6 +11,10 @@ text = text.replace(
     'icon: Icon(Icons.calendar_month_outlined),',
     'icon: Icon(Icons.calendar_month),',
 )
+text = text.replace(
+    "  Widget build(BuildContext context) {\n    final theme = Theme.of(context);\n    final colorScheme = theme.colorScheme;\n    final isDark = theme.brightness == Brightness.dark;\n    final isCoach = _currentIndex == 4;",
+    "  Widget build(BuildContext context) {\n    final theme = Theme.of(context);\n    final isDark = theme.brightness == Brightness.dark;\n    final isCoach = _currentIndex == 4;",
+)
 home.write_text(text)
 
 test = Path('test/home_navigation_test.dart')
