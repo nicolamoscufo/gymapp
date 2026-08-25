@@ -281,17 +281,16 @@ class TrainingContextBuilder {
     final sorted = [...history]
       ..sort((a, b) => a.startTime.compareTo(b.startTime));
     final latest = sorted.last;
-    final previous = sorted.where((session) => session.id != latest.id).toList();
+    final previous = sorted
+        .where((session) => session.id != latest.id)
+        .toList();
 
     return latest.exercises.map((exercise) {
       final decision = buildProgressionDecision(
         exercise: exercise,
         history: previous,
       );
-      return {
-        'exercise': exercise.name,
-        ...decision.toJson(),
-      };
+      return {'exercise': exercise.name, ...decision.toJson()};
     }).toList();
   }
 }

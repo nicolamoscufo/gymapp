@@ -573,40 +573,127 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     return sourceSets.map((set) => set.reps).toList();
   }
 
+  String _progressionConfidenceLabel(ProgressionConfidence confidence) {
+    return switch (confidence) {
+      ProgressionConfidence.low => 'bassa',
+      ProgressionConfidence.medium => 'media',
+      ProgressionConfidence.high => 'alta',
+    };
+  }
+
+  ProgressionDecision _progressionDecisionFor(WorkoutExercise exercise) {
+    return buildProgressionDecision(
+      exercise: exercise,
+      history: widget.history,
+      excludeSessionId: session.id,
+    );
+  }
+
   String? _progressionHintFor(WorkoutExercise exercise) {
     if (exercise.progressionScheme == ProgressionScheme.manual) {
       return 'Progressione manuale: carico e reps non cambiano in automatico.';
     }
-    if (exercise.previousWeights.isEmpty || exercise.previousReps.isEmpty) {
-      return null;
+
+    final hasCompletedWorkSet = exercise.sets.any(
+      (set) => set.isCompleted && !set.isWarmup,
+    );
+    if (!hasCompletedWorkSet) {
+      if (exercise.previousWeights.isEmpty || exercise.previousReps.isEmpty) {
+        return null;
+      }
+      return 'Progressione intelligente: completa i set e registra RIR/RPE per aggiornare la decisione.';
     }
 
-    final minReps = exercise.targetMinReps;
-    final maxReps = exercise.targetMaxReps;
-    if (minReps == null || maxReps == null) {
-      return 'Progressione auto: riparti dai carichi dell ultima volta.';
-    }
+    final decision = _progressionDecisionFor(exercise);
+    return 'Prossima sessione: ${progressionActionLabel(decision)} · confidenza ${_progressionConfidenceLabel(decision.confidence)}';
+  }
 
-    if (exercise.progressionScheme == ProgressionScheme.loadOnly) {
-      return 'Schema carico: aumenta kg solo quando tutte le serie stanno al top.';
-    }
-    if (exercise.progressionScheme == ProgressionScheme.repsOnly) {
-      return 'Schema reps: carico fisso, sali di ${exercise.progressionRepStep} rep.';
-    }
-    if (exercise.progressionScheme == ProgressionScheme.linear) {
-      return 'Schema lineare: +${exercise.progressionKgStep} kg quando completi le serie.';
-    }
+  Future<void> _showProgressionDecision(WorkoutExercise exercise) async {
+    final decision = _progressionDecisionFor(exercise);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
-    final allAtTop = exercise.previousReps.every((reps) => reps >= maxReps);
-    final anyBelowMin = exercise.previousReps.any((reps) => reps < minReps);
-
-    if (allAtTop) {
-      return 'Progressione auto: prossimo giro +${exercise.progressionKgStep} kg se tecnica ok.';
-    }
-    if (anyBelowMin) {
-      return 'Progressione auto: mantieni o riduci -${exercise.progressionKgStep} kg.';
-    }
-    return 'Progressione auto: stesso carico, +${exercise.progressionRepStep} rep obiettivo.';
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Progressione consigliata',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                exercise.name,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                progressionActionLabel(decision),
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Confidenza: ${_progressionConfidenceLabel(decision.confidence)}',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (decision.effectiveRir != null)
+                    Chip(
+                      label: Text(
+                        'RIR medio ${decision.effectiveRir!.toStringAsFixed(1)}',
+                      ),
+                    ),
+                  if (decision.estimatedOneRepMaxChangePercent != null)
+                    Chip(
+                      label: Text(
+                        'e1RM ${decision.estimatedOneRepMaxChangePercent! >= 0 ? '+' : ''}${decision.estimatedOneRepMaxChangePercent!.toStringAsFixed(1)}%',
+                      ),
+                    ),
+                  if (decision.volumeChangePercent != null)
+                    Chip(
+                      label: Text(
+                        'Volume ${decision.volumeChangePercent! >= 0 ? '+' : ''}${decision.volumeChangePercent!.toStringAsFixed(1)}%',
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              for (final reason in decision.reasons)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  leading: const Icon(Icons.check_circle_outline),
+                  title: Text(reason),
+                ),
+              const SizedBox(height: 4),
+              Text(
+                'La decisione e deterministica: usa range reps, completamento set, RIR/RPE, e1RM e volume. Il Coach AI la spiega ma non la sostituisce.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   double _deloadWeight(double weight) {
@@ -617,17 +704,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     Exercise exercise,
     List<double> previousWeights,
     List<int> previousReps,
+    ProgressionDecision? progressionDecision,
     int index,
   ) {
     if (previousWeights.isEmpty) {
       return exercise.weight;
-    }
-
-    if (exercise.progressionScheme == ProgressionScheme.manual ||
-        exercise.progressionScheme == ProgressionScheme.repsOnly) {
-      return index < previousWeights.length
-          ? previousWeights[index]
-          : previousWeights.last;
     }
 
     final previousWeight = index < previousWeights.length
@@ -636,6 +717,23 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final previousRep = index < previousReps.length
         ? previousReps[index]
         : (previousReps.isEmpty ? exercise.reps : previousReps.last);
+
+    if (exercise.progressionScheme == ProgressionScheme.manual ||
+        exercise.progressionScheme == ProgressionScheme.repsOnly) {
+      return previousWeight;
+    }
+
+    if (progressionDecision != null) {
+      return switch (progressionDecision.action) {
+        ProgressionAction.increaseLoad =>
+          previousWeight + exercise.progressionKgStep,
+        ProgressionAction.deload => _deloadWeight(previousWeight),
+        ProgressionAction.increaseReps ||
+        ProgressionAction.maintain ||
+        ProgressionAction.manual => previousWeight,
+      };
+    }
+
     final minReps = exercise.targetMinReps;
     final maxReps = exercise.targetMaxReps;
     if (minReps == null || maxReps == null) {
@@ -653,28 +751,55 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       return previousWeight + exercise.progressionKgStep;
     }
     if (previousRep < minReps) {
-      return math.max(0, previousWeight - exercise.progressionKgStep);
+      return _deloadWeight(previousWeight);
     }
     return previousWeight;
   }
 
-  int _repsForSet(Exercise exercise, List<int> previousReps, int index) {
+  int _repsForSet(
+    Exercise exercise,
+    List<int> previousReps,
+    ProgressionDecision? progressionDecision,
+    int index,
+  ) {
     final minReps = exercise.targetMinReps;
     final maxReps = exercise.targetMaxReps;
     if (previousReps.isEmpty || minReps == null || maxReps == null) {
       return exercise.reps;
     }
 
-    if (exercise.progressionScheme == ProgressionScheme.manual ||
-        exercise.progressionScheme == ProgressionScheme.loadOnly ||
-        exercise.progressionScheme == ProgressionScheme.linear) {
-      return exercise.reps;
-    }
-
     final previousRep = index < previousReps.length
         ? previousReps[index]
         : previousReps.last;
-    if (previousRep >= maxReps || previousRep < minReps) {
+
+    if (exercise.progressionScheme == ProgressionScheme.manual) {
+      return previousRep;
+    }
+
+    if (progressionDecision != null) {
+      return switch (progressionDecision.action) {
+        ProgressionAction.increaseReps => math.min(
+          maxReps,
+          previousRep + exercise.progressionRepStep,
+        ),
+        ProgressionAction.increaseLoad =>
+          exercise.progressionScheme == ProgressionScheme.doubleProgression
+              ? minReps
+              : exercise.reps,
+        ProgressionAction.deload => minReps,
+        ProgressionAction.maintain => previousRep.clamp(minReps, maxReps),
+        ProgressionAction.manual => previousRep,
+      };
+    }
+
+    if (exercise.progressionScheme == ProgressionScheme.loadOnly ||
+        exercise.progressionScheme == ProgressionScheme.linear) {
+      return exercise.reps;
+    }
+    if (exercise.progressionScheme == ProgressionScheme.repsOnly) {
+      return math.min(maxReps, previousRep + exercise.progressionRepStep);
+    }
+    if (previousRep >= maxReps) {
       return minReps;
     }
     return math.min(maxReps, previousRep + exercise.progressionRepStep);
@@ -684,19 +809,30 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     Exercise exercise,
     List<double> previousWeights,
     List<int> previousReps,
+    ProgressionDecision? progressionDecision,
   ) {
     final isBackoff =
         exercise.technique == IntensityTechnique.topsetBackoff &&
         exercise.backoffReps != null;
 
     if (isBackoff) {
+      final topWeight = _weightForSet(
+        exercise,
+        previousWeights,
+        previousReps,
+        progressionDecision,
+        0,
+      );
       return [
         ExerciseSet(
-          weight: _weightForSet(exercise, previousWeights, previousReps, 0),
-          reps: _repsForSet(exercise, previousReps, 0),
+          weight: topWeight,
+          reps: _repsForSet(exercise, previousReps, progressionDecision, 0),
         ),
         ExerciseSet(
-          weight: _weightForSet(exercise, previousWeights, previousReps, 1),
+          weight: top_set_backoff.recommendedBackoffWeight(
+            topWeight,
+            reductionPercent: exercise.backoffReductionPercent,
+          ),
           reps: exercise.backoffReps!,
         ),
       ];
@@ -705,8 +841,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     return List.generate(
       exercise.set,
       (index) => ExerciseSet(
-        weight: _weightForSet(exercise, previousWeights, previousReps, index),
-        reps: _repsForSet(exercise, previousReps, index),
+        weight: _weightForSet(
+          exercise,
+          previousWeights,
+          previousReps,
+          progressionDecision,
+          index,
+        ),
+        reps: _repsForSet(exercise, previousReps, progressionDecision, index),
       ),
     );
   }
@@ -719,6 +861,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final previousExercise = _previousExerciseFor(exercise, previousSession);
     final previousWeights = _previousWeightsFor(previousExercise);
     final previousReps = _previousRepsFor(previousExercise);
+    final progressionDecision = previousExercise == null
+        ? null
+        : buildProgressionDecision(
+            exercise: previousExercise,
+            history: widget.history,
+            excludeSessionId: previousSession?.id,
+          );
 
     return WorkoutExercise(
       sourceExerciseId: keepSourceExerciseId ? exercise.id : null,
@@ -736,7 +885,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       progressionKgStep: exercise.progressionKgStep,
       progressionRepStep: exercise.progressionRepStep,
       progressionScheme: exercise.progressionScheme,
-      sets: _setsForExercise(exercise, previousWeights, previousReps),
+      sets: _setsForExercise(
+        exercise,
+        previousWeights,
+        previousReps,
+        progressionDecision,
+      ),
       previousWeights: previousWeights,
       previousReps: previousReps,
     );
@@ -1239,37 +1393,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     await AppDataStore.clearCurrentSession();
   }
 
-  List<ExerciseSet> _workSets(WorkoutExercise exercise) {
-    return exercise.sets.where((set) => !set.isWarmup).toList();
-  }
-
-  bool _allWorkSetsCompleted(WorkoutExercise exercise, Exercise target) {
-    final workSets = _workSets(exercise);
-    final requiredSets = math.max(1, target.set);
-    return workSets.length >= requiredSets &&
-        workSets.every((set) => set.isCompleted);
-  }
-
-  bool _allCompletedAtTop(WorkoutExercise exercise, Exercise target) {
-    if (!_allWorkSetsCompleted(exercise, target)) {
-      return false;
-    }
-    final workSets = _workSets(exercise);
-    final targetReps = target.targetMaxReps ?? target.reps;
-    return workSets.every((set) => set.reps >= targetReps);
-  }
-
-  bool _anyCompletedBelowMin(WorkoutExercise exercise, Exercise target) {
-    final workSets = exercise.sets.where(
-      (set) => set.isCompleted && !set.isWarmup,
-    );
-    if (workSets.isEmpty) {
-      return false;
-    }
-    final minReps = target.targetMinReps ?? target.reps;
-    return workSets.any((set) => set.reps < minReps);
-  }
-
   Schedule? _storedScheduleForSession(List<Schedule> schedules) {
     final scheduleId = session.scheduleId ?? widget.schedule?.id;
     if (scheduleId != null) {
@@ -1419,51 +1542,34 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         continue;
       }
 
-      if (targetExercise.progressionScheme == ProgressionScheme.manual) {
-        continue;
-      }
+      final decision = buildProgressionDecision(
+        exercise: completedExercise,
+        history: bundle.history,
+        excludeSessionId: session.id,
+      );
 
-      if (targetExercise.progressionScheme == ProgressionScheme.linear) {
-        if (_allWorkSetsCompleted(completedExercise, targetExercise)) {
+      switch (decision.action) {
+        case ProgressionAction.manual:
+        case ProgressionAction.maintain:
+          break;
+        case ProgressionAction.increaseLoad:
           targetExercise.weight += targetExercise.progressionKgStep;
-        }
-        continue;
-      }
-
-      if (targetExercise.progressionScheme == ProgressionScheme.loadOnly) {
-        if (_allCompletedAtTop(completedExercise, targetExercise)) {
-          targetExercise.weight += targetExercise.progressionKgStep;
-        }
-        continue;
-      }
-
-      if (targetExercise.progressionScheme == ProgressionScheme.repsOnly) {
-        if (_allWorkSetsCompleted(completedExercise, targetExercise) &&
-            !_anyCompletedBelowMin(completedExercise, targetExercise) &&
-            targetExercise.targetMaxReps != null &&
-            targetExercise.reps < targetExercise.targetMaxReps!) {
-          targetExercise.reps = math.min(
-            targetExercise.targetMaxReps!,
-            targetExercise.reps + targetExercise.progressionRepStep,
-          );
-        }
-        continue;
-      }
-
-      if (_allCompletedAtTop(completedExercise, targetExercise)) {
-        targetExercise.weight += targetExercise.progressionKgStep;
-      } else if (_anyCompletedBelowMin(completedExercise, targetExercise)) {
-        targetExercise.weight = math.max(
-          0,
-          targetExercise.weight - targetExercise.progressionKgStep,
-        );
-      } else if (_allWorkSetsCompleted(completedExercise, targetExercise) &&
-          targetExercise.targetMaxReps != null &&
-          targetExercise.reps < targetExercise.targetMaxReps!) {
-        targetExercise.reps = math.min(
-          targetExercise.targetMaxReps!,
-          targetExercise.reps + targetExercise.progressionRepStep,
-        );
+          if (targetExercise.progressionScheme ==
+                  ProgressionScheme.doubleProgression &&
+              targetExercise.targetMinReps != null) {
+            targetExercise.reps = targetExercise.targetMinReps!;
+          }
+        case ProgressionAction.increaseReps:
+          final nextReps =
+              targetExercise.reps + targetExercise.progressionRepStep;
+          targetExercise.reps = targetExercise.targetMaxReps == null
+              ? nextReps
+              : math.min(targetExercise.targetMaxReps!, nextReps);
+        case ProgressionAction.deload:
+          targetExercise.weight = _deloadWeight(targetExercise.weight);
+          if (targetExercise.targetMinReps != null) {
+            targetExercise.reps = targetExercise.targetMinReps!;
+          }
       }
     }
 
@@ -3037,6 +3143,23 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                             visualDensity: VisualDensity.compact,
                             onPressed: () => _showExerciseHistory(exercise),
                           ),
+                          if (exercise.sets.any(
+                            (set) => set.isCompleted && !set.isWarmup,
+                          ))
+                            ActionChip(
+                              key: ValueKey(
+                                'progression-intelligence-${exercise.id}',
+                              ),
+                              avatar: const Icon(Icons.auto_graph, size: 18),
+                              label: Text(
+                                progressionActionLabel(
+                                  _progressionDecisionFor(exercise),
+                                ),
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () =>
+                                  _showProgressionDecision(exercise),
+                            ),
                           if (historicalEstimatedOneRepMax != null)
                             Chip(
                               avatar: const Icon(

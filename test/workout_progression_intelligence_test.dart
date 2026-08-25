@@ -22,7 +22,11 @@ WorkoutExercise exercise({
   );
 }
 
-WorkoutSession session(String id, DateTime date, WorkoutExercise workoutExercise) {
+WorkoutSession session(
+  String id,
+  DateTime date,
+  WorkoutExercise workoutExercise,
+) {
   return WorkoutSession(
     id: id,
     scheduleTitle: 'Upper',
@@ -47,7 +51,9 @@ void main() {
     final previous = session(
       'previous',
       DateTime(2026, 8, 18),
-      exercise(sets: [completed(97.5, 8), completed(97.5, 8), completed(97.5, 8)]),
+      exercise(
+        sets: [completed(97.5, 8), completed(97.5, 8), completed(97.5, 8)],
+      ),
     );
     final current = exercise(
       sets: [

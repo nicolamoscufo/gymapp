@@ -44,11 +44,7 @@ void main() {
       bench(97.5, 8, rir: 2),
     );
     final currentExercise = bench(100, 8, rir: 2);
-    final current = workout(
-      'current',
-      DateTime(2026, 8, 25),
-      currentExercise,
-    );
+    final current = workout('current', DateTime(2026, 8, 25), currentExercise);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -85,10 +81,8 @@ void main() {
       bench(100, 8, rir: 2),
     );
 
-    final context = TrainingContextBuilder(now: DateTime(2026, 8, 25)).recent(
-      history: [previous, current],
-      schedules: const [],
-    );
+    final context = TrainingContextBuilder(now: DateTime(2026, 8, 25))
+        .recent(history: [previous, current], schedules: const []);
     final analytics =
         context['deterministic_analytics'] as Map<String, dynamic>;
     final recommendations =

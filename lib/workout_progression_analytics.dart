@@ -155,13 +155,7 @@ double? latestEstimatedOneRepMaxTrendPercent(
   return ((latest - previous) / previous) * 100;
 }
 
-enum ProgressionAction {
-  increaseLoad,
-  increaseReps,
-  maintain,
-  deload,
-  manual,
-}
+enum ProgressionAction { increaseLoad, increaseReps, maintain, deload, manual }
 
 enum ProgressionConfidence { low, medium, high }
 
@@ -272,7 +266,8 @@ ProgressionDecision buildProgressionDecision({
       .where((set) => set.isCompleted)
       .toList();
   final allWorkSetsCompleted =
-      plannedWorkSets.isNotEmpty && completedWorkSets.length == plannedWorkSets.length;
+      plannedWorkSets.isNotEmpty &&
+      completedWorkSets.length == plannedWorkSets.length;
 
   if (exercise.progressionScheme == ProgressionScheme.manual) {
     return ProgressionDecision(
@@ -298,7 +293,9 @@ ProgressionDecision buildProgressionDecision({
     return ProgressionDecision(
       action: ProgressionAction.maintain,
       confidence: ProgressionConfidence.low,
-      reasons: const ['Completa almeno un set di lavoro prima di valutare la progressione.'],
+      reasons: const [
+        'Completa almeno un set di lavoro prima di valutare la progressione.',
+      ],
       suggestedWeightDelta: null,
       suggestedRepDelta: null,
       suggestedWeightMultiplier: null,
@@ -314,15 +311,19 @@ ProgressionDecision buildProgressionDecision({
     );
   }
 
-  final minTarget = exercise.targetMinReps ??
+  final minTarget =
+      exercise.targetMinReps ??
       plannedWorkSets.map((set) => set.reps).reduce(math.min);
-  final maxTarget = exercise.targetMaxReps ??
+  final maxTarget =
+      exercise.targetMaxReps ??
       plannedWorkSets.map((set) => set.reps).reduce(math.max);
-  final allAtTop = allWorkSetsCompleted &&
+  final allAtTop =
+      allWorkSetsCompleted &&
       completedWorkSets.every((set) => set.reps >= maxTarget);
   final anyBelowMin = completedWorkSets.any((set) => set.reps < minTarget);
-  final currentEstimatedOneRepMax =
-      bestEstimatedOneRepMaxForSets(completedWorkSets);
+  final currentEstimatedOneRepMax = bestEstimatedOneRepMaxForSets(
+    completedWorkSets,
+  );
   final currentVolume = completedWorkSets.fold<double>(
     0,
     (sum, set) => sum + set.weight * set.reps,
@@ -334,8 +335,9 @@ ProgressionDecision buildProgressionDecision({
     exerciseName: exercise.name,
     excludeSessionId: excludeSessionId,
   );
-  final latestHistorical =
-      historicalSnapshots.isEmpty ? null : historicalSnapshots.last;
+  final latestHistorical = historicalSnapshots.isEmpty
+      ? null
+      : historicalSnapshots.last;
   final estimatedOneRepMaxChangePercent = currentEstimatedOneRepMax == null
       ? null
       : _percentChange(
@@ -346,8 +348,9 @@ ProgressionDecision buildProgressionDecision({
     currentVolume,
     latestHistorical?.totalVolume,
   );
-  final historicalTrend =
-      latestEstimatedOneRepMaxTrendPercent(historicalSnapshots);
+  final historicalTrend = latestEstimatedOneRepMaxTrendPercent(
+    historicalSnapshots,
+  );
 
   final confidence = _progressionConfidence(
     hasHistory: latestHistorical != null,
@@ -380,7 +383,9 @@ ProgressionDecision buildProgressionDecision({
     }
   }
   if (effectiveRir != null) {
-    reasons.add('Sforzo medio stimato: RIR ${effectiveRir.toStringAsFixed(1)}.');
+    reasons.add(
+      'Sforzo medio stimato: RIR ${effectiveRir.toStringAsFixed(1)}.',
+    );
   }
 
   final highEffort = effectiveRir != null && effectiveRir <= 1.0;
@@ -469,7 +474,9 @@ ProgressionDecision buildProgressionDecision({
 
   if (exercise.progressionScheme == ProgressionScheme.repsOnly) {
     if (!allAtTop) {
-      reasons.add('Set completati nel range: aumenta le ripetizioni mantenendo il carico.');
+      reasons.add(
+        'Set completati nel range: aumenta le ripetizioni mantenendo il carico.',
+      );
       return ProgressionDecision(
         action: ProgressionAction.increaseReps,
         confidence: confidence,
@@ -488,7 +495,9 @@ ProgressionDecision buildProgressionDecision({
         anyBelowMin: anyBelowMin,
       );
     }
-    reasons.add('Hai raggiunto il top del range ma lo schema consente solo progressione reps.');
+    reasons.add(
+      'Hai raggiunto il top del range ma lo schema consente solo progressione reps.',
+    );
   } else if (exercise.progressionScheme == ProgressionScheme.linear) {
     if (loadReady) {
       reasons.add('Schema lineare completato con margine sufficiente.');
@@ -510,10 +519,14 @@ ProgressionDecision buildProgressionDecision({
         anyBelowMin: anyBelowMin,
       );
     }
-    reasons.add('Schema lineare completato ma senza margine sufficiente per aumentare.');
+    reasons.add(
+      'Schema lineare completato ma senza margine sufficiente per aumentare.',
+    );
   } else if (exercise.progressionScheme == ProgressionScheme.loadOnly) {
     if (allAtTop && loadReady) {
-      reasons.add('Tutte le serie sono al top del range con margine sufficiente.');
+      reasons.add(
+        'Tutte le serie sono al top del range con margine sufficiente.',
+      );
       return ProgressionDecision(
         action: ProgressionAction.increaseLoad,
         confidence: confidence,
@@ -535,7 +548,9 @@ ProgressionDecision buildProgressionDecision({
     reasons.add('Non ci sono ancora le condizioni per aumentare il carico.');
   } else {
     if (allAtTop && loadReady) {
-      reasons.add('Doppia progressione completata al top del range con margine sufficiente.');
+      reasons.add(
+        'Doppia progressione completata al top del range con margine sufficiente.',
+      );
       return ProgressionDecision(
         action: ProgressionAction.increaseLoad,
         confidence: confidence,
@@ -579,7 +594,9 @@ ProgressionDecision buildProgressionDecision({
   return ProgressionDecision(
     action: ProgressionAction.maintain,
     confidence: confidence,
-    reasons: reasons.isEmpty ? const ['Mantieni il carico e rivaluta alla prossima sessione.'] : reasons,
+    reasons: reasons.isEmpty
+        ? const ['Mantieni il carico e rivaluta alla prossima sessione.']
+        : reasons,
     suggestedWeightDelta: null,
     suggestedRepDelta: null,
     suggestedWeightMultiplier: null,
