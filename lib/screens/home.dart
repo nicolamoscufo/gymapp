@@ -20,6 +20,7 @@ import 'schedule_detail.dart';
 import 'settings.dart';
 import 'stats.dart';
 import 'active_workout.dart';
+import 'ai_coach.dart';
 import 'exercise_detail.dart';
 import 'calendar_screen.dart';
 
@@ -41,11 +42,13 @@ enum _BackupImportMode { merge, replace }
 class HomePage extends StatefulWidget {
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode>? onThemeModeChanged;
+  final int initialIndex;
 
   const HomePage({
     super.key,
     this.themeMode = AppPreferences.defaultThemeMode,
     this.onThemeModeChanged,
+    this.initialIndex = 1,
   });
 
   @override
@@ -59,7 +62,8 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _searchController = TextEditingController();
   WorkoutSession? _savedSession;
 
-  int _currentIndex = 0;
+  int _currentIndex = 1;
+  int _progressIndex = 0;
   String _searchQuery = '';
   String _historyQuery = '';
   int? _selectedWeekFilter;
@@ -73,6 +77,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.initialIndex.clamp(0, 4).toInt();
     _loadData();
   }
 
@@ -323,9 +328,8 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showExerciseDetail(String exerciseName) {
@@ -519,9 +523,8 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Text(
                   'Strumenti rapidi',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 12),
                 Card(
@@ -653,9 +656,8 @@ class _HomePageState extends State<HomePage> {
 
   List<List<dynamic>> _decodeCsv(String rawText) {
     final normalizedText = _normalizeText(rawText);
-    List<List<dynamic>> rows = const CsvToListConverter(
-      eol: '\n',
-    ).convert(normalizedText);
+    List<List<dynamic>> rows = const CsvToListConverter(eol: '\n')
+        .convert(normalizedText);
 
     if (rows.isNotEmpty &&
         rows.first.length < 7 &&
@@ -3539,9 +3541,9 @@ class _HomePageState extends State<HomePage> {
     updated.arm = parseDecimalInput(armController.text);
     updated.thigh = parseDecimalInput(thighController.text);
     updated.sleepHours = parseIntInput(sleepController.text);
-    updated.readiness = parseIntInput(
-      readinessController.text,
-    )?.clamp(1, 10).toInt();
+    updated.readiness = parseIntInput(readinessController.text)
+        ?.clamp(1, 10)
+        .toInt();
     updated.notes = notesController.text.trim();
     updated.photoPath = photoPath;
     updated.photoName = photoName;
@@ -3654,128 +3656,535 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
+  bool _sameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  _PlannedWorkout? _nextPlannedWorkout() {
+    final activeSchedules = schedules
+        .where(
+          (schedule) => !schedule.isArchived && schedule.exercises.isNotEmpty,
+        )
+        .toList();
+    if (activeSchedules.isEmpty) {
+      return null;
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    for (var offset = 0; offset <= 7; offset++) {
+      final date = today.add(Duration(days: offset));
+      for (final schedule in activeSchedules) {
+        if (schedule.isPlannedOn(date)) {
+          return _PlannedWorkout(schedule: schedule, date: date);
+        }
+      }
+    }
+
+    return _PlannedWorkout(schedule: activeSchedules.first, date: today);
+  }
+
+  int _workoutsThisWeek() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
+    final endOfWeek = startOfWeek.add(const Duration(days: 7));
+    return history.where((session) {
+      return !session.endTime.isBefore(startOfWeek) &&
+          session.endTime.isBefore(endOfWeek);
+    }).length;
+  }
+
+  BodyLog? _latestBodyLog() {
+    if (bodyLogs.isEmpty) {
+      return null;
+    }
+    return bodyLogs.reduce((a, b) => a.date.isAfter(b.date) ? a : b);
+  }
+
+  Future<void> _startScheduleFromHome(Schedule schedule) async {
+    if (schedule.exercises.isEmpty) {
+      await _showInfo('Aggiungi degli esercizi prima di iniziare.');
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ActiveWorkoutScreen(
+          schedule: schedule,
+          history: history,
+          defaultRestSeconds: _defaultRestSeconds,
+          defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _loadData();
+    }
+  }
+
+  Future<void> _resumeSavedWorkoutFromHome() async {
+    final session = _savedSession;
+    if (session == null) {
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ActiveWorkoutScreen.resume(
+          resumedSession: session,
+          history: history,
+          defaultRestSeconds: _defaultRestSeconds,
+          defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _loadData();
+    }
+  }
+
+  Widget _buildHomeDashboard() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final title = switch (_currentIndex) {
-      1 => 'Calendario',
-      2 => 'Cronologia',
-      3 => 'Statistiche',
-      4 => 'Corpo',
-      _ => 'Gym',
-    };
+    final planned = _nextPlannedWorkout();
+    final latestBody = _latestBodyLog();
+    final workoutsThisWeek = _workoutsThisWeek();
+    final progress = _buildExerciseProgressSummaries();
+    final strongestProgress = progress.isEmpty ? null : progress.first;
+    final now = DateTime.now();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title),
-        actions: [
-          IconButton(
-            tooltip: 'Ricerca globale',
-            icon: const Icon(Icons.search),
-            onPressed: _showGlobalSearch,
-          ),
-          IconButton(
-            tooltip: 'Strumenti',
-            icon: const Icon(Icons.calculate),
-            onPressed: _showToolsSheet,
-          ),
-          IconButton(
-            tooltip: 'Impostazioni',
-            icon: const Icon(Icons.settings),
-            onPressed: _openSettings,
-          ),
-          PopupMenuButton<_HomeAction>(
-            tooltip: 'Dati',
-            onSelected: (action) {
-              switch (action) {
-                case _HomeAction.importCsv:
-                  _importCsv();
-                  break;
-                case _HomeAction.exportCsv:
-                  _exportSchedulesCsv();
-                  break;
-                case _HomeAction.exportHistoryCsv:
-                  _exportHistoryCsv();
-                  break;
-                case _HomeAction.exportBodyCsv:
-                  _exportBodyCsv();
-                  break;
-                case _HomeAction.exportAllJson:
-                  _exportBackupJson();
-                  break;
-                case _HomeAction.restoreBackup:
-                  _restoreBackupJson();
-                  break;
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: _HomeAction.importCsv,
-                child: ListTile(
-                  leading: Icon(Icons.file_upload),
-                  title: Text('Importa CSV'),
+    final workoutTitle = _savedSession != null
+        ? _savedSession!.scheduleTitle
+        : planned?.schedule.title ?? 'Nessun allenamento pianificato';
+    final workoutSubtitle = _savedSession != null
+        ? 'Allenamento in corso'
+        : planned == null
+        ? 'Crea una scheda e assegna i giorni di allenamento.'
+        : _sameDay(planned.date, now)
+        ? 'Oggi • ${planned.schedule.exercises.length} esercizi • Week ${planned.schedule.currentWeek()}'
+        : '${_weekdayLabel(planned.date.weekday)} ${planned.date.day}/${planned.date.month} • ${planned.schedule.exercises.length} esercizi • Week ${planned.schedule.currentWeek()}';
+
+    final coachPreview = strongestProgress == null
+        ? history.isEmpty
+              ? 'Completa qualche allenamento: il Coach userà storico, schede e recupero per darti indicazioni contestuali.'
+              : 'I tuoi dati sono pronti. Apri il Coach per analizzare progressione, volume e recupero in locale.'
+        : strongestProgress.isImproved
+        ? '${strongestProgress.name}: volume ${_formatSignedVolume(strongestProgress.volumeDelta)} rispetto alla sessione precedente.'
+        : '${strongestProgress.name}: nessun miglioramento netto nell’ultimo confronto. Puoi chiedere al Coach cosa cambiare.';
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Oggi',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.6,
                 ),
               ),
-              PopupMenuItem(
-                value: _HomeAction.exportCsv,
-                child: ListTile(
-                  leading: Icon(Icons.download),
-                  title: Text('Esporta schede CSV'),
-                ),
-              ),
-              PopupMenuItem(
-                value: _HomeAction.exportHistoryCsv,
-                child: ListTile(
-                  leading: Icon(Icons.history),
-                  title: Text('Esporta cronologia CSV'),
-                ),
-              ),
-              PopupMenuItem(
-                value: _HomeAction.exportBodyCsv,
-                child: ListTile(
-                  leading: Icon(Icons.monitor_weight),
-                  title: Text('Esporta corpo CSV'),
-                ),
-              ),
-              PopupMenuItem(
-                value: _HomeAction.exportAllJson,
-                child: ListTile(
-                  leading: Icon(Icons.inventory_2),
-                  title: Text('Esporta tutto (JSON)'),
-                ),
-              ),
-              PopupMenuItem(
-                value: _HomeAction.restoreBackup,
-                child: ListTile(
-                  leading: Icon(Icons.restore),
-                  title: Text('Ripristina backup'),
+              const SizedBox(height: 3),
+              Text(
+                '${_weekdayLabel(now.weekday)} ${now.day}/${now.month}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
                 ),
               ),
             ],
           ),
-        ],
-      ),
+        ),
+        Card(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  colorScheme.primary.withValues(alpha: isDark ? 0.26 : 0.16),
+                  colorScheme.secondary.withValues(alpha: isDark ? 0.10 : 0.06),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Icon(
+                        _savedSession == null
+                            ? Icons.fitness_center
+                            : Icons.play_arrow_rounded,
+                        color: colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _savedSession == null
+                                ? 'Prossimo allenamento'
+                                : 'Riprendi allenamento',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            workoutTitle,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  workoutSubtitle,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _savedSession != null
+                            ? _resumeSavedWorkoutFromHome
+                            : planned == null
+                            ? () => setState(() => _currentIndex = 1)
+                            : () => _startScheduleFromHome(planned.schedule),
+                        icon: Icon(
+                          planned == null && _savedSession == null
+                              ? Icons.add
+                              : Icons.play_arrow,
+                        ),
+                        label: Text(
+                          _savedSession != null
+                              ? 'Riprendi'
+                              : planned == null
+                              ? 'Crea scheda'
+                              : 'Inizia',
+                        ),
+                      ),
+                    ),
+                    if (planned != null && _savedSession == null) ...[
+                      const SizedBox(width: 10),
+                      OutlinedButton(
+                        onPressed: () => _openScheduleDetail(planned.schedule),
+                        child: const Text('Dettagli'),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _DashboardMetric(
+                    icon: Icons.calendar_view_week,
+                    value: '$workoutsThisWeek',
+                    label: 'questa settimana',
+                  ),
+                ),
+                Expanded(
+                  child: _DashboardMetric(
+                    icon: Icons.monitor_weight_outlined,
+                    value: latestBody?.bodyWeight == null
+                        ? '--'
+                        : '${latestBody!.bodyWeight!.toStringAsFixed(1)} kg',
+                    label: 'peso',
+                  ),
+                ),
+                Expanded(
+                  child: _DashboardMetric(
+                    icon: Icons.bolt,
+                    value: latestBody?.readiness?.toString() ?? '--',
+                    label: 'readiness',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  colorScheme.secondary.withValues(alpha: isDark ? 0.20 : 0.11),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.psychology_alt, color: colorScheme.secondary),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        'AI Coach',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Chip(
+                      avatar: const Icon(Icons.lock_outline, size: 16),
+                      label: const Text('Locale'),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  coachPreview,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                OutlinedButton.icon(
+                  onPressed: () => setState(() => _currentIndex = 4),
+                  icon: const Icon(Icons.auto_awesome),
+                  label: const Text('Chiedi al Coach'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.insights),
+            title: const Text(
+              'Progressi',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+            subtitle: Text(
+              history.isEmpty
+                  ? 'Cronologia, statistiche e misure corpo in un’unica sezione.'
+                  : '${history.length} allenamenti registrati • ${progress.where((entry) => entry.isImproved).length} miglioramenti recenti',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => setState(() => _currentIndex = 3),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProgressTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<int>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment<int>(
+                  value: 0,
+                  icon: Icon(Icons.history),
+                  label: Text('Cronologia'),
+                ),
+                ButtonSegment<int>(
+                  value: 1,
+                  icon: Icon(Icons.bar_chart),
+                  label: Text('Statistiche'),
+                ),
+                ButtonSegment<int>(
+                  value: 2,
+                  icon: Icon(Icons.monitor_weight),
+                  label: Text('Corpo'),
+                ),
+              ],
+              selected: {_progressIndex},
+              onSelectionChanged: (selection) {
+                setState(() => _progressIndex = selection.first);
+              },
+            ),
+          ),
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _progressIndex,
+            children: [
+              _buildHistoryTab(),
+              StatsScreen(history: history),
+              _buildBodyTab(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final isCoach = _currentIndex == 4;
+    final title = switch (_currentIndex) {
+      0 => 'Home',
+      1 => 'Schede',
+      2 => 'Allenati',
+      3 => 'Progressi',
+      _ => 'AI Coach',
+    };
+
+    return Scaffold(
+      appBar: isCoach
+          ? null
+          : AppBar(
+              title: Text(title),
+              actions: [
+                IconButton(
+                  tooltip: 'Ricerca globale',
+                  icon: const Icon(Icons.search),
+                  onPressed: _showGlobalSearch,
+                ),
+                IconButton(
+                  tooltip: 'Strumenti',
+                  icon: const Icon(Icons.calculate),
+                  onPressed: _showToolsSheet,
+                ),
+                IconButton(
+                  tooltip: 'Impostazioni',
+                  icon: const Icon(Icons.settings),
+                  onPressed: _openSettings,
+                ),
+                PopupMenuButton<_HomeAction>(
+                  tooltip: 'Dati',
+                  onSelected: (action) {
+                    switch (action) {
+                      case _HomeAction.importCsv:
+                        _importCsv();
+                        break;
+                      case _HomeAction.exportCsv:
+                        _exportSchedulesCsv();
+                        break;
+                      case _HomeAction.exportHistoryCsv:
+                        _exportHistoryCsv();
+                        break;
+                      case _HomeAction.exportBodyCsv:
+                        _exportBodyCsv();
+                        break;
+                      case _HomeAction.exportAllJson:
+                        _exportBackupJson();
+                        break;
+                      case _HomeAction.restoreBackup:
+                        _restoreBackupJson();
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: _HomeAction.importCsv,
+                      child: ListTile(
+                        leading: Icon(Icons.file_upload),
+                        title: Text('Importa CSV'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _HomeAction.exportCsv,
+                      child: ListTile(
+                        leading: Icon(Icons.download),
+                        title: Text('Esporta schede CSV'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _HomeAction.exportHistoryCsv,
+                      child: ListTile(
+                        leading: Icon(Icons.history),
+                        title: Text('Esporta cronologia CSV'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _HomeAction.exportBodyCsv,
+                      child: ListTile(
+                        leading: Icon(Icons.monitor_weight),
+                        title: Text('Esporta corpo CSV'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _HomeAction.exportAllJson,
+                      child: ListTile(
+                        leading: Icon(Icons.inventory_2),
+                        title: Text('Esporta tutto (JSON)'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _HomeAction.restoreBackup,
+                      child: ListTile(
+                        leading: Icon(Icons.restore),
+                        title: Text('Ripristina backup'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 220),
         child: KeyedSubtree(
           key: ValueKey(_currentIndex),
           child: switch (_currentIndex) {
-            0 => _buildSchedulesTab(),
-            1 => _buildCalendarTab(),
-            2 => _buildHistoryTab(),
-            3 => StatsScreen(history: history),
-            _ => _buildBodyTab(),
+            0 => _buildHomeDashboard(),
+            1 => _buildSchedulesTab(),
+            2 => _buildCalendarTab(),
+            3 => _buildProgressTab(),
+            _ => AiCoachScreen(
+              history: history,
+              schedules: schedules,
+              bodyLogs: bodyLogs,
+            ),
           },
         ),
       ),
-      floatingActionButton: _currentIndex == 0
+      floatingActionButton: _currentIndex == 1
           ? FloatingActionButton(
               onPressed: _showAddScheduleDialog,
               child: const Icon(Icons.add),
             )
-          : _currentIndex == 4
+          : _currentIndex == 3 && _progressIndex == 2
           ? FloatingActionButton(
               onPressed: () => _showBodyLogDialog(),
               child: const Icon(Icons.monitor_weight),
@@ -3801,38 +4210,95 @@ class _HomePageState extends State<HomePage> {
               child: BottomNavigationBar(
                 type: BottomNavigationBarType.fixed,
                 currentIndex: _currentIndex,
-                onTap: (index) => setState(() => _currentIndex = index),
-                backgroundColor: theme.bottomNavigationBarTheme.backgroundColor,
-                selectedItemColor: colorScheme.primary,
                 showSelectedLabels: false,
                 showUnselectedLabels: false,
-                unselectedItemColor: colorScheme.onSurfaceVariant,
+                onTap: (index) {
+                  setState(() => _currentIndex = index);
+                },
                 items: const [
                   BottomNavigationBarItem(
+                    icon: Icon(Icons.home_outlined),
+                    activeIcon: Icon(Icons.home_rounded),
+                    label: 'Home',
+                  ),
+                  BottomNavigationBarItem(
                     icon: Icon(Icons.list_alt),
+                    activeIcon: Icon(Icons.list_alt),
                     label: 'Schede',
                   ),
                   BottomNavigationBarItem(
                     icon: Icon(Icons.calendar_month),
-                    label: 'Calendario',
+                    activeIcon: Icon(Icons.calendar_month),
+                    label: 'Allenati',
                   ),
                   BottomNavigationBarItem(
                     icon: Icon(Icons.history),
-                    label: 'Cronologia',
+                    activeIcon: Icon(Icons.insights),
+                    label: 'Progressi',
                   ),
                   BottomNavigationBarItem(
-                    icon: Icon(Icons.bar_chart),
-                    label: 'Statistiche',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.monitor_weight),
-                    label: 'Corpo',
+                    icon: Icon(Icons.psychology_alt_outlined),
+                    activeIcon: Icon(Icons.psychology_alt),
+                    label: 'Coach',
                   ),
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PlannedWorkout {
+  final Schedule schedule;
+  final DateTime date;
+
+  const _PlannedWorkout({required this.schedule, required this.date});
+}
+
+class _DashboardMetric extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+
+  const _DashboardMetric({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 20, color: colorScheme.primary),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }

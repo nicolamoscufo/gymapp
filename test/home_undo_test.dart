@@ -1067,9 +1067,9 @@ void main() {
     );
 
     final prefs = await SharedPreferences.getInstance();
-    final storedSession =
-        jsonDecode(prefs.getString(AppDataKeys.currentSession)!)
-            as Map<String, dynamic>;
+    final storedSession = jsonDecode(
+      prefs.getString(AppDataKeys.currentSession)!,
+    ) as Map<String, dynamic>;
     final storedSet =
         (((storedSession['exercises'] as List<dynamic>).single
                         as Map<String, dynamic>)['sets']
@@ -1193,11 +1193,20 @@ void main() {
     expect(find.text('Progressi esercizi'), findsOneWidget);
     expect(find.text('1 miglioramenti recenti'), findsOneWidget);
 
+    await tester.tap(find.text('Progressi esercizi'));
+    await tester.pumpAndSettle();
+    expect(find.text('Panca'), findsWidgets);
+    expect(find.textContaining('+80 kg'), findsOneWidget);
+    await tester.tap(find.text('Progressi esercizi'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Push').first);
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Top set:'), findsNothing);
 
+    await tester.ensureVisible(find.byIcon(Icons.edit).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.edit).first);
     await tester.pumpAndSettle();
 
@@ -1211,12 +1220,6 @@ void main() {
 
     await tester.tap(find.text('Annulla'));
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Progressi esercizi'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Panca'), findsWidgets);
-    expect(find.textContaining('+80 kg'), findsOneWidget);
   });
 
   testWidgets('history deletion can be undone', (tester) async {
