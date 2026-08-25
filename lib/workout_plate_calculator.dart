@@ -125,15 +125,15 @@ class _WorkoutPlateCalculatorSheetState
               Text(
                 'Plate calculator',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
+                  fontWeight: FontWeight.w900,
+                ),
               ),
               const SizedBox(height: 6),
               Text(
                 'Calcolo per lato con piastre 25 / 20 / 15 / 10 / 5 / 2.5 / 1.25 kg.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 16),
               Row(
@@ -182,17 +182,17 @@ class _WorkoutPlateCalculatorSheetState
                     Text(
                       'Per lato',
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       result.platesPerSide.isEmpty
                           ? 'Nessuna piastra'
-                          : result.platesPerSide.map(_format).join(' + ') + ' kg',
+                          : '${result.platesPerSide.map(_format).join(' + ')} kg',
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text('Carico ottenuto: ${_format(result.loadedWeight)} kg'),
