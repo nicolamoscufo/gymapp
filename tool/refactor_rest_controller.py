@@ -3,6 +3,8 @@ import re
 
 path = Path('lib/screens/active_workout.dart')
 text = path.read_text()
+controller_path = Path('lib/active_workout_rest_controller.dart')
+controller_text = controller_path.read_text()
 
 
 def replace_once(old: str, new: str, label: str) -> None:
@@ -12,6 +14,25 @@ def replace_once(old: str, new: str, label: str) -> None:
         raise SystemExit(f'{label}: expected 1 occurrence, found {count}')
     text = text.replace(old, new, 1)
 
+
+controller_anchor = '''  bool isActive(String exerciseId) =>
+      _remainingByExerciseId.containsKey(exerciseId);
+
+  WorkoutExercise? activeExercise() {'''
+controller_replacement = '''  bool isActive(String exerciseId) =>
+      _remainingByExerciseId.containsKey(exerciseId);
+
+  int configuredSecondsFor(WorkoutExercise exercise) => _restSecondsFor(exercise);
+
+  WorkoutExercise? activeExercise() {'''
+if controller_text.count(controller_anchor) != 1:
+    raise SystemExit('configured rest getter anchor not found')
+controller_text = controller_text.replace(
+    controller_anchor,
+    controller_replacement,
+    1,
+)
+controller_path.write_text(controller_text)
 
 replace_once(
     "import '../active_workout_insights.dart';\n",
@@ -151,6 +172,19 @@ text = text.replace(
     '_restSecondsByExerciseId.containsKey(',
     '_restController.isActive(',
 )
+text = text.replace(
+    '_restSecondsByExerciseId.isNotEmpty',
+    '_restController.hasActiveRest',
+)
+text = text.replace(
+    '_restSecondsByExerciseId.isEmpty',
+    '!_restController.hasActiveRest',
+)
+text = re.sub(
+    r'_restSecondsFor\(\s*exercise\s*\)',
+    r'_restController.configuredSecondsFor(exercise)',
+    text,
+)
 
 # The only remaining direct timer cancellation should be State.dispose().
 rest_cancel_count = text.count('    _restTimer?.cancel();\n')
@@ -164,8 +198,15 @@ text = text.replace(
     1,
 )
 
-for forbidden in ('_restSecondsByExerciseId', '_restTimer'):
+for forbidden in ('_restSecondsByExerciseId', '_restTimer', '_restSecondsFor('):
     if forbidden in text:
-        raise SystemExit(f'unexpected leftover {forbidden}')
+        leftovers = [
+            f'{index}: {line}'
+            for index, line in enumerate(text.splitlines(), 1)
+            if forbidden in line
+        ]
+        raise SystemExit(
+            f'unexpected leftover {forbidden}: ' + ' | '.join(leftovers[:10])
+        )
 
 path.write_text(text)
