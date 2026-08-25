@@ -6,23 +6,83 @@ text = text.replace(
     '_currentIndex = widget.initialIndex.clamp(0, 4);',
     '_currentIndex = widget.initialIndex.clamp(0, 4).toInt();',
 )
-text = text.replace('icon: Icon(Icons.list_alt_outlined),', 'icon: Icon(Icons.list_alt),')
-text = text.replace(
-    'icon: Icon(Icons.calendar_month_outlined),',
-    'icon: Icon(Icons.calendar_month)',
-)
 text = text.replace(
     "  Widget build(BuildContext context) {\n    final theme = Theme.of(context);\n    final colorScheme = theme.colorScheme;\n    final isDark = theme.brightness == Brightness.dark;\n    final isCoach = _currentIndex == 4;",
     "  Widget build(BuildContext context) {\n    final theme = Theme.of(context);\n    final isDark = theme.brightness == Brightness.dark;\n    final isCoach = _currentIndex == 4;",
 )
-text = text.replace('child: NavigationBar(', 'child: BottomNavigationBar(')
-text = text.replace(
-    '                selectedIndex: _currentIndex,\n                onDestinationSelected: (index) {',
-    '                type: BottomNavigationBarType.fixed,\n                currentIndex: _currentIndex,\n                showSelectedLabels: false,\n                showUnselectedLabels: false,\n                onTap: (index) {',
-)
-text = text.replace('                destinations: const [', '                items: const [')
-text = text.replace('NavigationDestination(', 'BottomNavigationBarItem(')
-text = text.replace('selectedIcon:', 'activeIcon:')
+
+old_nav = '''              child: NavigationBar(
+                selectedIndex: _currentIndex,
+                onDestinationSelected: (index) {
+                  setState(() => _currentIndex = index);
+                },
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home_rounded),
+                    label: 'Home',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.list_alt_outlined),
+                    selectedIcon: Icon(Icons.list_alt),
+                    label: 'Schede',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.calendar_month_outlined),
+                    selectedIcon: Icon(Icons.calendar_month),
+                    label: 'Allenati',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.history),
+                    selectedIcon: Icon(Icons.insights),
+                    label: 'Progressi',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.psychology_alt_outlined),
+                    selectedIcon: Icon(Icons.psychology_alt),
+                    label: 'Coach',
+                  ),
+                ],
+              ),'''
+new_nav = '''              child: BottomNavigationBar(
+                type: BottomNavigationBarType.fixed,
+                currentIndex: _currentIndex,
+                showSelectedLabels: false,
+                showUnselectedLabels: false,
+                onTap: (index) {
+                  setState(() => _currentIndex = index);
+                },
+                items: const [
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.home_outlined),
+                    activeIcon: Icon(Icons.home_rounded),
+                    label: 'Home',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.list_alt),
+                    activeIcon: Icon(Icons.list_alt),
+                    label: 'Schede',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.calendar_month),
+                    activeIcon: Icon(Icons.calendar_month),
+                    label: 'Allenati',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.history),
+                    activeIcon: Icon(Icons.insights),
+                    label: 'Progressi',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: Icon(Icons.psychology_alt_outlined),
+                    activeIcon: Icon(Icons.psychology_alt),
+                    label: 'Coach',
+                  ),
+                ],
+              ),'''
+if old_nav not in text:
+    raise RuntimeError('Unable to locate generated navigation block')
+text = text.replace(old_nav, new_nav)
 home.write_text(text)
 
 test = Path('test/home_navigation_test.dart')
