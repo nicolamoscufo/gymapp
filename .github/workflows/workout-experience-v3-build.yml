@@ -1,0 +1,49 @@
+name: Workout Experience v3 build
+
+on:
+  push:
+    branches:
+      - feat/workout-experience-v3
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/workout-experience-v3
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply workout experience v3
+        run: python tool/workout_experience_v3_patch.py
+
+      - name: Format
+        run: dart format lib/screens/active_workout.dart lib/ai_coach/training_context_builder.dart lib/workout_progression_analytics.dart test/workout_progression_analytics_test.dart test/workout_experience_v3_test.dart
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Commit workout experience v3
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/screens/active_workout.dart lib/ai_coach/training_context_builder.dart lib/workout_progression_analytics.dart test/workout_progression_analytics_test.dart test/workout_experience_v3_test.dart
+          git diff --cached --quiet && exit 0
+          git commit -m "Build workout experience v3"
+          git push origin HEAD:feat/workout-experience-v3
