@@ -51,23 +51,6 @@ jobs:
 
           schedule = Path('lib/screens/schedule_detail.dart')
           text = schedule.read_text()
-          old = '''  void _reorderExercise(int oldIndex, int newIndex) {
-            if (oldIndex < 0 || oldIndex >= widget.schedule.exercises.length) {
-              return;
-            }
-
-            if (newIndex < 0 || newIndex > widget.schedule.exercises.length) {
-              return;
-            }
-
-            setState(() {
-              final exercise = widget.schedule.exercises.removeAt(oldIndex);
-              final insertIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;
-              widget.schedule.exercises.insert(insertIndex, exercise);
-            });
-            widget.onUpdate();
-          }'''
-          # Preserve the existing formatting by replacing smaller stable fragments.
           text = text.replace(
               '    if (newIndex < 0 || newIndex > widget.schedule.exercises.length) {',
               '    if (newIndex < 0 || newIndex >= widget.schedule.exercises.length) {',
@@ -76,12 +59,11 @@ jobs:
               '      final insertIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;\n      widget.schedule.exercises.insert(insertIndex, exercise);',
               '      widget.schedule.exercises.insert(newIndex, exercise);',
           )
-          text = text.replace('              onReorder: _reorderExercise,', '              onReorderItem: _reorderExercise,')
+          text = text.replace(
+              '              onReorder: _reorderExercise,',
+              '              onReorderItem: _reorderExercise,',
+          )
           schedule.write_text(text)
-
-          workflow = Path('.github/workflows/flutter-ci.yml')
-          text = workflow.read_text().replace('flutter analyze --no-fatal-infos', 'flutter analyze')
-          workflow.write_text(text)
 
       - name: Resolve dependencies and refresh lockfile
         run: flutter pub get
@@ -96,7 +78,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add android/app/src/main/AndroidManifest.xml lib/screens/settings.dart lib/screens/schedule_detail.dart pubspec.lock .github/workflows/flutter-ci.yml
+          git add android/app/src/main/AndroidManifest.xml lib/screens/settings.dart lib/screens/schedule_detail.dart pubspec.lock
           git diff --cached --quiet && exit 0
           git commit -m "Fix AI Android release readiness"
           git push origin HEAD:fix/ai-release-cleanup
