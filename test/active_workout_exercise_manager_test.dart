@@ -80,54 +80,66 @@ ActiveWorkoutExerciseManager _manager(
 }
 
 void main() {
-  test('add exercises reuses previous values from the same stable schedule', () {
-    final template = _template('Bench press', id: 'bench-template');
-    final previousExercise = _workoutExercise(
-      'Old bench label',
-      sourceExerciseId: 'bench-template',
-      weight: 82.5,
-      reps: 9,
-    );
-    previousExercise.sets.first.isCompleted = true;
-    final previous = _session(
-      id: 'previous',
-      scheduleId: 'schedule-a',
-      title: 'Old push title',
-      start: DateTime(2026, 8, 20, 10),
-      end: DateTime(2026, 8, 20, 11),
-      exercises: [previousExercise],
-    );
-    final current = _session(
-      id: 'current',
-      title: 'Renamed push',
-      start: DateTime(2026, 8, 26, 10),
-      end: DateTime(2026, 8, 26, 11),
-    );
+  test(
+    'add exercises reuses previous values from the same stable schedule',
+    () {
+      final template = _template('Bench press', id: 'bench-template');
+      final previousExercise = _workoutExercise(
+        'Old bench label',
+        sourceExerciseId: 'bench-template',
+        weight: 82.5,
+        reps: 9,
+      );
+      previousExercise.sets.first.isCompleted = true;
+      final previous = _session(
+        id: 'previous',
+        scheduleId: 'schedule-a',
+        title: 'Old push title',
+        start: DateTime(2026, 8, 20, 10),
+        end: DateTime(2026, 8, 20, 11),
+        exercises: [previousExercise],
+      );
+      final current = _session(
+        id: 'current',
+        title: 'Renamed push',
+        start: DateTime(2026, 8, 26, 10),
+        end: DateTime(2026, 8, 26, 11),
+      );
 
-    final added = _manager(current, history: [previous]).addExercises([template]);
+      final added = _manager(
+        current,
+        history: [previous],
+      ).addExercises([template]);
 
-    expect(added, hasLength(1));
-    expect(current.exercises, hasLength(1));
-    expect(added.single.sourceExerciseId, isNull);
-    expect(added.single.previousWeights, [82.5]);
-    expect(added.single.previousReps, [9]);
-    expect(added.single.sets.first.weight, 82.5);
-    expect(added.single.sets.first.reps, 9);
-  });
+      expect(added, hasLength(1));
+      expect(current.exercises, hasLength(1));
+      expect(added.single.sourceExerciseId, isNull);
+      expect(added.single.previousWeights, [82.5]);
+      expect(added.single.previousReps, [9]);
+      expect(added.single.sets.first.weight, 82.5);
+      expect(added.single.sets.first.reps, 9);
+    },
+  );
 
-  test('replace preserves superset membership and creates a live-only exercise', () {
-    final original = _workoutExercise('Bench', supersetGroup: 3);
-    final current = _session(exercises: [original]);
-    final manager = _manager(current);
+  test(
+    'replace preserves superset membership and creates a live-only exercise',
+    () {
+      final original = _workoutExercise('Bench', supersetGroup: 3);
+      final current = _session(exercises: [original]);
+      final manager = _manager(current);
 
-    final replacement = manager.replaceExercise(original, _template('Incline bench'));
+      final replacement = manager.replaceExercise(
+        original,
+        _template('Incline bench'),
+      );
 
-    expect(replacement, isNotNull);
-    expect(current.exercises.single.name, 'Incline bench');
-    expect(current.exercises.single.supersetGroup, 3);
-    expect(current.exercises.single.sourceExerciseId, isNull);
-    expect(current.exercises.single.id, isNot(original.id));
-  });
+      expect(replacement, isNotNull);
+      expect(current.exercises.single.name, 'Incline bench');
+      expect(current.exercises.single.supersetGroup, 3);
+      expect(current.exercises.single.sourceExerciseId, isNull);
+      expect(current.exercises.single.id, isNot(original.id));
+    },
+  );
 
   test('duplicate copies set targets but resets completion and superset', () {
     final original = _workoutExercise('Row', supersetGroup: 2);
@@ -234,7 +246,11 @@ void main() {
     final current = _session(exercises: [a, middle, b, c]);
     final manager = _manager(current);
 
-    expect(manager.supersetMembers(a).map((e) => e.name).toList(), ['A', 'B', 'C']);
+    expect(manager.supersetMembers(a).map((e) => e.name).toList(), [
+      'A',
+      'B',
+      'C',
+    ]);
     expect(manager.nextSupersetMember(a)?.id, b.id);
     expect(manager.nextSupersetMember(b)?.id, c.id);
     expect(manager.nextSupersetMember(c)?.id, a.id);

@@ -39,7 +39,8 @@ class ActiveWorkoutExerciseManager {
       }
 
       final sameSchedule =
-          (session.scheduleId != null && candidate.scheduleId == session.scheduleId) ||
+          (session.scheduleId != null &&
+              candidate.scheduleId == session.scheduleId) ||
           (candidate.scheduleId == null &&
               candidate.scheduleTitle == session.scheduleTitle);
       if (!sameSchedule) continue;
@@ -152,7 +153,9 @@ class ActiveWorkoutExerciseManager {
       return false;
     }
 
-    final restoreIndex = removal.index.clamp(0, session.exercises.length).toInt();
+    final restoreIndex = removal.index
+        .clamp(0, session.exercises.length)
+        .toInt();
     session.exercises.insert(restoreIndex, removal.exercise);
 
     final group = removal.originalSupersetGroup;
@@ -191,7 +194,9 @@ class ActiveWorkoutExerciseManager {
   WorkoutExercise? nextSupersetMember(WorkoutExercise exercise) {
     final members = supersetMembers(exercise);
     if (members.length < 2) return null;
-    final currentIndex = members.indexWhere((member) => member.id == exercise.id);
+    final currentIndex = members.indexWhere(
+      (member) => member.id == exercise.id,
+    );
     if (currentIndex < 0) return null;
     return members[(currentIndex + 1) % members.length];
   }
@@ -205,7 +210,9 @@ class ActiveWorkoutExerciseManager {
   }
 
   bool linkSuperset(WorkoutExercise exercise, WorkoutExercise target) {
-    if (exercise.id == target.id || _indexOf(exercise) < 0 || _indexOf(target) < 0) {
+    if (exercise.id == target.id ||
+        _indexOf(exercise) < 0 ||
+        _indexOf(target) < 0) {
       return false;
     }
 
