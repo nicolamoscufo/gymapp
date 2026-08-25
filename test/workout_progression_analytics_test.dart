@@ -110,7 +110,7 @@ void main() {
 
   test('e1RM trend compares the two latest usable snapshots', () {
     final snapshots = [
-      const ExercisePerformanceSnapshot(
+      ExercisePerformanceSnapshot(
         date: DateTime(2026, 8, 1),
         topSetWeight: 100,
         topSetReps: 5,
@@ -119,7 +119,7 @@ void main() {
         totalVolume: 1500,
         estimatedOneRepMax: 116.6666667,
       ),
-      const ExercisePerformanceSnapshot(
+      ExercisePerformanceSnapshot(
         date: DateTime(2026, 8, 8),
         topSetWeight: 102.5,
         topSetReps: 5,
