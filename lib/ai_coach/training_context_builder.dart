@@ -1,6 +1,7 @@
 import '../models/body_log.dart';
 import '../models/schedule.dart';
 import '../models/workout.dart';
+import '../workout_fatigue_analytics.dart';
 import '../workout_progression_analytics.dart';
 import 'ai_coach_memory.dart';
 import 'ai_coach_user_profile.dart';
@@ -121,8 +122,14 @@ class TrainingContextBuilder {
       },
       'deterministic_analytics': {
         'exercise_progress': _exerciseProgress(history),
+        'fatigue_readiness': buildGlobalReadinessReport(
+          history: analyticsHistory,
+          bodyLogs: bodyLogs,
+          now: _now,
+        ).toJson(),
         'progression_recommendations': _progressionRecommendations(
           analyticsHistory,
+          bodyLogs,
         ),
         'session_count': history.length,
         'latest_session_at': history.isEmpty
@@ -273,6 +280,7 @@ class TrainingContextBuilder {
 
   List<Map<String, dynamic>> _progressionRecommendations(
     List<WorkoutSession> history,
+    List<BodyLog> bodyLogs,
   ) {
     if (history.isEmpty) {
       return const [];
@@ -286,11 +294,27 @@ class TrainingContextBuilder {
         .toList();
 
     return latest.exercises.map((exercise) {
-      final decision = buildProgressionDecision(
+      final baseDecision = buildProgressionDecision(
         exercise: exercise,
         history: previous,
       );
-      return {'exercise': exercise.name, ...decision.toJson()};
+      final readiness = buildExerciseReadinessReport(
+        history: previous,
+        bodyLogs: bodyLogs,
+        exerciseName: exercise.name,
+        muscleGroup: exercise.muscleGroup,
+        now: _now,
+        currentExercise: exercise,
+      );
+      final decision = applyReadinessToProgression(
+        decision: baseDecision,
+        readiness: readiness,
+      );
+      return {
+        'exercise': exercise.name,
+        ...decision.toJson(),
+        'readiness': readiness.toJson(),
+      };
     }).toList();
   }
 }

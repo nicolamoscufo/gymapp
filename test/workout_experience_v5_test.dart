@@ -28,7 +28,7 @@ WorkoutExercise _bench({
         reps: reps,
         isCompleted: completed,
         rir: rir,
-        rpe: rir == 0 ? 10 : 10 - rir,
+        rpe: rir == 0 ? 10.0 : (10 - rir).toDouble(),
       ),
     ],
   );
@@ -49,7 +49,9 @@ WorkoutSession _session({
 }
 
 void main() {
-  testWidgets('active workout exposes fatigue readiness details', (tester) async {
+  testWidgets('active workout exposes fatigue readiness details', (
+    tester,
+  ) async {
     final now = DateTime.now();
     final previous = _session(
       id: 'previous',
@@ -82,7 +84,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final readinessChip = find.byKey(ValueKey('readiness-${currentExercise.id}'));
+    final readinessChip = find.byKey(
+      ValueKey('readiness-${currentExercise.id}'),
+    );
     expect(readinessChip, findsOneWidget);
     expect(find.textContaining('Readiness'), findsWidgets);
 
@@ -94,40 +98,44 @@ void main() {
     expect(find.text('Adatta questa sessione'), findsOneWidget);
   });
 
-  test('AI context includes deterministic fatigue and per-exercise readiness', () {
-    final now = DateTime(2026, 8, 25, 18);
-    final previous = _session(
-      id: 'previous',
-      end: now.subtract(const Duration(days: 3)),
-      exercise: _bench(weight: 97.5, reps: 8, rir: 2),
-    );
-    final latest = _session(
-      id: 'latest',
-      end: now.subtract(const Duration(hours: 2)),
-      exercise: _bench(weight: 100, reps: 8, rir: 1),
-    );
-    final bodyLogs = [
-      BodyLog(
-        date: now.subtract(const Duration(hours: 3)),
-        readiness: 5,
-        sleepHours: 6,
-      ),
-    ];
+  test(
+    'AI context includes deterministic fatigue and per-exercise readiness',
+    () {
+      final now = DateTime(2026, 8, 25, 18);
+      final previous = _session(
+        id: 'previous',
+        end: now.subtract(const Duration(days: 3)),
+        exercise: _bench(weight: 97.5, reps: 8, rir: 2),
+      );
+      final latest = _session(
+        id: 'latest',
+        end: now.subtract(const Duration(hours: 2)),
+        exercise: _bench(weight: 100, reps: 8, rir: 1),
+      );
+      final bodyLogs = [
+        BodyLog(
+          date: now.subtract(const Duration(hours: 3)),
+          readiness: 5,
+          sleepHours: 6,
+        ),
+      ];
 
-    final context = TrainingContextBuilder(now: now).recent(
-      history: [previous, latest],
-      schedules: const [],
-      bodyLogs: bodyLogs,
-    );
-    final analytics = context['deterministic_analytics'] as Map<String, dynamic>;
-    final readiness = analytics['fatigue_readiness'] as Map<String, dynamic>;
-    final recommendations =
-        analytics['progression_recommendations'] as List<dynamic>;
-    final first = recommendations.first as Map<String, dynamic>;
+      final context = TrainingContextBuilder(now: now).recent(
+        history: [previous, latest],
+        schedules: const [],
+        bodyLogs: bodyLogs,
+      );
+      final analytics =
+          context['deterministic_analytics'] as Map<String, dynamic>;
+      final readiness = analytics['fatigue_readiness'] as Map<String, dynamic>;
+      final recommendations =
+          analytics['progression_recommendations'] as List<dynamic>;
+      final first = recommendations.first as Map<String, dynamic>;
 
-    expect(readiness['score'], isA<int>());
-    expect(readiness['status'], isA<String>());
-    expect(readiness['adaptation'], isA<String>());
-    expect(first['readiness'], isA<Map<String, dynamic>>());
-  });
+      expect(readiness['score'], isA<int>());
+      expect(readiness['status'], isA<String>());
+      expect(readiness['adaptation'], isA<String>());
+      expect(first['readiness'], isA<Map<String, dynamic>>());
+    },
+  );
 }

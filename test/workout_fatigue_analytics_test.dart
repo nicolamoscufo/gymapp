@@ -39,11 +39,7 @@ WorkoutExercise _exercise({
   );
 }
 
-WorkoutSession _session(
-  DateTime end,
-  WorkoutExercise exercise, {
-  String? id,
-}) {
+WorkoutSession _session(DateTime end, WorkoutExercise exercise, {String? id}) {
   return WorkoutSession(
     id: id,
     scheduleTitle: 'Test',

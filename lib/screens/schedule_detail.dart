@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+
 import '../app_data_store.dart';
 import '../dialog_form.dart';
 import '../exercise_catalog.dart';
+import '../models/body_log.dart';
 import '../models/schedule.dart';
 import '../models/exercise.dart';
 import '../models/workout.dart';
@@ -12,6 +14,7 @@ import 'exercise_picker.dart';
 class ScheduleDetailScreen extends StatefulWidget {
   final Schedule schedule;
   final List<WorkoutSession> history;
+  final List<BodyLog> bodyLogs;
   final int defaultRestSeconds;
   final double defaultBackoffReductionPercent;
   final VoidCallback onUpdate;
@@ -20,6 +23,7 @@ class ScheduleDetailScreen extends StatefulWidget {
     super.key,
     required this.schedule,
     this.history = const [],
+    this.bodyLogs = const [],
     required this.defaultRestSeconds,
     required this.defaultBackoffReductionPercent,
     required this.onUpdate,
@@ -842,8 +846,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     parsedProgressionRepStep < 1;
                 if (hasInvalidRange) {
                   setDialogState(() {
-                    validationMessage =
-                        'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi, range reps coerente.';
+                    validationMessage = 'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi, range reps coerente.';
                   });
                   return;
                 }

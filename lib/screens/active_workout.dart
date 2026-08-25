@@ -9,11 +9,13 @@ import '../app_data_store.dart';
 import '../dialog_form.dart';
 import '../exercise_catalog.dart';
 import '../local_notifications.dart';
+import '../models/body_log.dart';
 import '../models/exercise.dart';
 import '../models/schedule.dart';
 import '../models/workout.dart';
 import '../number_input.dart';
 import '../top_set_backoff.dart' as top_set_backoff;
+import '../workout_fatigue_analytics.dart';
 import '../workout_plate_calculator.dart';
 import '../workout_progression_analytics.dart';
 import 'exercise_picker.dart';
@@ -32,6 +34,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
   final Schedule? schedule;
   final WorkoutSession? resumedSession;
   final List<WorkoutSession> history;
+  final List<BodyLog> bodyLogs;
   final int defaultRestSeconds;
   final double defaultBackoffReductionPercent;
   final bool editCompletedSession;
@@ -40,6 +43,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
     super.key,
     required this.schedule,
     this.history = const [],
+    this.bodyLogs = const [],
     required this.defaultRestSeconds,
     this.defaultBackoffReductionPercent =
         top_set_backoff.defaultBackoffReductionPercent,
@@ -50,6 +54,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
     super.key,
     required this.resumedSession,
     this.history = const [],
+    this.bodyLogs = const [],
     required this.defaultRestSeconds,
     this.defaultBackoffReductionPercent =
         top_set_backoff.defaultBackoffReductionPercent,
@@ -61,6 +66,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
     super.key,
     required WorkoutSession session,
     this.history = const [],
+    this.bodyLogs = const [],
     required this.defaultRestSeconds,
     this.defaultBackoffReductionPercent =
         top_set_backoff.defaultBackoffReductionPercent,
@@ -75,6 +81,7 @@ class ActiveWorkoutScreen extends StatefulWidget {
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     with WidgetsBindingObserver {
   late WorkoutSession session;
+  late List<BodyLog> _bodyLogs;
   Timer? _restTimer;
   Timer? _durationTimer;
   int _elapsedSeconds = 0;
@@ -581,11 +588,42 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     };
   }
 
+  FatigueReadinessReport _readinessForExercise(
+    WorkoutExercise exercise, {
+    bool includeCurrentEffort = true,
+  }) {
+    return buildExerciseReadinessReport(
+      history: widget.history,
+      bodyLogs: _bodyLogs,
+      exerciseName: exercise.name,
+      muscleGroup: exercise.muscleGroup,
+      now: DateTime.now(),
+      excludeSessionId: session.id,
+      currentExercise: includeCurrentEffort ? exercise : null,
+    );
+  }
+
+  FatigueReadinessReport _workoutReadiness() {
+    return buildWorkoutReadinessReport(
+      history: widget.history,
+      bodyLogs: _bodyLogs,
+      exercises: session.exercises,
+      now: DateTime.now(),
+    );
+  }
+
   ProgressionDecision _progressionDecisionFor(WorkoutExercise exercise) {
-    return buildProgressionDecision(
+    final decision = buildProgressionDecision(
       exercise: exercise,
       history: widget.history,
       excludeSessionId: session.id,
+    );
+    if (widget.editCompletedSession) {
+      return decision;
+    }
+    return applyReadinessToProgression(
+      decision: decision,
+      readiness: _readinessForExercise(exercise),
     );
   }
 
@@ -610,6 +648,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   Future<void> _showProgressionDecision(WorkoutExercise exercise) async {
     final decision = _progressionDecisionFor(exercise);
+    final readiness = _readinessForExercise(exercise);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -654,6 +693,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  Chip(
+                    label: Text(
+                      'Readiness ${readiness.score}/100 · ${readiness.status.label}',
+                    ),
+                  ),
                   if (decision.effectiveRir != null)
                     Chip(
                       label: Text(
@@ -694,6 +738,169 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _showReadinessDetails(WorkoutExercise exercise) async {
+    final report = _readinessForExercise(exercise);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Fatigue & Readiness',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(exercise.name),
+              const SizedBox(height: 12),
+              Text(
+                '${report.score}/100 · ${report.status.label}',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: colorScheme.primary,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                report.adaptation.label,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (report.hoursSinceLastStimulus != null)
+                    Chip(
+                      label: Text('${report.hoursSinceLastStimulus}h recupero'),
+                    ),
+                  if (report.averageRir != null)
+                    Chip(
+                      label: Text(
+                        'RIR medio ${report.averageRir!.toStringAsFixed(1)}',
+                      ),
+                    ),
+                  if (report.sleepHours != null)
+                    Chip(label: Text('Sonno ${report.sleepHours}h')),
+                  if (report.selfReadiness != null)
+                    Chip(label: Text('Check-in ${report.selfReadiness}/10')),
+                ],
+              ),
+              const SizedBox(height: 8),
+              for (final reason in report.reasons)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.monitor_heart_outlined),
+                  title: Text(reason),
+                ),
+              if (!widget.editCompletedSession &&
+                  report.adaptation != SessionAdaptation.normal) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: ValueKey('apply-readiness-${exercise.id}'),
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      _confirmReadinessAdaptation(exercise, report);
+                    },
+                    icon: const Icon(Icons.tune),
+                    label: const Text('Adatta questa sessione'),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text(
+                'Il punteggio e deterministico e combina recupero, frequenza, volume, RIR/RPE, trend prestativo, sonno e check-in readiness.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmReadinessAdaptation(
+    WorkoutExercise exercise,
+    FatigueReadinessReport report,
+  ) async {
+    final loadReduction = ((1 - report.recommendedLoadMultiplier) * 100)
+        .round();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Adattare la sessione?'),
+        content: Text(
+          report.recommendedSetReduction > 0
+              ? 'Riduce del $loadReduction% i set non completati e rimuove un set di lavoro non ancora eseguito. I set completati non vengono toccati.'
+              : 'Riduce del $loadReduction% i set non completati. I set completati non vengono toccati.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annulla'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Applica'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() {
+      for (final set in exercise.sets) {
+        if (set.isWarmup || set.isCompleted) continue;
+        set.weight =
+            (set.weight * report.recommendedLoadMultiplier * 2)
+                .roundToDouble() /
+            2;
+      }
+      if (report.recommendedSetReduction > 0 &&
+          exercise.technique != IntensityTechnique.topsetBackoff) {
+        final workSets = exercise.sets.where((set) => !set.isWarmup).toList();
+        if (workSets.length > 1) {
+          ExerciseSet? removable;
+          for (final set in workSets.reversed) {
+            if (!set.isCompleted) {
+              removable = set;
+              break;
+            }
+          }
+          if (removable != null) {
+            exercise.sets.remove(removable);
+          }
+        }
+      }
+    });
+    HapticFeedback.mediumImpact();
+    _saveCurrentSession();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${exercise.name}: sessione adattata a ${report.status.label.toLowerCase()}.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   double _deloadWeight(double weight) {
@@ -861,13 +1068,25 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final previousExercise = _previousExerciseFor(exercise, previousSession);
     final previousWeights = _previousWeightsFor(previousExercise);
     final previousReps = _previousRepsFor(previousExercise);
-    final progressionDecision = previousExercise == null
-        ? null
-        : buildProgressionDecision(
-            exercise: previousExercise,
-            history: widget.history,
-            excludeSessionId: previousSession?.id,
-          );
+    ProgressionDecision? progressionDecision;
+    if (previousExercise != null) {
+      final baseDecision = buildProgressionDecision(
+        exercise: previousExercise,
+        history: widget.history,
+        excludeSessionId: previousSession?.id,
+      );
+      final readiness = buildExerciseReadinessReport(
+        history: widget.history,
+        bodyLogs: _bodyLogs,
+        exerciseName: previousExercise.name,
+        muscleGroup: previousExercise.muscleGroup,
+        now: DateTime.now(),
+      );
+      progressionDecision = applyReadinessToProgression(
+        decision: baseDecision,
+        readiness: readiness,
+      );
+    }
 
     return WorkoutExercise(
       sourceExerciseId: keepSourceExerciseId ? exercise.id : null,
@@ -1222,9 +1441,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
   }
 
+  Future<void> _loadReadinessBodyLogs() async {
+    final bundle = await AppDataStore.loadBundle();
+    if (!mounted || _bodyLogs.isNotEmpty) return;
+    setState(() {
+      _bodyLogs = List<BodyLog>.from(bundle.bodyLogs);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _bodyLogs = List<BodyLog>.from(widget.bodyLogs);
+    if (_bodyLogs.isEmpty) {
+      _loadReadinessBodyLogs();
+    }
     WidgetsBinding.instance.addObserver(this);
     if (!widget.editCompletedSession) {
       WakelockPlus.enable();
@@ -2732,6 +2963,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final activeRestSeconds = activeRestExercise == null
         ? null
         : _restSecondsByExerciseId[activeRestExercise.id];
+    final workoutReadiness = _workoutReadiness();
 
     return PopScope(
       canPop: false,
@@ -2910,7 +3142,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
                 child: Text(
-                  _saveStatusLabel(),
+                  '${_saveStatusLabel()} · Readiness ${workoutReadiness.score}/100 ${workoutReadiness.status.label}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -3142,6 +3374,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                             label: const Text('Storico'),
                             visualDensity: VisualDensity.compact,
                             onPressed: () => _showExerciseHistory(exercise),
+                          ),
+                          ActionChip(
+                            key: ValueKey('readiness-${exercise.id}'),
+                            avatar: const Icon(
+                              Icons.monitor_heart_outlined,
+                              size: 18,
+                            ),
+                            label: Text(
+                              '${_readinessForExercise(exercise).status.label} ${_readinessForExercise(exercise).score}',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _showReadinessDetails(exercise),
                           ),
                           if (exercise.sets.any(
                             (set) => set.isCompleted && !set.isWarmup,
