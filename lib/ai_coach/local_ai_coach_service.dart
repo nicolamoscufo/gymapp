@@ -186,6 +186,7 @@ class LocalAiCoachService {
               evidence: suggestion.evidence,
               confidence: suggestion.confidence,
               requiresUserConfirmation: true,
+              proposedActions: suggestion.proposedActions,
             ),
           )
           .toList(),
@@ -241,7 +242,8 @@ class LocalAiCoachService {
     );
 
     final contextJson = jsonEncode(context);
-    final systemPrompt = '''$systemCoachingPrompt
+    final systemPrompt =
+        '''$systemCoachingPrompt
 
 Training context (JSON):
 $contextJson

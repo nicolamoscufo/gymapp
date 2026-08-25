@@ -4,6 +4,7 @@ import 'package:gymapp/ai_coach/ai_coach_model_manager.dart';
 import 'package:gymapp/ai_coach/ai_coach_memory.dart';
 import 'package:gymapp/ai_coach/ai_coach_models.dart';
 import 'package:gymapp/ai_coach/ai_coach_prompts.dart';
+import 'package:gymapp/ai_coach/ai_plan_action_service.dart';
 import 'package:gymapp/ai_coach/ai_coach_user_profile.dart';
 import 'package:gymapp/ai_coach/chat_conversation.dart';
 import 'package:gymapp/ai_coach/local_ai_coach_service.dart';
@@ -130,9 +131,7 @@ void main() {
     expect(report.summary, contains('1 completed sessions'));
   });
 
-  testWidgets('chat screen shows input and suggestion chips', (
-    tester,
-  ) async {
+  testWidgets('chat screen shows input and suggestion chips', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: AiCoachScreen(
@@ -155,7 +154,50 @@ void main() {
     expect(find.text('Suggerimenti'), findsOneWidget);
   });
 
+  testWidgets('AI plan actions show a diff and apply only after confirmation', (
+    tester,
+  ) async {
+    final exercise = Exercise(
+      id: 'bench-plan',
+      name: 'Panca',
+      reps: 8,
+      set: 3,
+      notes: '',
+      weight: 80,
+      technique: IntensityTechnique.none,
+    );
+    final schedule = Schedule(
+      id: 'push-plan',
+      title: 'Push',
+      week: 1,
+      createdAt: DateTime(2026, 6, 1),
+      exercises: [exercise],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AiCoachScreen(
+          history: [
+            _session(DateTime(2026, 6, 3), weight: 70),
+            _session(DateTime(2026, 6, 10), weight: 80),
+          ],
+          schedules: [schedule],
+          service: const _FakePlanActionService(),
+          planActionService: const AiPlanActionService(),
+          modelInstaller: const _FakeModelInstaller(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(const ValueKey('ai-plan-actions')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('80 → 82.5'), findsOneWidget);
+    expect(exercise.weight, 80);
+
+    await tester.tap(find.byKey(const ValueKey('apply-plan-actions')));
+    await tester.pumpAndSettle();
+    expect(exercise.weight, 82.5);
+  });
 }
 
 WorkoutSession _session(DateTime start, {required double weight}) {
@@ -269,4 +311,43 @@ class _FakeModelInstaller implements AiCoachModelInstaller {
 
   @override
   Future<void> activateInstalledModel() async {}
+}
+
+class _FakePlanActionService extends LocalAiCoachService {
+  const _FakePlanActionService();
+
+  @override
+  Future<SuggestedAdjustmentReport> suggestWorkoutAdjustments({
+    required List<WorkoutSession> history,
+    required List<Schedule> schedules,
+    List<BodyLog> bodyLogs = const [],
+    AiCoachUserProfile profile = const AiCoachUserProfile(),
+    AiCoachMemory memory = const AiCoachMemory(),
+  }) async {
+    return const SuggestedAdjustmentReport(
+      suggestions: [
+        SuggestedAdjustment(
+          type: 'load_progression',
+          target: 'Panca',
+          suggestion: 'Aumenta di 2.5 kg',
+          reason: 'RIR stabile e readiness adeguata',
+          evidence: ['deterministic progression'],
+          confidence: 'high',
+          requiresUserConfirmation: true,
+          proposedActions: [
+            ProposedPlanAction(
+              action: 'increase_load',
+              target: 'Panca',
+              field: 'weight',
+              currentValue: '80',
+              suggestedValue: '82.5',
+              rationale: 'Piccolo incremento',
+              scheduleId: 'push-plan',
+              exerciseId: 'bench-plan',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }

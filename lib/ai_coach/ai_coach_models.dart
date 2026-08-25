@@ -307,6 +307,8 @@ class ProposedPlanAction {
   final String currentValue;
   final String suggestedValue;
   final String rationale;
+  final String scheduleId;
+  final String exerciseId;
 
   const ProposedPlanAction({
     required this.action,
@@ -315,6 +317,8 @@ class ProposedPlanAction {
     required this.currentValue,
     required this.suggestedValue,
     required this.rationale,
+    this.scheduleId = '',
+    this.exerciseId = '',
   });
 
   factory ProposedPlanAction.fromJson(Map<String, dynamic> json) {
@@ -325,6 +329,8 @@ class ProposedPlanAction {
       currentValue: _string(json['current_value']),
       suggestedValue: _string(json['suggested_value']),
       rationale: _string(json['rationale']),
+      scheduleId: _string(json['schedule_id']),
+      exerciseId: _string(json['exercise_id']),
     );
   }
 
@@ -335,6 +341,8 @@ class ProposedPlanAction {
     'current_value': currentValue,
     'suggested_value': suggestedValue,
     'rationale': rationale,
+    'schedule_id': scheduleId,
+    'exercise_id': exerciseId,
   };
 }
 
