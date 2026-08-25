@@ -16,6 +16,7 @@ import '../models/schedule.dart';
 import '../models/workout.dart';
 import '../number_input.dart';
 import '../top_set_backoff.dart';
+import '../workout_fatigue_analytics.dart';
 import 'schedule_detail.dart';
 import 'settings.dart';
 import 'stats.dart';
@@ -349,6 +350,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context) => ScheduleDetailScreen(
           schedule: schedule,
           history: history,
+          bodyLogs: bodyLogs,
           defaultRestSeconds: _defaultRestSeconds,
           defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
           onUpdate: () {
@@ -368,6 +370,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context) => ActiveWorkoutScreen(
           schedule: null,
           history: history,
+          bodyLogs: bodyLogs,
           defaultRestSeconds: _defaultRestSeconds,
           defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
         ),
@@ -2260,6 +2263,7 @@ class _HomePageState extends State<HomePage> {
                                     ActiveWorkoutScreen.resume(
                                       resumedSession: session,
                                       history: history,
+                                      bodyLogs: bodyLogs,
                                       defaultRestSeconds: _defaultRestSeconds,
                                       defaultBackoffReductionPercent:
                                           _defaultBackoffReductionPercent,
@@ -2792,6 +2796,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context) => ActiveWorkoutScreen.editCompleted(
           session: session,
           history: history,
+          bodyLogs: bodyLogs,
           defaultRestSeconds: _defaultRestSeconds,
           defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
         ),
@@ -3748,6 +3753,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context) => ActiveWorkoutScreen(
           schedule: schedule,
           history: history,
+          bodyLogs: bodyLogs,
           defaultRestSeconds: _defaultRestSeconds,
           defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
         ),
@@ -3769,6 +3775,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context) => ActiveWorkoutScreen.resume(
           resumedSession: session,
           history: history,
+          bodyLogs: bodyLogs,
           defaultRestSeconds: _defaultRestSeconds,
           defaultBackoffReductionPercent: _defaultBackoffReductionPercent,
         ),
@@ -3785,6 +3792,10 @@ class _HomePageState extends State<HomePage> {
     final isDark = theme.brightness == Brightness.dark;
     final planned = _nextPlannedWorkout();
     final latestBody = _latestBodyLog();
+    final computedReadiness = buildGlobalReadinessReport(
+      history: history,
+      bodyLogs: bodyLogs,
+    );
     final workoutsThisWeek = _workoutsThisWeek();
     final progress = _buildExerciseProgressSummaries();
     final strongestProgress = progress.isEmpty ? null : progress.first;
@@ -3962,8 +3973,9 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: _DashboardMetric(
                     icon: Icons.bolt,
-                    value: latestBody?.readiness?.toString() ?? '--',
-                    label: 'readiness',
+                    value: '${computedReadiness.score}',
+                    label:
+                        '${computedReadiness.status.label.toLowerCase()} /100',
                   ),
                 ),
               ],
