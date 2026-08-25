@@ -7,6 +7,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../active_workout_insights.dart';
 import '../active_workout_rest_controller.dart';
+import '../active_workout_session_builder.dart';
 import '../active_workout_session_controller.dart';
 import '../app_data_store.dart';
 import '../dialog_form.dart';
@@ -203,6 +204,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     currentSessionId: session.id,
   );
 
+  ActiveWorkoutSessionBuilder get _sessionBuilder =>
+      ActiveWorkoutSessionBuilder(history: widget.history, bodyLogs: _bodyLogs);
+
   double _setVolume(ExerciseSet set) => _workoutInsights.setVolume(set);
 
   List<String> _personalRecordLabelsFor(
@@ -382,67 +386,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
 
     return '${exercise.sets.first.reps} reps';
-  }
-
-  String _normalizeExerciseName(String name) => name.trim().toLowerCase();
-
-  WorkoutSession? _latestSessionForSchedule(Schedule schedule) {
-    WorkoutSession? latestSession;
-
-    for (final session in widget.history) {
-      if (session.scheduleTitle != schedule.title) {
-        continue;
-      }
-
-      if (latestSession == null ||
-          session.endTime.isAfter(latestSession.endTime)) {
-        latestSession = session;
-      }
-    }
-
-    return latestSession;
-  }
-
-  WorkoutExercise? _previousExerciseFor(
-    Exercise exercise,
-    WorkoutSession? previousSession,
-  ) {
-    if (previousSession == null) {
-      return null;
-    }
-
-    final exerciseName = _normalizeExerciseName(exercise.name);
-    for (final previousExercise in previousSession.exercises) {
-      if (_normalizeExerciseName(previousExercise.name) == exerciseName) {
-        return previousExercise;
-      }
-    }
-
-    return null;
-  }
-
-  List<double> _previousWeightsFor(WorkoutExercise? previousExercise) {
-    if (previousExercise == null) {
-      return const [];
-    }
-
-    final completedSets = previousExercise.sets.where((set) => set.isCompleted);
-    final sourceSets = completedSets.isEmpty
-        ? previousExercise.sets
-        : completedSets;
-    return sourceSets.map((set) => set.weight).toList();
-  }
-
-  List<int> _previousRepsFor(WorkoutExercise? previousExercise) {
-    if (previousExercise == null) {
-      return const [];
-    }
-
-    final completedSets = previousExercise.sets.where((set) => set.isCompleted);
-    final sourceSets = completedSets.isEmpty
-        ? previousExercise.sets
-        : completedSets;
-    return sourceSets.map((set) => set.reps).toList();
   }
 
   String _progressionConfidenceLabel(ProgressionConfidence confidence) {
@@ -768,215 +711,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
   }
 
-  double _deloadWeight(double weight) {
-    return (weight * 0.9 * 2).roundToDouble() / 2;
-  }
-
-  double _weightForSet(
-    Exercise exercise,
-    List<double> previousWeights,
-    List<int> previousReps,
-    ProgressionDecision? progressionDecision,
-    int index,
-  ) {
-    if (previousWeights.isEmpty) {
-      return exercise.weight;
-    }
-
-    final previousWeight = index < previousWeights.length
-        ? previousWeights[index]
-        : previousWeights.last;
-    final previousRep = index < previousReps.length
-        ? previousReps[index]
-        : (previousReps.isEmpty ? exercise.reps : previousReps.last);
-
-    if (exercise.progressionScheme == ProgressionScheme.manual ||
-        exercise.progressionScheme == ProgressionScheme.repsOnly) {
-      return previousWeight;
-    }
-
-    if (progressionDecision != null) {
-      return switch (progressionDecision.action) {
-        ProgressionAction.increaseLoad =>
-          previousWeight + exercise.progressionKgStep,
-        ProgressionAction.deload => _deloadWeight(previousWeight),
-        ProgressionAction.increaseReps ||
-        ProgressionAction.maintain ||
-        ProgressionAction.manual => previousWeight,
-      };
-    }
-
-    final minReps = exercise.targetMinReps;
-    final maxReps = exercise.targetMaxReps;
-    if (minReps == null || maxReps == null) {
-      return previousWeight;
-    }
-    if (exercise.progressionScheme == ProgressionScheme.linear) {
-      return previousWeight + exercise.progressionKgStep;
-    }
-    if (exercise.progressionScheme == ProgressionScheme.loadOnly) {
-      return previousRep >= maxReps
-          ? previousWeight + exercise.progressionKgStep
-          : previousWeight;
-    }
-    if (previousRep >= maxReps) {
-      return previousWeight + exercise.progressionKgStep;
-    }
-    if (previousRep < minReps) {
-      return _deloadWeight(previousWeight);
-    }
-    return previousWeight;
-  }
-
-  int _repsForSet(
-    Exercise exercise,
-    List<int> previousReps,
-    ProgressionDecision? progressionDecision,
-    int index,
-  ) {
-    final minReps = exercise.targetMinReps;
-    final maxReps = exercise.targetMaxReps;
-    if (previousReps.isEmpty || minReps == null || maxReps == null) {
-      return exercise.reps;
-    }
-
-    final previousRep = index < previousReps.length
-        ? previousReps[index]
-        : previousReps.last;
-
-    if (exercise.progressionScheme == ProgressionScheme.manual) {
-      return previousRep;
-    }
-
-    if (progressionDecision != null) {
-      return switch (progressionDecision.action) {
-        ProgressionAction.increaseReps => math.min(
-          maxReps,
-          previousRep + exercise.progressionRepStep,
-        ),
-        ProgressionAction.increaseLoad =>
-          exercise.progressionScheme == ProgressionScheme.doubleProgression
-              ? minReps
-              : exercise.reps,
-        ProgressionAction.deload => minReps,
-        ProgressionAction.maintain => previousRep.clamp(minReps, maxReps),
-        ProgressionAction.manual => previousRep,
-      };
-    }
-
-    if (exercise.progressionScheme == ProgressionScheme.loadOnly ||
-        exercise.progressionScheme == ProgressionScheme.linear) {
-      return exercise.reps;
-    }
-    if (exercise.progressionScheme == ProgressionScheme.repsOnly) {
-      return math.min(maxReps, previousRep + exercise.progressionRepStep);
-    }
-    if (previousRep >= maxReps) {
-      return minReps;
-    }
-    return math.min(maxReps, previousRep + exercise.progressionRepStep);
-  }
-
-  List<ExerciseSet> _setsForExercise(
-    Exercise exercise,
-    List<double> previousWeights,
-    List<int> previousReps,
-    ProgressionDecision? progressionDecision,
-  ) {
-    final isBackoff =
-        exercise.technique == IntensityTechnique.topsetBackoff &&
-        exercise.backoffReps != null;
-
-    if (isBackoff) {
-      final topWeight = _weightForSet(
-        exercise,
-        previousWeights,
-        previousReps,
-        progressionDecision,
-        0,
-      );
-      return [
-        ExerciseSet(
-          weight: topWeight,
-          reps: _repsForSet(exercise, previousReps, progressionDecision, 0),
-        ),
-        ExerciseSet(
-          weight: top_set_backoff.recommendedBackoffWeight(
-            topWeight,
-            reductionPercent: exercise.backoffReductionPercent,
-          ),
-          reps: exercise.backoffReps!,
-        ),
-      ];
-    }
-
-    return List.generate(
-      exercise.set,
-      (index) => ExerciseSet(
-        weight: _weightForSet(
-          exercise,
-          previousWeights,
-          previousReps,
-          progressionDecision,
-          index,
-        ),
-        reps: _repsForSet(exercise, previousReps, progressionDecision, index),
-      ),
-    );
-  }
+  double _deloadWeight(double weight) => _sessionBuilder.deloadWeight(weight);
 
   WorkoutExercise _workoutExerciseFromExercise(
     Exercise exercise,
     WorkoutSession? previousSession, {
     bool keepSourceExerciseId = true,
   }) {
-    final previousExercise = _previousExerciseFor(exercise, previousSession);
-    final previousWeights = _previousWeightsFor(previousExercise);
-    final previousReps = _previousRepsFor(previousExercise);
-    ProgressionDecision? progressionDecision;
-    if (previousExercise != null) {
-      final baseDecision = buildProgressionDecision(
-        exercise: previousExercise,
-        history: widget.history,
-        excludeSessionId: previousSession?.id,
-      );
-      final readiness = buildExerciseReadinessReport(
-        history: widget.history,
-        bodyLogs: _bodyLogs,
-        exerciseName: previousExercise.name,
-        muscleGroup: previousExercise.muscleGroup,
-        now: DateTime.now(),
-      );
-      progressionDecision = applyReadinessToProgression(
-        decision: baseDecision,
-        readiness: readiness,
-      );
-    }
-
-    return WorkoutExercise(
-      sourceExerciseId: keepSourceExerciseId ? exercise.id : null,
-      name: exercise.name,
-      notes: exercise.notes,
-      muscleGroup: exercise.muscleGroup,
-      equipment: exercise.equipment,
-      movementPattern: exercise.movementPattern,
-      targetMinReps: exercise.targetMinReps,
-      targetMaxReps: exercise.targetMaxReps,
-      technique: exercise.technique,
-      backoffReductionPercent: exercise.backoffReductionPercent,
-      restSeconds: exercise.restSeconds,
-      supersetGroup: exercise.supersetGroup,
-      progressionKgStep: exercise.progressionKgStep,
-      progressionRepStep: exercise.progressionRepStep,
-      progressionScheme: exercise.progressionScheme,
-      sets: _setsForExercise(
-        exercise,
-        previousWeights,
-        previousReps,
-        progressionDecision,
-      ),
-      previousWeights: previousWeights,
-      previousReps: previousReps,
+    return _sessionBuilder.workoutExerciseFromExercise(
+      exercise,
+      previousSession,
+      keepSourceExerciseId: keepSourceExerciseId,
     );
   }
 
@@ -1004,44 +749,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   Exercise _exerciseFromWorkoutExercise(WorkoutExercise exercise) {
-    final workSets = exercise.sets.where((set) => !set.isWarmup).toList();
-    final sourceSet = workSets.isNotEmpty
-        ? workSets.first
-        : (exercise.sets.isNotEmpty ? exercise.sets.first : null);
-    final isBackoff = exercise.technique == IntensityTechnique.topsetBackoff;
-    final reps = sourceSet?.reps ?? exercise.targetMinReps ?? 10;
-    final backoffReps = isBackoff
-        ? (workSets.length > 1 ? workSets[1].reps : reps)
-        : null;
-
-    return Exercise(
-      name: exercise.name,
-      set: isBackoff ? 2 : math.max(1, workSets.length),
-      reps: reps,
-      weight: sourceSet?.weight ?? 0,
-      muscleGroup: exercise.muscleGroup,
-      equipment: exercise.equipment,
-      movementPattern: exercise.movementPattern,
-      targetMinReps: exercise.targetMinReps,
-      targetMaxReps: exercise.targetMaxReps,
-      notes: exercise.notes,
-      technique: exercise.technique,
-      backoffReductionPercent: exercise.backoffReductionPercent,
-      backoffReps: backoffReps,
-      restSeconds: exercise.restSeconds,
-      supersetGroup: exercise.supersetGroup,
-      progressionKgStep: exercise.progressionKgStep,
-      progressionRepStep: exercise.progressionRepStep,
-      progressionScheme: exercise.progressionScheme,
-    );
-  }
-
-  void _applyDeloadToSession() {
-    for (final exercise in session.exercises) {
-      for (final set in exercise.sets) {
-        set.weight = _deloadWeight(set.weight);
-      }
-    }
+    return _sessionBuilder.exerciseFromWorkoutExercise(exercise);
   }
 
   void _notifyRestControllerChanged() {
@@ -1148,31 +856,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         _restoreRestTimersFromSession();
       }
     } else if (widget.schedule != null) {
-      final previousSession = _latestSessionForSchedule(widget.schedule!);
-      session = WorkoutSession(
-        scheduleId: widget.schedule!.id,
-        scheduleTitle: widget.schedule!.title,
-        startTime: DateTime.now(),
-        endTime: DateTime.now(),
-        exercises: widget.schedule!.exercises
-            .map(
-              (exercise) =>
-                  _workoutExerciseFromExercise(exercise, previousSession),
-            )
-            .toList(),
-      );
-      if (widget.schedule!.isDeloadWeek()) {
-        _applyDeloadToSession();
-      }
+      session = _sessionBuilder.buildFromSchedule(widget.schedule!);
       _restoreRestTimersFromSession();
       _restoreIfNeeded();
     } else {
-      session = WorkoutSession(
-        scheduleTitle: 'Sessione',
-        startTime: DateTime.now(),
-        endTime: DateTime.now(),
-        exercises: [],
-      );
+      session = _sessionBuilder.buildEmptySession();
     }
     _startDurationTimer();
   }

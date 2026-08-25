@@ -29,8 +29,10 @@ class ActiveWorkoutSessionBuilder {
     WorkoutSession? latestSession;
     for (final session in history) {
       // Keep title fallback for legacy sessions that pre-date scheduleId.
-      final belongsToSchedule = session.scheduleId == schedule.id ||
-          (session.scheduleId == null && session.scheduleTitle == schedule.title);
+      final belongsToSchedule =
+          session.scheduleId == schedule.id ||
+          (session.scheduleId == null &&
+              session.scheduleTitle == schedule.title);
       if (!belongsToSchedule) continue;
 
       if (latestSession == null ||
@@ -151,9 +153,9 @@ class ActiveWorkoutSessionBuilder {
     if (progressionDecision != null) {
       return switch (progressionDecision.action) {
         ProgressionAction.increaseReps => math.min(
-            maxReps,
-            previousRep + exercise.progressionRepStep,
-          ),
+          maxReps,
+          previousRep + exercise.progressionRepStep,
+        ),
         ProgressionAction.increaseLoad =>
           exercise.progressionScheme == ProgressionScheme.doubleProgression
               ? minReps
@@ -183,7 +185,7 @@ class ActiveWorkoutSessionBuilder {
   ) {
     final isBackoff =
         exercise.technique == IntensityTechnique.topsetBackoff &&
-            exercise.backoffReps != null;
+        exercise.backoffReps != null;
 
     if (isBackoff) {
       final topWeight = weightForSet(
@@ -218,12 +220,7 @@ class ActiveWorkoutSessionBuilder {
           progressionDecision,
           index,
         ),
-        reps: repsForSet(
-          exercise,
-          previousReps,
-          progressionDecision,
-          index,
-        ),
+        reps: repsForSet(exercise, previousReps, progressionDecision, index),
       ),
     );
   }
@@ -277,10 +274,8 @@ class ActiveWorkoutSessionBuilder {
       endTime: currentTime,
       exercises: schedule.exercises
           .map(
-            (exercise) => workoutExerciseFromExercise(
-              exercise,
-              previousSession,
-            ),
+            (exercise) =>
+                workoutExerciseFromExercise(exercise, previousSession),
           )
           .toList(),
     );

@@ -45,7 +45,8 @@ WorkoutExercise _performedExercise({
     targetMinReps: 8,
     targetMaxReps: 10,
     progressionScheme: progressionScheme,
-    sets: sets ??
+    sets:
+        sets ??
         [
           ExerciseSet(weight: 80, reps: 8, isCompleted: true),
           ExerciseSet(weight: 80, reps: 8, isCompleted: true),
@@ -69,41 +70,44 @@ WorkoutSession _session({
 }
 
 void main() {
-  test('latest session prefers stable schedule id and supports legacy title', () {
-    final now = DateTime(2026, 8, 26, 12);
-    final schedule = Schedule(
-      id: 'schedule-push',
-      title: 'Push renamed',
-      week: 1,
-      createdAt: now,
-      exercises: [],
-    );
-    final legacy = _session(
-      title: 'Push renamed',
-      endTime: now.subtract(const Duration(days: 3)),
-      exercises: [],
-    );
-    final exactId = _session(
-      scheduleId: 'schedule-push',
-      title: 'Old Push title',
-      endTime: now.subtract(const Duration(days: 1)),
-      exercises: [],
-    );
-    final other = _session(
-      scheduleId: 'other',
-      title: 'Push renamed',
-      endTime: now,
-      exercises: [],
-    );
+  test(
+    'latest session prefers stable schedule id and supports legacy title',
+    () {
+      final now = DateTime(2026, 8, 26, 12);
+      final schedule = Schedule(
+        id: 'schedule-push',
+        title: 'Push renamed',
+        week: 1,
+        createdAt: now,
+        exercises: [],
+      );
+      final legacy = _session(
+        title: 'Push renamed',
+        endTime: now.subtract(const Duration(days: 3)),
+        exercises: [],
+      );
+      final exactId = _session(
+        scheduleId: 'schedule-push',
+        title: 'Old Push title',
+        endTime: now.subtract(const Duration(days: 1)),
+        exercises: [],
+      );
+      final other = _session(
+        scheduleId: 'other',
+        title: 'Push renamed',
+        endTime: now,
+        exercises: [],
+      );
 
-    final builder = ActiveWorkoutSessionBuilder(
-      history: [legacy, exactId, other],
-      bodyLogs: const [],
-      now: () => now,
-    );
+      final builder = ActiveWorkoutSessionBuilder(
+        history: [legacy, exactId, other],
+        bodyLogs: const [],
+        now: () => now,
+      );
 
-    expect(builder.latestSessionForSchedule(schedule), same(exactId));
-  });
+      expect(builder.latestSessionForSchedule(schedule), same(exactId));
+    },
+  );
 
   test('previous values use stable exercise id and completed sets only', () {
     final template = _exercise(id: 'bench-template', name: 'Panca nuova');
@@ -132,48 +136,51 @@ void main() {
     expect(builder.previousRepsFor(resolved), [8, 9]);
   });
 
-  test('manual progression carries previous load and reps into next session', () {
-    final now = DateTime(2026, 8, 26, 12);
-    final template = _exercise(
-      id: 'bench',
-      weight: 100,
-      reps: 10,
-      sets: 2,
-      progressionScheme: ProgressionScheme.manual,
-    );
-    final previous = _performedExercise(
-      sourceExerciseId: 'bench',
-      progressionScheme: ProgressionScheme.manual,
-      sets: [
-        ExerciseSet(weight: 87.5, reps: 7, isCompleted: true),
-        ExerciseSet(weight: 85, reps: 8, isCompleted: true),
-      ],
-    );
-    final historySession = _session(
-      scheduleId: 'push',
-      endTime: now.subtract(const Duration(days: 7)),
-      exercises: [previous],
-    );
-    final schedule = Schedule(
-      id: 'push',
-      title: 'Push',
-      week: 1,
-      createdAt: now,
-      exercises: [template],
-    );
-    final builder = ActiveWorkoutSessionBuilder(
-      history: [historySession],
-      bodyLogs: const [],
-      now: () => now,
-    );
+  test(
+    'manual progression carries previous load and reps into next session',
+    () {
+      final now = DateTime(2026, 8, 26, 12);
+      final template = _exercise(
+        id: 'bench',
+        weight: 100,
+        reps: 10,
+        sets: 2,
+        progressionScheme: ProgressionScheme.manual,
+      );
+      final previous = _performedExercise(
+        sourceExerciseId: 'bench',
+        progressionScheme: ProgressionScheme.manual,
+        sets: [
+          ExerciseSet(weight: 87.5, reps: 7, isCompleted: true),
+          ExerciseSet(weight: 85, reps: 8, isCompleted: true),
+        ],
+      );
+      final historySession = _session(
+        scheduleId: 'push',
+        endTime: now.subtract(const Duration(days: 7)),
+        exercises: [previous],
+      );
+      final schedule = Schedule(
+        id: 'push',
+        title: 'Push',
+        week: 1,
+        createdAt: now,
+        exercises: [template],
+      );
+      final builder = ActiveWorkoutSessionBuilder(
+        history: [historySession],
+        bodyLogs: const [],
+        now: () => now,
+      );
 
-    final built = builder.buildFromSchedule(schedule).exercises.single;
+      final built = builder.buildFromSchedule(schedule).exercises.single;
 
-    expect(built.previousWeights, [87.5, 85]);
-    expect(built.previousReps, [7, 8]);
-    expect(built.sets.map((set) => set.weight), [87.5, 85]);
-    expect(built.sets.map((set) => set.reps), [7, 8]);
-  });
+      expect(built.previousWeights, [87.5, 85]);
+      expect(built.previousReps, [7, 8]);
+      expect(built.sets.map((set) => set.weight), [87.5, 85]);
+      expect(built.sets.map((set) => set.reps), [7, 8]);
+    },
+  );
 
   test('top set and backoff are constructed from one progression source', () {
     final template = _exercise(
@@ -206,7 +213,9 @@ void main() {
       title: 'Legs',
       week: 4,
       createdAt: now,
-      exercises: [_exercise(name: 'Squat', weight: 100, reps: 5, minReps: 5, maxReps: 5)],
+      exercises: [
+        _exercise(name: 'Squat', weight: 100, reps: 5, minReps: 5, maxReps: 5),
+      ],
       deloadEveryWeeks: 4,
     );
     final builder = ActiveWorkoutSessionBuilder(
