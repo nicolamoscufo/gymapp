@@ -15,6 +15,7 @@ import '../models/workout.dart';
 import '../number_input.dart';
 import '../top_set_backoff.dart' as top_set_backoff;
 import '../workout_plate_calculator.dart';
+import '../workout_progression_analytics.dart';
 import 'exercise_picker.dart';
 import 'session_summary.dart';
 
@@ -295,6 +296,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final bestSetVolume = _bestHistoricalSetVolumeFor(exercise);
     if (bestSetVolume != null && _setVolume(set) > bestSetVolume) {
       labels.add('PR set');
+    }
+
+    final setEstimatedOneRepMax = estimateOneRepMax(set.weight, set.reps);
+    final historicalEstimatedOneRepMax = historicalBestEstimatedOneRepMax(
+      history: widget.history,
+      exerciseName: exercise.name,
+      excludeSessionId: session.id,
+    );
+    if (setEstimatedOneRepMax != null &&
+        historicalEstimatedOneRepMax != null &&
+        setEstimatedOneRepMax > historicalEstimatedOneRepMax + 0.05) {
+      labels.add('PR e1RM');
     }
 
     final bestExerciseVolume = _bestHistoricalExerciseVolumeFor(exercise);
@@ -2168,31 +2181,156 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _saveCurrentSession();
   }
 
+  Future<void> _showExerciseHistory(WorkoutExercise exercise) async {
+    final snapshots = buildExercisePerformanceHistory(
+      history: widget.history,
+      exerciseName: exercise.name,
+      excludeSessionId: session.id,
+    );
+    double? bestEstimatedOneRepMax;
+    for (final snapshot in snapshots) {
+      final value = snapshot.estimatedOneRepMax;
+      if (value != null &&
+          (bestEstimatedOneRepMax == null || value > bestEstimatedOneRepMax)) {
+        bestEstimatedOneRepMax = value;
+      }
+    }
+    final trend = latestEstimatedOneRepMaxTrendPercent(snapshots);
+    final latestFirst = snapshots.reversed.toList();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) {
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+        return SafeArea(
+          child: FractionallySizedBox(
+            heightFactor: 0.72,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Storico ${exercise.name}',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Set di lavoro completati. e1RM stimato con Epley fino a 12 reps.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (snapshots.isEmpty)
+                    const Expanded(
+                      child: Center(
+                        child: Text('Nessuna sessione precedente disponibile.'),
+                      ),
+                    )
+                  else ...[
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (bestEstimatedOneRepMax != null)
+                          Chip(
+                            avatar: const Icon(Icons.fitness_center, size: 18),
+                            label: Text(
+                              'Best e1RM ${_formatWeight(bestEstimatedOneRepMax)} kg',
+                            ),
+                          ),
+                        if (trend != null)
+                          Chip(
+                            avatar: Icon(
+                              trend >= 0
+                                  ? Icons.trending_up
+                                  : Icons.trending_down,
+                              size: 18,
+                            ),
+                            label: Text(
+                              'Trend ${trend >= 0 ? '+' : ''}${trend.toStringAsFixed(1)}%',
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: latestFirst.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final snapshot = latestFirst[index];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: CircleAvatar(
+                              child: Text(
+                                '${snapshot.date.day}/${snapshot.date.month}',
+                                style: theme.textTheme.labelSmall,
+                              ),
+                            ),
+                            title: Text(
+                              '${_formatWeight(snapshot.topSetWeight)} kg × ${snapshot.topSetReps}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Volume ${_formatVolume(snapshot.totalVolume)} kg · best set ${_formatVolume(snapshot.bestSetVolume)} kg',
+                            ),
+                            trailing: snapshot.estimatedOneRepMax == null
+                                ? null
+                                : Text(
+                                    'e1RM\n${_formatWeight(snapshot.estimatedOneRepMax!)} kg',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      color: colorScheme.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   List<ExerciseSet> _warmupSetsFor(WorkoutExercise exercise) {
-    final workWeight = exercise.sets.isEmpty ? 0.0 : exercise.sets.first.weight;
-    final workReps = exercise.sets.isEmpty ? 8 : exercise.sets.first.reps;
-    return [
-      ExerciseSet(
-        weight: (workWeight * 0.40 * 2).roundToDouble() / 2,
-        reps: math.max(5, workReps + 2),
-        isWarmup: true,
-      ),
-      ExerciseSet(
-        weight: (workWeight * 0.60 * 2).roundToDouble() / 2,
-        reps: math.max(3, workReps),
-        isWarmup: true,
-      ),
-      ExerciseSet(
-        weight: (workWeight * 0.75 * 2).roundToDouble() / 2,
-        reps: math.max(2, workReps - 2),
-        isWarmup: true,
-      ),
-      ExerciseSet(
-        weight: (workWeight * 0.85 * 2).roundToDouble() / 2,
-        reps: 2,
-        isWarmup: true,
-      ),
-    ];
+    ExerciseSet? workSet;
+    for (final set in exercise.sets) {
+      if (!set.isWarmup) {
+        workSet = set;
+        break;
+      }
+    }
+    if (workSet == null) {
+      return const <ExerciseSet>[];
+    }
+
+    return buildAdaptiveWarmupPlan(
+          workWeight: workSet.weight,
+          workReps: workSet.reps,
+        )
+        .map(
+          (suggestion) => ExerciseSet(
+            weight: suggestion.weight,
+            reps: suggestion.reps,
+            isWarmup: true,
+          ),
+        )
+        .toList();
   }
 
   void _insertWarmupPlan(WorkoutExercise exercise) {
@@ -2206,6 +2344,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   void _showWarmupPlan(WorkoutExercise exercise) {
     final warmups = _warmupSetsFor(exercise);
+    if (warmups.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Imposta prima un carico di lavoro per calcolare il warm-up.',
+          ),
+        ),
+      );
+      return;
+    }
     final rows = warmups
         .map((set) => '${_formatWeight(set.weight)} kg x ${set.reps}')
         .toList();
@@ -2213,7 +2361,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Warm-up ${exercise.name}'),
+        title: Text('Warm-up smart ${exercise.name}'),
         content: AppDialogContent(
           maxWidth: 420,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2684,6 +2832,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
             final activeRestSeconds = _restSecondsByExerciseId[exercise.id];
             final restSeconds = activeRestSeconds ?? _restSecondsFor(exercise);
             final accent = _accentForIndex(colorScheme, exIndex);
+            final currentEstimatedOneRepMax = bestEstimatedOneRepMaxForSets(
+              exercise.sets.where((set) => set.isCompleted && !set.isWarmup),
+            );
+            final historicalEstimatedOneRepMax =
+                historicalBestEstimatedOneRepMax(
+                  history: widget.history,
+                  exerciseName: exercise.name,
+                  excludeSessionId: session.id,
+                );
 
             return Card(
               key: _exerciseCardKey(exercise.id),
@@ -2868,6 +3025,39 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                           ),
                         ),
                       ],
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          ActionChip(
+                            key: ValueKey('exercise-history-${exercise.id}'),
+                            avatar: const Icon(Icons.history, size: 18),
+                            label: const Text('Storico'),
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _showExerciseHistory(exercise),
+                          ),
+                          if (historicalEstimatedOneRepMax != null)
+                            Chip(
+                              avatar: const Icon(
+                                Icons.workspace_premium,
+                                size: 18,
+                              ),
+                              label: Text(
+                                'Best e1RM ${_formatWeight(historicalEstimatedOneRepMax)} kg',
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          if (currentEstimatedOneRepMax != null)
+                            Chip(
+                              avatar: const Icon(Icons.bolt, size: 18),
+                              label: Text(
+                                'Oggi e1RM ${_formatWeight(currentEstimatedOneRepMax)} kg',
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                        ],
+                      ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
