@@ -25,7 +25,9 @@ jobs:
           cache: true
 
       - name: Apply Routine System v2
-        run: python tool/routine_system_v2.py
+        run: |
+          python tool/routine_system_v2_anchor_fix.py
+          python tool/routine_system_v2.py
 
       - name: Install dependencies
         run: flutter pub get
