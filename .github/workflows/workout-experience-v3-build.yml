@@ -37,14 +37,20 @@ jobs:
 
           context_path = Path('lib/ai_coach/training_context_builder.dart')
           context = context_path.read_text()
-          context = context.replace(
-              "if (set.isCompleted && !set.isWarmup) total += set.weight * set.reps;",
-              "if (set.isCompleted && !set.isWarmup) {\n            total += set.weight * set.reps;\n          }",
-          )
-          context = context.replace(
-              "if (set.isCompleted && !set.isWarmup) volume += set.weight * set.reps;",
-              "if (set.isCompleted && !set.isWarmup) {\n            volume += set.weight * set.reps;\n          }",
-          )
+          replacements = {
+              "if (set.isCompleted && !set.isWarmup) total += set.weight * set.reps;":
+                  "if (set.isCompleted && !set.isWarmup) {\n            total += set.weight * set.reps;\n          }",
+              "if (set.isCompleted && !set.isWarmup) volume += set.weight * set.reps;":
+                  "if (set.isCompleted && !set.isWarmup) {\n            volume += set.weight * set.reps;\n          }",
+              "if (exerciseNote.isNotEmpty) notes.add('${exercise.name}: $exerciseNote');":
+                  "if (exerciseNote.isNotEmpty) {\n          notes.add('${exercise.name}: $exerciseNote');\n        }",
+              "if (setNote.isNotEmpty) notes.add('${exercise.name}: $setNote');":
+                  "if (setNote.isNotEmpty) {\n            notes.add('${exercise.name}: $setNote');\n          }",
+              "if (workingSets.isEmpty) continue;":
+                  "if (workingSets.isEmpty) {\n          continue;\n        }",
+          }
+          for old, new in replacements.items():
+              context = context.replace(old, new)
           context_path.write_text(context)
           PY
 
