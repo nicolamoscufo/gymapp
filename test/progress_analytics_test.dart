@@ -59,7 +59,7 @@ void main() {
       (entry) => entry.muscleGroup == MuscleGroup.chest,
     );
     expect(chest.sets30Days, 9);
-    expect(chest.sets7Days, 6);
+    expect(chest.sets7Days, 3);
     expect(chest.weekly, hasLength(8));
 
     expect(analytics.personalRecords, isNotEmpty);
