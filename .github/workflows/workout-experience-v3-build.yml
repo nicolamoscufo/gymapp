@@ -29,10 +29,23 @@ jobs:
           python tool/workout_experience_v3_patch.py
           python <<'PY'
           from pathlib import Path
-          path = Path('lib/screens/active_workout.dart')
-          text = path.read_text()
-          text = text.replace("'e1RM\n${_formatWeight", "'e1RM\\n${_formatWeight")
-          path.write_text(text)
+
+          active_path = Path('lib/screens/active_workout.dart')
+          active = active_path.read_text()
+          active = active.replace("'e1RM\n${_formatWeight", "'e1RM\\n${_formatWeight")
+          active_path.write_text(active)
+
+          context_path = Path('lib/ai_coach/training_context_builder.dart')
+          context = context_path.read_text()
+          context = context.replace(
+              "if (set.isCompleted && !set.isWarmup) total += set.weight * set.reps;",
+              "if (set.isCompleted && !set.isWarmup) {\n            total += set.weight * set.reps;\n          }",
+          )
+          context = context.replace(
+              "if (set.isCompleted && !set.isWarmup) volume += set.weight * set.reps;",
+              "if (set.isCompleted && !set.isWarmup) {\n            volume += set.weight * set.reps;\n          }",
+          )
+          context_path.write_text(context)
           PY
 
       - name: Format
