@@ -462,14 +462,13 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
       return;
     }
 
-    if (newIndex < 0 || newIndex > widget.schedule.exercises.length) {
+    if (newIndex < 0 || newIndex >= widget.schedule.exercises.length) {
       return;
     }
 
     setState(() {
       final exercise = widget.schedule.exercises.removeAt(oldIndex);
-      final insertIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;
-      widget.schedule.exercises.insert(insertIndex, exercise);
+      widget.schedule.exercises.insert(newIndex, exercise);
     });
     widget.onUpdate();
   }
@@ -1018,7 +1017,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
           : ReorderableListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
               buildDefaultDragHandles: false,
-              onReorder: _reorderExercise,
+              onReorderItem: _reorderExercise,
               proxyDecorator: (child, index, animation) {
                 return AnimatedBuilder(
                   animation: animation,
