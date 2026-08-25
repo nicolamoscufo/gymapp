@@ -79,8 +79,10 @@ void main() {
     expect(snapshots.first.topSetWeight, 100);
     expect(snapshots.first.topSetReps, 5);
     expect(snapshots.last.bestWeight, 102.5);
+    expect(snapshots.last.topSetWeight, 95);
+    expect(snapshots.last.topSetReps, 8);
     expect(snapshots.last.totalVolume, 1272.5);
-    expect(snapshots.last.estimatedOneRepMax, closeTo(119.58, 0.01));
+    expect(snapshots.last.estimatedOneRepMax, closeTo(120.33, 0.01));
   });
 
   test('historical best can exclude the current session', () {
