@@ -17,6 +17,7 @@ replacement = r'''  testWidgets('exercise menu can create and remove a superset'
           weight: 80,
           muscleGroup: MuscleGroup.chest,
           notes: '',
+          technique: IntensityTechnique.none,
         ),
         Exercise(
           name: 'Rematore',
@@ -25,6 +26,7 @@ replacement = r'''  testWidgets('exercise menu can create and remove a superset'
           weight: 60,
           muscleGroup: MuscleGroup.back,
           notes: '',
+          technique: IntensityTechnique.none,
         ),
       ],
     );
@@ -60,4 +62,9 @@ replacement = r'''  testWidgets('exercise menu can create and remove a superset'
   });
 
 '''
-path.write_text(text[:start] + replacement + text[end:])
+text = text[:start] + replacement + text[end:]
+text = text.replace(
+    "          notes: '',\n        ),",
+    "          notes: '',\n          technique: IntensityTechnique.none,\n        ),",
+)
+path.write_text(text)
