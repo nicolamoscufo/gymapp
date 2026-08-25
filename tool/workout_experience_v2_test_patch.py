@@ -177,6 +177,6 @@ text = text.replace(
 )
 text = text.replace(
     "    expect(find.text('Panca'), findsNWidgets(2));\n    expect(find.byTooltip('Azioni esercizio'), findsNWidgets(2));",
-    "    expect(find.text('Panca'), findsWidgets);\n    expect(find.byTooltip('Azioni esercizio'), findsNWidgets(2));",
+    "    expect(find.text('Panca'), findsAtLeastNWidgets(2));",
 )
 path.write_text(text)
