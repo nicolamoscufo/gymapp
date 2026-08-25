@@ -103,10 +103,6 @@ replacement = '''  Exercise _exerciseFromWorkoutExercise(WorkoutExercise exercis
     return _sessionBuilder.exerciseFromWorkoutExercise(exercise);
   }
 
-  void _applyDeloadToSession() {
-    _sessionBuilder.applyDeloadToSession(session);
-  }
-
   void _notifyRestControllerChanged'''
 text = text[:match.start()] + replacement + text[match.end():]
 
@@ -158,6 +154,7 @@ for forbidden in (
     '_previousWeightsFor(',
     '_previousRepsFor(',
     '_normalizeExerciseName(',
+    '_applyDeloadToSession(',
 ):
     if forbidden in text:
         lines = [
