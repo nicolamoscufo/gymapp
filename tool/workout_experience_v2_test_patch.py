@@ -1,5 +1,24 @@
 from pathlib import Path
 
+active_path = Path('lib/screens/active_workout.dart')
+active = active_path.read_text()
+for block in [
+    """  void _addCatalogExercisesToSession(List<ExerciseCatalogEntry> entries) {
+    _addExercisesToSession(entries.map(_exerciseFromCatalogEntry).toList());
+  }
+
+""",
+    """  void _addCustomExercisesToSession(List<Exercise> exercises) {
+    _addExercisesToSession(exercises.map(_copyExerciseTemplate).toList());
+  }
+
+""",
+]:
+    if block not in active:
+        raise RuntimeError('expected legacy add helper was not found')
+    active = active.replace(block, '', 1)
+active_path.write_text(active)
+
 path = Path('test/workout_experience_v2_test.dart')
 text = path.read_text()
 start = text.index("  testWidgets('exercise menu can create and remove a superset'")
