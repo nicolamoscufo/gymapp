@@ -162,6 +162,49 @@ replacement = '''  void _notifyRestControllerChanged() {
   void didChangeAppLifecycleState'''
 text = text[:match.start()] + replacement + text[match.end():]
 
+replace_once(
+    '''    final notificationId = LocalNotificationService.restNotificationId(
+      exercise.id,
+    );
+    setState(() {
+      _restSecondsByExerciseId.remove(exercise.id);
+      session.exercises[index] = replacement;
+      _exerciseCardKeys.remove(exercise.id);
+    });
+    await LocalNotificationService.cancel(notificationId);
+''',
+    '''    _restController.stop(exercise);
+    setState(() {
+      session.exercises[index] = replacement;
+      _exerciseCardKeys.remove(exercise.id);
+    });
+''',
+    'replace exercise rest cleanup',
+)
+
+replace_once(
+    '''    final notificationId = LocalNotificationService.restNotificationId(
+      exercise.id,
+    );
+
+    setState(() {
+      _restSecondsByExerciseId.remove(exercise.id);
+      session.exercises.removeAt(index);
+      _exerciseCardKeys.remove(exercise.id);
+      _cleanupSupersetGroup(deletedGroup);
+    });
+    LocalNotificationService.cancel(notificationId);
+''',
+    '''    _restController.stop(exercise);
+    setState(() {
+      session.exercises.removeAt(index);
+      _exerciseCardKeys.remove(exercise.id);
+      _cleanupSupersetGroup(deletedGroup);
+    });
+''',
+    'remove exercise rest cleanup',
+)
+
 # Remaining references are read-only UI lookups.
 text = re.sub(
     r'_restSecondsByExerciseId\[([^\]]+)\]',
