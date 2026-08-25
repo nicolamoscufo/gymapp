@@ -25,7 +25,9 @@ jobs:
           cache: true
 
       - name: Apply redesign
-        run: python tool/navigation_home_patch.py
+        run: |
+          python tool/navigation_home_patch.py
+          python tool/navigation_patch_compat.py
 
       - name: Format
         run: dart format lib/screens/home.dart lib/screens/home_ai_shell.dart test/home_navigation_test.dart
