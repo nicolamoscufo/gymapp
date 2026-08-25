@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../active_workout_exercise_manager.dart';
 import '../active_workout_insights.dart';
 import '../active_workout_rest_controller.dart';
 import '../active_workout_session_builder.dart';
@@ -206,6 +207,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   ActiveWorkoutSessionBuilder get _sessionBuilder =>
       ActiveWorkoutSessionBuilder(history: widget.history, bodyLogs: _bodyLogs);
+
+  ActiveWorkoutExerciseManager get _exerciseManager =>
+      ActiveWorkoutExerciseManager(
+        session: session,
+        sessionBuilder: _sessionBuilder,
+      );
 
   double _setVolume(ExerciseSet set) => _workoutInsights.setVolume(set);
 
@@ -713,18 +720,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   double _deloadWeight(double weight) => _sessionBuilder.deloadWeight(weight);
 
-  WorkoutExercise _workoutExerciseFromExercise(
-    Exercise exercise,
-    WorkoutSession? previousSession, {
-    bool keepSourceExerciseId = true,
-  }) {
-    return _sessionBuilder.workoutExerciseFromExercise(
-      exercise,
-      previousSession,
-      keepSourceExerciseId: keepSourceExerciseId,
-    );
-  }
-
   Exercise _exerciseFromCatalogEntry(ExerciseCatalogEntry entry) {
     return Exercise(
       name: entry.name,
@@ -1216,40 +1211,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
   }
 
-  WorkoutSession? _previousSessionForAddedExercises() {
-    WorkoutSession? latestSession;
-    for (final historySession in widget.history) {
-      if (historySession.id == session.id ||
-          historySession.scheduleTitle != session.scheduleTitle ||
-          !historySession.endTime.isBefore(session.endTime)) {
-        continue;
-      }
-
-      if (latestSession == null ||
-          historySession.endTime.isAfter(latestSession.endTime)) {
-        latestSession = historySession;
-      }
-    }
-    return latestSession;
-  }
-
   void _addExercisesToSession(List<Exercise> exercises) {
-    if (exercises.isEmpty) {
-      return;
-    }
-
-    final previousSession = _previousSessionForAddedExercises();
-    setState(() {
-      session.exercises.addAll(
-        exercises.map(
-          (exercise) => _workoutExerciseFromExercise(
-            exercise,
-            previousSession,
-            keepSourceExerciseId: false,
-          ),
-        ),
-      );
-    });
+    if (exercises.isEmpty) return;
+    setState(() => _exerciseManager.addExercises(exercises));
     _saveCurrentSession();
   }
 
@@ -1282,52 +1246,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _addExercisesToSession(exercises);
   }
 
-  int _nextSupersetGroupId() {
-    var maxGroup = 0;
-    for (final exercise in session.exercises) {
-      final group = exercise.supersetGroup;
-      if (group != null && group > maxGroup) {
-        maxGroup = group;
-      }
-    }
-    return maxGroup + 1;
-  }
-
-  List<WorkoutExercise> _supersetMembers(WorkoutExercise exercise) {
-    final group = exercise.supersetGroup;
-    if (group == null) {
-      return const [];
-    }
-    return session.exercises
-        .where((candidate) => candidate.supersetGroup == group)
-        .toList();
-  }
-
-  void _cleanupSupersetGroup(int? group) {
-    if (group == null) return;
-    final members = session.exercises
-        .where((exercise) => exercise.supersetGroup == group)
-        .toList();
-    if (members.length < 2) {
-      for (final member in members) {
-        member.supersetGroup = null;
-      }
-    }
-  }
-
   bool _shouldStartRestAfterSet(WorkoutExercise exercise) {
-    final members = _supersetMembers(exercise);
-    return members.length < 2 || members.last.id == exercise.id;
+    return _exerciseManager.shouldStartRestAfterSet(exercise);
   }
 
   void _advanceSupersetNavigation(WorkoutExercise exercise) {
-    final members = _supersetMembers(exercise);
-    if (members.length < 2) return;
-    final currentIndex = members.indexWhere(
-      (member) => member.id == exercise.id,
-    );
-    if (currentIndex < 0) return;
-    final next = members[(currentIndex + 1) % members.length];
+    final next = _exerciseManager.nextSupersetMember(exercise);
+    if (next == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _scrollToExercise(next.id);
@@ -1341,23 +1266,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       return;
     }
 
-    final index = session.exercises.indexWhere(
-      (item) => item.id == exercise.id,
-    );
-    if (index < 0) return;
-
-    final previousSession = _previousSessionForAddedExercises();
-    final replacement = _workoutExerciseFromExercise(
-      replacements.first,
-      previousSession,
-      keepSourceExerciseId: false,
-    )..supersetGroup = exercise.supersetGroup;
-
     _restController.stop(exercise);
+    WorkoutExercise? replacement;
     setState(() {
-      session.exercises[index] = replacement;
-      _exerciseCardKeys.remove(exercise.id);
+      replacement = _exerciseManager.replaceExercise(
+        exercise,
+        replacements.first,
+      );
+      if (replacement != null) {
+        _exerciseCardKeys.remove(exercise.id);
+      }
     });
+    if (replacement == null) return;
     await _saveCurrentSession();
 
     if (replacements.length > 1 && mounted) {
@@ -1373,48 +1293,21 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   void _duplicateExercise(WorkoutExercise exercise) {
-    final index = session.exercises.indexWhere(
-      (item) => item.id == exercise.id,
-    );
-    if (index < 0) return;
-
-    final duplicate = _workoutExerciseFromExercise(
-      _exerciseFromWorkoutExercise(exercise),
-      null,
-      keepSourceExerciseId: false,
-    )..supersetGroup = null;
-    duplicate.sets = exercise.sets
-        .map(
-          (set) => ExerciseSet(
-            weight: set.weight,
-            reps: set.reps,
-            type: set.type,
-            rpe: set.rpe,
-            rir: set.rir,
-            notes: set.notes,
-          ),
-        )
-        .toList();
-    duplicate.previousWeights = List<double>.from(exercise.previousWeights);
-    duplicate.previousReps = List<int>.from(exercise.previousReps);
-
-    setState(() => session.exercises.insert(index + 1, duplicate));
+    WorkoutExercise? duplicate;
+    setState(() {
+      duplicate = _exerciseManager.duplicateExercise(exercise);
+    });
+    if (duplicate == null) return;
     HapticFeedback.selectionClick();
     _saveCurrentSession();
   }
 
   void _moveExercise(WorkoutExercise exercise, int delta) {
-    final index = session.exercises.indexWhere(
-      (item) => item.id == exercise.id,
-    );
-    if (index < 0) return;
-    final nextIndex = index + delta;
-    if (nextIndex < 0 || nextIndex >= session.exercises.length) return;
-
+    var moved = false;
     setState(() {
-      final moved = session.exercises.removeAt(index);
-      session.exercises.insert(nextIndex, moved);
+      moved = _exerciseManager.moveExercise(exercise, delta);
     });
+    if (!moved) return;
     HapticFeedback.selectionClick();
     _saveCurrentSession();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1423,42 +1316,28 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   void _removeExerciseFromSession(WorkoutExercise exercise) {
-    final index = session.exercises.indexWhere(
-      (item) => item.id == exercise.id,
-    );
-    if (index < 0) return;
-
-    final deletedGroup = exercise.supersetGroup;
-    final originalGroupMembers = deletedGroup == null
-        ? const <WorkoutExercise>[]
-        : session.exercises
-              .where((item) => item.supersetGroup == deletedGroup)
-              .toList();
     _restController.stop(exercise);
+    RemovedWorkoutExercise? removal;
     setState(() {
-      session.exercises.removeAt(index);
-      _exerciseCardKeys.remove(exercise.id);
-      _cleanupSupersetGroup(deletedGroup);
+      removal = _exerciseManager.removeExercise(exercise);
+      if (removal != null) {
+        _exerciseCardKeys.remove(exercise.id);
+      }
     });
+    if (removal == null) return;
     _saveCurrentSession();
 
     _showUndoSnackBar(
       message: '${exercise.name} eliminato dalla sessione.',
       onUndo: () {
-        if (!mounted ||
-            session.exercises.any((item) => item.id == exercise.id)) {
-          return;
-        }
+        if (!mounted) return;
+        var restored = false;
         setState(() {
-          final restoreIndex = index.clamp(0, session.exercises.length).toInt();
-          session.exercises.insert(restoreIndex, exercise);
-          if (deletedGroup != null) {
-            for (final member in originalGroupMembers) {
-              member.supersetGroup = deletedGroup;
-            }
-          }
+          restored = _exerciseManager.restoreRemoved(removal!);
         });
-        _saveCurrentSession();
+        if (restored) {
+          _saveCurrentSession();
+        }
       },
     );
   }
@@ -1521,13 +1400,14 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
     if (!mounted || selectedId == null) return;
 
-    final oldGroup = exercise.supersetGroup;
     if (selectedId == '__remove__') {
+      var changed = false;
       setState(() {
-        exercise.supersetGroup = null;
-        _cleanupSupersetGroup(oldGroup);
+        changed = _exerciseManager.removeFromSuperset(exercise);
       });
-      _saveCurrentSession();
+      if (changed) {
+        _saveCurrentSession();
+      }
       return;
     }
 
@@ -1537,14 +1417,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     if (targetIndex < 0) return;
     final target = session.exercises[targetIndex];
 
+    var changed = false;
     setState(() {
-      final group = target.supersetGroup ?? oldGroup ?? _nextSupersetGroupId();
-      exercise.supersetGroup = group;
-      target.supersetGroup = group;
-      if (oldGroup != null && oldGroup != group) {
-        _cleanupSupersetGroup(oldGroup);
-      }
+      changed = _exerciseManager.linkSuperset(exercise, target);
     });
+    if (!changed) return;
     HapticFeedback.selectionClick();
     _saveCurrentSession();
   }
