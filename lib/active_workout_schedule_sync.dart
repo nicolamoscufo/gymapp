@@ -68,7 +68,9 @@ class ActiveWorkoutScheduleSync {
 
   List<WorkoutExercise> newExercisesForSchedule(Schedule schedule) {
     return session.exercises
-        .where((exercise) => !workoutExerciseExistsInSchedule(exercise, schedule))
+        .where(
+          (exercise) => !workoutExerciseExistsInSchedule(exercise, schedule),
+        )
         .toList();
   }
 

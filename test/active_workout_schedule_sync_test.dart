@@ -28,11 +28,7 @@ Exercise _template(
   );
 }
 
-Schedule _schedule(
-  String title, {
-  String? id,
-  List<Exercise>? exercises,
-}) {
+Schedule _schedule(String title, {String? id, List<Exercise>? exercises}) {
   return Schedule(
     id: id,
     title: title,
@@ -126,7 +122,10 @@ void main() {
     final schedule = _schedule('Push', exercises: [wrong, exact]);
     final live = _workoutExercise('Bench', sourceExerciseId: 'bench-exact');
 
-    expect(_sync(_session(exercises: [live])).scheduleExerciseFor(live, schedule), same(exact));
+    expect(
+      _sync(_session(exercises: [live])).scheduleExerciseFor(live, schedule),
+      same(exact),
+    );
   });
 
   test('new live exercise is appended and bound to its routine id', () {
@@ -183,10 +182,9 @@ void main() {
     );
     final session = _session(id: 'current', exercises: [completed]);
 
-    _sync(session).applyProgressionToSchedule(
-      storedSchedule: stored,
-      history: [session],
-    );
+    _sync(
+      session,
+    ).applyProgressionToSchedule(storedSchedule: stored, history: [session]);
 
     expect(wrong.weight, 60);
     expect(exact.weight, 82.5);
@@ -207,10 +205,9 @@ void main() {
     partial.sets.first.isCompleted = true;
     final session = _session(id: 'partial', exercises: [partial]);
 
-    _sync(session).applyProgressionToSchedule(
-      storedSchedule: stored,
-      history: [session],
-    );
+    _sync(
+      session,
+    ).applyProgressionToSchedule(storedSchedule: stored, history: [session]);
 
     expect(template.weight, 80);
     expect(template.reps, 9);
