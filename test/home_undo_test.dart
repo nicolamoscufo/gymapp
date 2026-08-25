@@ -945,7 +945,7 @@ void main() {
     expect(find.text('+1 rep'), findsNothing);
   });
 
-  testWidgets('active workout rest timer is manual per exercise', (
+  testWidgets('active workout starts rest timer after completing set', (
     tester,
   ) async {
     final schedule = Schedule(
@@ -984,12 +984,9 @@ void main() {
     await tester.tap(find.byIcon(Icons.check).last);
     await tester.pump();
 
-    expect(find.textContaining('Rest '), findsNothing);
-
-    await tester.tap(find.byIcon(Icons.play_arrow));
-    await tester.pump();
-
-    expect(find.text('Rest 00:45'), findsOneWidget);
+    expect(find.textContaining('Rest 00:'), findsOneWidget);
+    expect(find.textContaining('Recupero 00:'), findsOneWidget);
+    expect(find.text('Salta'), findsOneWidget);
   });
 
   testWidgets('active workout set inputs keep focus while autosaving', (
