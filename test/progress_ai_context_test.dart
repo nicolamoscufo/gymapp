@@ -26,12 +26,12 @@ void main() {
       ),
     ];
 
-    final context = TrainingContextBuilder(now: DateTime(2026, 8, 25, 20)).recent(
-      history: history,
-      schedules: const [],
-    );
-    final deterministic = context['deterministic_analytics'] as Map<String, dynamic>;
-    final progress = deterministic['progress_analytics'] as Map<String, dynamic>;
+    final context = TrainingContextBuilder(now: DateTime(2026, 8, 25, 20))
+        .recent(history: history, schedules: const []);
+    final deterministic =
+        context['deterministic_analytics'] as Map<String, dynamic>;
+    final progress =
+        deterministic['progress_analytics'] as Map<String, dynamic>;
 
     expect(progress['exercises'], isNotEmpty);
     expect(progress['muscles'], isNotEmpty);

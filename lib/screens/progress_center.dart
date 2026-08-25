@@ -12,11 +12,7 @@ class ProgressCenterScreen extends StatelessWidget {
   final List<WorkoutSession> history;
   final DateTime? now;
 
-  const ProgressCenterScreen({
-    super.key,
-    required this.history,
-    this.now,
-  });
+  const ProgressCenterScreen({super.key, required this.history, this.now});
 
   @override
   Widget build(BuildContext context) {
@@ -81,16 +77,14 @@ class _ExerciseProgressTabState extends State<_ExerciseProgressTab> {
       children: [
         Text(
           'Progressione esercizi',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w900,
-          ),
+          style: Theme.of(context).textTheme.titleLarge
+              ?.copyWith(fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 4),
         Text(
           'e1RM, volume, carico, reps e storico sessione per sessione.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 12),
         TextField(
@@ -110,9 +104,8 @@ class _ExerciseProgressTabState extends State<_ExerciseProgressTab> {
         const SizedBox(height: 16),
         Text(
           'Tutti gli esercizi',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w900,
-          ),
+          style: Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 8),
         if (exercises.isEmpty)
@@ -137,7 +130,9 @@ class _ExerciseProgressTabState extends State<_ExerciseProgressTab> {
                 subtitle: Text(
                   '${entry.muscleGroup.label} · ${entry.sessionCount} sessioni · ${entry.completedSets} set',
                 ),
-                trailing: _TrendBadge(percent: entry.estimatedOneRepMaxTrendPercent),
+                trailing: _TrendBadge(
+                  percent: entry.estimatedOneRepMaxTrendPercent,
+                ),
                 onTap: () => setState(() => _selectedName = entry.name),
               ),
             ),
@@ -192,15 +187,13 @@ class _ExerciseDetailCard extends StatelessWidget {
                     children: [
                       Text(
                         summary.name,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
+                        style: Theme.of(context).textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w900),
                       ),
                       Text(
                         '${summary.muscleGroup.label} · ultima ${_shortDate(summary.lastTrainedAt)}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -232,9 +225,8 @@ class _ExerciseDetailCard extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'e1RM nel tempo',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -255,7 +247,10 @@ class _ExerciseDetailCard extends StatelessWidget {
                             sideTitles: SideTitles(showTitles: false),
                           ),
                           leftTitles: AxisTitles(
-                            sideTitles: SideTitles(showTitles: true, reservedSize: 42),
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 42,
+                            ),
                           ),
                           bottomTitles: AxisTitles(
                             sideTitles: SideTitles(showTitles: false),
@@ -268,7 +263,11 @@ class _ExerciseDetailCard extends StatelessWidget {
                             color: scheme.primary,
                             dotData: const FlDotData(show: true),
                             spots: [
-                              for (var index = 0; index < e1rmPoints.length; index++)
+                              for (
+                                var index = 0;
+                                index < e1rmPoints.length;
+                                index++
+                              )
                                 FlSpot(
                                   index.toDouble(),
                                   e1rmPoints[index].estimatedOneRepMax!,
@@ -282,9 +281,8 @@ class _ExerciseDetailCard extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'Volume per sessione',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -365,22 +363,17 @@ class _MuscleProgressTabState extends State<_MuscleProgressTab> {
       children: [
         Text(
           'Volume muscolare',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w900,
-          ),
+          style: Theme.of(context).textTheme.titleLarge
+              ?.copyWith(fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 4),
         Text(
           'Set e volume per distretto, con distribuzione 30 giorni e trend 8 settimane.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 14),
-        SizedBox(
-          height: 230,
-          child: _MuscleDistributionPie(muscles: muscles),
-        ),
+        SizedBox(height: 230, child: _MuscleDistributionPie(muscles: muscles)),
         const SizedBox(height: 16),
         Wrap(
           spacing: 8,
@@ -390,7 +383,8 @@ class _MuscleProgressTabState extends State<_MuscleProgressTab> {
               ChoiceChip(
                 label: Text(entry.muscleGroup.label),
                 selected: entry.muscleGroup == selected.muscleGroup,
-                onSelected: (_) => setState(() => _selected = entry.muscleGroup),
+                onSelected: (_) =>
+                    setState(() => _selected = entry.muscleGroup),
               ),
           ],
         ),
@@ -404,9 +398,8 @@ class _MuscleProgressTabState extends State<_MuscleProgressTab> {
               children: [
                 Text(
                   selected.muscleGroup.label,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 10),
                 Wrap(
@@ -414,7 +407,10 @@ class _MuscleProgressTabState extends State<_MuscleProgressTab> {
                   runSpacing: 8,
                   children: [
                     _ValueChip(label: 'Set 7g', value: '${selected.sets7Days}'),
-                    _ValueChip(label: 'Set 30g', value: '${selected.sets30Days}'),
+                    _ValueChip(
+                      label: 'Set 30g',
+                      value: '${selected.sets30Days}',
+                    ),
                     _ValueChip(
                       label: 'Volume 7g',
                       value: _compactKg(selected.volume7Days),
@@ -425,16 +421,16 @@ class _MuscleProgressTabState extends State<_MuscleProgressTab> {
                     ),
                     _ValueChip(
                       label: 'Quota set',
-                      value: '${(selected.setShare30Days * 100).toStringAsFixed(0)}%',
+                      value:
+                          '${(selected.setShare30Days * 100).toStringAsFixed(0)}%',
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 Text(
                   'Set / settimana',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: Theme.of(context).textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 SizedBox(
@@ -452,7 +448,10 @@ class _MuscleProgressTabState extends State<_MuscleProgressTab> {
                           sideTitles: SideTitles(showTitles: false),
                         ),
                         leftTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: true, reservedSize: 30),
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 30,
+                          ),
                         ),
                         bottomTitles: AxisTitles(
                           sideTitles: SideTitles(
@@ -460,20 +459,28 @@ class _MuscleProgressTabState extends State<_MuscleProgressTab> {
                             reservedSize: 32,
                             getTitlesWidget: (value, meta) {
                               final index = value.toInt();
-                              if (index < 0 || index >= selected.weekly.length) {
+                              if (index < 0 ||
+                                  index >= selected.weekly.length) {
                                 return const SizedBox.shrink();
                               }
                               final date = selected.weekly[index].weekStart;
                               return Padding(
                                 padding: const EdgeInsets.only(top: 6),
-                                child: Text('${date.day}/${date.month}', style: const TextStyle(fontSize: 10)),
+                                child: Text(
+                                  '${date.day}/${date.month}',
+                                  style: const TextStyle(fontSize: 10),
+                                ),
                               );
                             },
                           ),
                         ),
                       ),
                       barGroups: [
-                        for (var index = 0; index < selected.weekly.length; index++)
+                        for (
+                          var index = 0;
+                          index < selected.weekly.length;
+                          index++
+                        )
                           BarChartGroupData(
                             x: index,
                             barRods: [
@@ -530,7 +537,10 @@ class _MuscleDistributionPie extends StatelessWidget {
       Theme.of(context).colorScheme.primaryContainer,
       Theme.of(context).colorScheme.secondaryContainer,
     ];
-    final relevant = muscles.where((entry) => entry.sets30Days > 0).take(8).toList();
+    final relevant = muscles
+        .where((entry) => entry.sets30Days > 0)
+        .take(8)
+        .toList();
     if (relevant.isEmpty) {
       return const Center(child: Text('Nessun set negli ultimi 30 giorni.'));
     }
@@ -544,7 +554,8 @@ class _MuscleDistributionPie extends StatelessWidget {
               value: relevant[index].sets30Days.toDouble(),
               color: colors[index % colors.length],
               radius: 70,
-              title: '${(relevant[index].setShare30Days * 100).toStringAsFixed(0)}%',
+              title:
+                  '${(relevant[index].setShare30Days * 100).toStringAsFixed(0)}%',
               titleStyle: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w900,
@@ -580,22 +591,28 @@ class _RecordsProgressTab extends StatelessWidget {
       children: [
         Text(
           'PR Dashboard',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w900,
-          ),
+          style: Theme.of(context).textTheme.titleLarge
+              ?.copyWith(fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 4),
         Text(
           'Record di carico, reps, volume, e1RM e volume esercizio.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 12),
         _AnalyticsMetricGrid(
           items: [
-            _AnalyticsMetric('PR totali', '${records.length}', Icons.emoji_events),
-            _AnalyticsMetric('PR mese', '${month.personalRecords}', Icons.calendar_month),
+            _AnalyticsMetric(
+              'PR totali',
+              '${records.length}',
+              Icons.emoji_events,
+            ),
+            _AnalyticsMetric(
+              'PR mese',
+              '${month.personalRecords}',
+              Icons.calendar_month,
+            ),
             _AnalyticsMetric('PR e1RM', '$e1rmRecords', Icons.military_tech),
             _AnalyticsMetric(
               'Streak settimane',
@@ -619,9 +636,8 @@ class _RecordsProgressTab extends StatelessWidget {
         const SizedBox(height: 20),
         Text(
           'Record recenti',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w900,
-          ),
+          style: Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 8),
         if (latest.isEmpty)
@@ -660,9 +676,8 @@ class _PeriodReportCard extends StatelessWidget {
           children: [
             Text(
               title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w900),
             ),
             Text(
               subtitle,
@@ -722,7 +737,9 @@ class _RecordTile extends StatelessWidget {
           '${record.exerciseName} · ${record.kind.label}',
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
-        subtitle: Text('${record.muscleGroup.label} · ${_shortDate(record.date)}'),
+        subtitle: Text(
+          '${record.muscleGroup.label} · ${_shortDate(record.date)}',
+        ),
         trailing: Text(
           _recordValue(record),
           textAlign: TextAlign.end,
@@ -750,7 +767,10 @@ class _ValueChip extends StatelessWidget {
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text('$label  $value', style: const TextStyle(fontWeight: FontWeight.w700)),
+      child: Text(
+        '$label  $value',
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
     );
   }
 }
@@ -776,7 +796,11 @@ class _TrendBadge extends StatelessWidget {
       ),
       child: Text(
         '${positive ? '+' : ''}${value.toStringAsFixed(1)}% e1RM',
-        style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 12),
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
       ),
     );
   }
@@ -819,9 +843,8 @@ class _AnalyticsMetricGrid extends StatelessWidget {
                       Icon(item.icon, size: 19),
                       Text(
                         item.value,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
+                        style: Theme.of(context).textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w900),
                       ),
                       Text(
                         item.label,
@@ -841,15 +864,20 @@ class _AnalyticsMetricGrid extends StatelessWidget {
 }
 
 String _recordValue(PersonalRecordEvent record) => switch (record.kind) {
-  PersonalRecordKind.weight => '${_kg(record.value)}\n${record.reps ?? '-'} reps',
-  PersonalRecordKind.reps => '${record.value.toStringAsFixed(0)} reps\n${_kg(record.weight ?? 0)}',
-  PersonalRecordKind.setVolume => '${_compactKg(record.value)}\n${record.weight == null ? '' : '${_kg(record.weight!)} × ${record.reps}'}',
+  PersonalRecordKind.weight =>
+    '${_kg(record.value)}\n${record.reps ?? '-'} reps',
+  PersonalRecordKind.reps =>
+    '${record.value.toStringAsFixed(0)} reps\n${_kg(record.weight ?? 0)}',
+  PersonalRecordKind.setVolume =>
+    '${_compactKg(record.value)}\n${record.weight == null ? '' : '${_kg(record.weight!)} × ${record.reps}'}',
   PersonalRecordKind.estimatedOneRepMax => '${_kg(record.value)} e1RM',
   PersonalRecordKind.sessionVolume => _compactKg(record.value),
 };
 
 String _kg(double value) {
-  final text = value % 1 == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
+  final text = value % 1 == 0
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
   return '$text kg';
 }
 

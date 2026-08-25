@@ -1,6 +1,7 @@
 import '../models/body_log.dart';
 import '../models/schedule.dart';
 import '../models/workout.dart';
+import '../progress_analytics.dart';
 import '../workout_fatigue_analytics.dart';
 import '../workout_progression_analytics.dart';
 import 'ai_coach_memory.dart';
@@ -121,6 +122,10 @@ class TrainingContextBuilder {
         'muscle_group_volume': muscleGroupVolume,
       },
       'deterministic_analytics': {
+        'progress_analytics': buildProgressAnalytics(
+          history: analyticsHistory,
+          now: _now,
+        ).toJson(),
         'exercise_progress': _exerciseProgress(history),
         'fatigue_readiness': buildGlobalReadinessReport(
           history: analyticsHistory,

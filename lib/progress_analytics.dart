@@ -3,7 +3,13 @@ import 'dart:math' as math;
 import 'models/exercise.dart';
 import 'models/workout.dart';
 
-enum PersonalRecordKind { weight, reps, setVolume, estimatedOneRepMax, sessionVolume }
+enum PersonalRecordKind {
+  weight,
+  reps,
+  setVolume,
+  estimatedOneRepMax,
+  sessionVolume,
+}
 
 extension PersonalRecordKindLabel on PersonalRecordKind {
   String get label => switch (this) {
@@ -272,7 +278,8 @@ ProgressAnalytics buildProgressAnalytics({
   DateTime? now,
 }) {
   final reference = _dateOnly(now ?? DateTime.now());
-  final sorted = [...history]..sort((a, b) => a.startTime.compareTo(b.startTime));
+  final sorted = [...history]
+    ..sort((a, b) => a.startTime.compareTo(b.startTime));
   final personalRecords = _buildPersonalRecords(sorted);
   return ProgressAnalytics(
     exercises: _buildExerciseSummaries(sorted),
@@ -313,10 +320,19 @@ List<ExerciseProgressSummary> _buildExerciseSummaries(
       accumulator.sessionCount += 1;
       accumulator.completedSets += workSets.length;
       accumulator.totalReps += workSets.fold(0, (sum, set) => sum + set.reps);
-      final volume = workSets.fold<double>(0, (sum, set) => sum + _setVolume(set));
+      final volume = workSets.fold<double>(
+        0,
+        (sum, set) => sum + _setVolume(set),
+      );
       accumulator.totalVolume += volume;
-      final bestWeight = workSets.fold<double>(0, (best, set) => math.max(best, set.weight));
-      final bestReps = workSets.fold<int>(0, (best, set) => math.max(best, set.reps));
+      final bestWeight = workSets.fold<double>(
+        0,
+        (best, set) => math.max(best, set.weight),
+      );
+      final bestReps = workSets.fold<int>(
+        0,
+        (best, set) => math.max(best, set.reps),
+      );
       final bestSetVolume = workSets.fold<double>(
         0,
         (best, set) => math.max(best, _setVolume(set)),
@@ -324,7 +340,10 @@ List<ExerciseProgressSummary> _buildExerciseSummaries(
       final bestE1rm = _bestE1rm(workSets);
       accumulator.bestWeight = math.max(accumulator.bestWeight, bestWeight);
       accumulator.bestReps = math.max(accumulator.bestReps, bestReps);
-      accumulator.bestSetVolume = math.max(accumulator.bestSetVolume, bestSetVolume);
+      accumulator.bestSetVolume = math.max(
+        accumulator.bestSetVolume,
+        bestSetVolume,
+      );
       accumulator.bestEstimatedOneRepMax = math.max(
         accumulator.bestEstimatedOneRepMax,
         bestE1rm ?? 0,
@@ -371,8 +390,7 @@ List<ExerciseProgressSummary> _buildExerciseSummaries(
       lastTrainedAt: entry.lastTrainedAt,
       points: List.unmodifiable(entry.points),
     );
-  }).toList()
-    ..sort((a, b) => b.lastTrainedAt.compareTo(a.lastTrainedAt));
+  }).toList()..sort((a, b) => b.lastTrainedAt.compareTo(a.lastTrainedAt));
   return summaries;
 }
 
@@ -489,7 +507,10 @@ List<MuscleProgressSummary> _buildMuscleSummaries(
         () => _MuscleAccumulator(exercise.muscleGroup),
       );
       final sessionDate = _dateOnly(session.startTime);
-      final volume = workSets.fold<double>(0, (sum, set) => sum + _setVolume(set));
+      final volume = workSets.fold<double>(
+        0,
+        (sum, set) => sum + _setVolume(set),
+      );
       if (!sessionDate.isBefore(cutoff30)) {
         accumulator.sets30 += workSets.length;
         accumulator.volume30 += volume;
@@ -511,7 +532,10 @@ List<MuscleProgressSummary> _buildMuscleSummaries(
     }
   }
 
-  final totalSets30 = accumulators.values.fold<int>(0, (sum, entry) => sum + entry.sets30);
+  final totalSets30 = accumulators.values.fold<int>(
+    0,
+    (sum, entry) => sum + entry.sets30,
+  );
   final summaries = accumulators.values.map((entry) {
     final weekly = List.generate(8, (index) {
       final start = firstWeek.add(Duration(days: 7 * index));
@@ -532,19 +556,25 @@ List<MuscleProgressSummary> _buildMuscleSummaries(
       setShare30Days: totalSets30 == 0 ? 0 : entry.sets30 / totalSets30,
       weekly: weekly,
     );
-  }).toList()
-    ..sort((a, b) => b.sets30Days.compareTo(a.sets30Days));
+  }).toList()..sort((a, b) => b.sets30Days.compareTo(a.sets30Days));
   return summaries;
 }
 
-ConsistencySummary _buildConsistency(List<WorkoutSession> history, DateTime now) {
+ConsistencySummary _buildConsistency(
+  List<WorkoutSession> history,
+  DateTime now,
+) {
   final cutoff30 = now.subtract(const Duration(days: 29));
   final sessions30 = history
       .where((session) => !_dateOnly(session.startTime).isBefore(cutoff30))
       .toList();
-  final trainedDays = sessions30.map((session) => _dateOnly(session.startTime)).toSet();
+  final trainedDays = sessions30
+      .map((session) => _dateOnly(session.startTime))
+      .toSet();
   final currentWeek = _startOfWeek(now);
-  final activeWeeks = history.map((session) => _startOfWeek(session.startTime)).toSet();
+  final activeWeeks = history
+      .map((session) => _startOfWeek(session.startTime))
+      .toSet();
 
   var currentStreak = 0;
   var cursor = currentWeek;
@@ -570,7 +600,8 @@ ConsistencySummary _buildConsistency(List<WorkoutSession> history, DateTime now)
   final first8Week = currentWeek.subtract(const Duration(days: 49));
   final sessions8Week = history.where((session) {
     final day = _dateOnly(session.startTime);
-    return !day.isBefore(first8Week) && day.isBefore(currentWeek.add(const Duration(days: 7)));
+    return !day.isBefore(first8Week) &&
+        day.isBefore(currentWeek.add(const Duration(days: 7)));
   }).length;
 
   final weekdayCounts = List<int>.filled(7, 0);
@@ -610,13 +641,19 @@ PeriodProgressReport _buildPeriodReport(
   final muscleSets = <MuscleGroup, int>{};
 
   for (final session in sessions) {
-    durationMinutes += math.max(0, session.endTime.difference(session.startTime).inMinutes);
+    durationMinutes += math.max(
+      0,
+      session.endTime.difference(session.startTime).inMinutes,
+    );
     for (final exercise in session.exercises) {
       final sets = _workSets(exercise);
       if (sets.isEmpty) continue;
       completedSets += sets.length;
       final reps = sets.fold<int>(0, (sum, set) => sum + set.reps);
-      final exerciseSessionVolume = sets.fold<double>(0, (sum, set) => sum + _setVolume(set));
+      final exerciseSessionVolume = sets.fold<double>(
+        0,
+        (sum, set) => sum + _setVolume(set),
+      );
       totalReps += reps;
       volume += exerciseSessionVolume;
       exerciseVolume.update(
@@ -668,9 +705,8 @@ PeriodProgressReport _buildPeriodReport(
   );
 }
 
-List<ExerciseSet> _workSets(WorkoutExercise exercise) => exercise.sets
-    .where((set) => set.isCompleted && !set.isWarmup)
-    .toList();
+List<ExerciseSet> _workSets(WorkoutExercise exercise) =>
+    exercise.sets.where((set) => set.isCompleted && !set.isWarmup).toList();
 
 double _setVolume(ExerciseSet set) => set.weight * set.reps;
 
