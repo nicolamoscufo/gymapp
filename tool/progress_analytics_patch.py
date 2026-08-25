@@ -43,8 +43,8 @@ prompt_path = Path('lib/ai_coach/ai_coach_prompts.dart')
 prompt = prompt_path.read_text()
 prompt = replace_once(
     prompt,
-    '- deterministic_analytics.progression_recommendations is the source of truth for increaseLoad, increaseReps, maintain, deload, or manual decisions when present. You may explain the decision and its uncertainty, but do not output a conflicting progression action.\n',
-    '- deterministic_analytics.progression_recommendations is the source of truth for increaseLoad, increaseReps, maintain, deload, or manual decisions when present. You may explain the decision and its uncertainty, but do not output a conflicting progression action.\n- deterministic_analytics.progress_analytics is the source of truth for PR counts, exercise e1RM/volume trends, muscle-group set distribution, consistency streaks, monthly reports and year summaries. Never invent or recalculate conflicting values.\n',
+    '- deterministic_analytics.progression_recommendations and deterministic_analytics.fatigue_readiness are the source of truth for progression and recovery decisions when present. Explain their evidence and uncertainty, but do not output a conflicting load, deload, volume, or fatigue decision.\n',
+    '- deterministic_analytics.progression_recommendations and deterministic_analytics.fatigue_readiness are the source of truth for progression and recovery decisions when present. Explain their evidence and uncertainty, but do not output a conflicting load, deload, volume, or fatigue decision.\n- deterministic_analytics.progress_analytics is the source of truth for PR counts, exercise e1RM/volume trends, muscle-group set distribution, consistency streaks, monthly reports and year summaries. Never invent or recalculate conflicting values.\n',
     'progress analytics prompt grounding',
 )
 prompt_path.write_text(prompt)
