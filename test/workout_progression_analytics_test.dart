@@ -17,11 +17,7 @@ WorkoutExercise _exercise(
   );
 }
 
-WorkoutSession _session(
-  DateTime date,
-  WorkoutExercise exercise, {
-  String? id,
-}) {
+WorkoutSession _session(DateTime date, WorkoutExercise exercise, {String? id}) {
   return WorkoutSession(
     id: id,
     scheduleTitle: 'Test',
@@ -149,7 +145,10 @@ void main() {
       final plan = buildAdaptiveWarmupPlan(workWeight: 100, workReps: 5);
 
       expect(plan, hasLength(4));
-      expect(plan.map((entry) => entry.weight), orderedEquals([40, 60, 75, 87.5]));
+      expect(
+        plan.map((entry) => entry.weight),
+        orderedEquals([40, 60, 75, 87.5]),
+      );
       expect(plan.map((entry) => entry.reps), orderedEquals([7, 5, 3, 1]));
       expect(plan.every((entry) => entry.weight < 100), isTrue);
     });

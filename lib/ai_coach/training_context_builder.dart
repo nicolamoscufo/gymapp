@@ -1,6 +1,7 @@
 import '../models/body_log.dart';
 import '../models/schedule.dart';
 import '../models/workout.dart';
+import '../workout_progression_analytics.dart';
 import 'ai_coach_memory.dart';
 import 'ai_coach_user_profile.dart';
 
@@ -18,7 +19,8 @@ class TrainingContextBuilder {
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
   }) {
-    final sorted = [...history]..sort((a, b) => a.startTime.compareTo(b.startTime));
+    final sorted = [...history]
+      ..sort((a, b) => a.startTime.compareTo(b.startTime));
     final latest = sorted.isEmpty ? <WorkoutSession>[] : [sorted.last];
     return _build(
       history: latest,
@@ -38,7 +40,9 @@ class TrainingContextBuilder {
   }) {
     final cutoff = _now.subtract(const Duration(days: 7));
     return _build(
-      history: history.where((entry) => !entry.startTime.isBefore(cutoff)).toList(),
+      history: history
+          .where((entry) => !entry.startTime.isBefore(cutoff))
+          .toList(),
       schedules: schedules,
       bodyLogs: bodyLogs,
       profile: profile,
@@ -53,7 +57,8 @@ class TrainingContextBuilder {
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
   }) {
-    final sorted = [...history]..sort((a, b) => b.startTime.compareTo(a.startTime));
+    final sorted = [...history]
+      ..sort((a, b) => b.startTime.compareTo(a.startTime));
     return _build(
       history: sorted.take(12).toList().reversed.toList(),
       schedules: schedules,
@@ -113,7 +118,10 @@ class TrainingContextBuilder {
         'session_count': history.length,
         'latest_session_at': history.isEmpty
             ? null
-            : history.map((e) => e.startTime).reduce((a, b) => a.isAfter(b) ? a : b).toIso8601String(),
+            : history
+                  .map((e) => e.startTime)
+                  .reduce((a, b) => a.isAfter(b) ? a : b)
+                  .toIso8601String(),
       },
     };
   }
@@ -124,22 +132,30 @@ class TrainingContextBuilder {
     'start_time': session.startTime.toIso8601String(),
     'end_time': session.endTime.toIso8601String(),
     'duration_minutes': session.endTime.difference(session.startTime).inMinutes,
-    'exercises': session.exercises.map((exercise) => {
-      'name': exercise.name,
-      'notes': exercise.notes,
-      'muscle_group': exercise.muscleGroup.name,
-      'equipment': exercise.equipment,
-      'movement_pattern': exercise.movementPattern,
-      'sets': exercise.sets.map((set) => {
-        'weight': set.weight,
-        'reps': set.reps,
-        'completed': set.isCompleted,
-        'warmup': set.isWarmup,
-        'rpe': set.rpe,
-        'rir': set.rir,
-        'notes': set.notes,
-      }).toList(),
-    }).toList(),
+    'exercises': session.exercises
+        .map(
+          (exercise) => {
+            'name': exercise.name,
+            'notes': exercise.notes,
+            'muscle_group': exercise.muscleGroup.name,
+            'equipment': exercise.equipment,
+            'movement_pattern': exercise.movementPattern,
+            'sets': exercise.sets
+                .map(
+                  (set) => {
+                    'weight': set.weight,
+                    'reps': set.reps,
+                    'completed': set.isCompleted,
+                    'warmup': set.isWarmup,
+                    'rpe': set.rpe,
+                    'rir': set.rir,
+                    'notes': set.notes,
+                  },
+                )
+                .toList(),
+          },
+        )
+        .toList(),
   };
 
   double _totalVolume(List<WorkoutSession> history) {
@@ -147,7 +163,9 @@ class TrainingContextBuilder {
     for (final session in history) {
       for (final exercise in session.exercises) {
         for (final set in exercise.sets) {
-          if (set.isCompleted && !set.isWarmup) total += set.weight * set.reps;
+          if (set.isCompleted && !set.isWarmup) {
+            total += set.weight * set.reps;
+          }
         }
       }
     }
@@ -160,9 +178,15 @@ class TrainingContextBuilder {
       for (final exercise in session.exercises) {
         var volume = 0.0;
         for (final set in exercise.sets) {
-          if (set.isCompleted && !set.isWarmup) volume += set.weight * set.reps;
+          if (set.isCompleted && !set.isWarmup) {
+            volume += set.weight * set.reps;
+          }
         }
-        result.update(exercise.name, (value) => value + volume, ifAbsent: () => volume);
+        result.update(
+          exercise.name,
+          (value) => value + volume,
+          ifAbsent: () => volume,
+        );
       }
     }
     return result;
@@ -174,7 +198,9 @@ class TrainingContextBuilder {
       for (final exercise in session.exercises) {
         var volume = 0.0;
         for (final set in exercise.sets) {
-          if (set.isCompleted && !set.isWarmup) volume += set.weight * set.reps;
+          if (set.isCompleted && !set.isWarmup) {
+            volume += set.weight * set.reps;
+          }
         }
         final key = exercise.muscleGroup.name;
         result.update(key, (value) => value + volume, ifAbsent: () => volume);
@@ -188,10 +214,14 @@ class TrainingContextBuilder {
     for (final session in history) {
       for (final exercise in session.exercises) {
         final exerciseNote = exercise.notes.trim();
-        if (exerciseNote.isNotEmpty) notes.add('${exercise.name}: $exerciseNote');
+        if (exerciseNote.isNotEmpty) {
+          notes.add('${exercise.name}: $exerciseNote');
+        }
         for (final set in exercise.sets) {
           final setNote = set.notes.trim();
-          if (setNote.isNotEmpty) notes.add('${exercise.name}: $setNote');
+          if (setNote.isNotEmpty) {
+            notes.add('${exercise.name}: $setNote');
+          }
         }
       }
     }
@@ -202,14 +232,30 @@ class TrainingContextBuilder {
     final result = <String, List<Map<String, dynamic>>>{};
     for (final session in history) {
       for (final exercise in session.exercises) {
-        final workingSets = exercise.sets.where((set) => set.isCompleted && !set.isWarmup).toList();
-        if (workingSets.isEmpty) continue;
-        final bestWeight = workingSets.map((set) => set.weight).reduce((a, b) => a > b ? a : b);
-        final totalReps = workingSets.fold<int>(0, (sum, set) => sum + set.reps);
+        final workingSets = exercise.sets
+            .where((set) => set.isCompleted && !set.isWarmup)
+            .toList();
+        if (workingSets.isEmpty) {
+          continue;
+        }
+        final bestWeight = workingSets
+            .map((set) => set.weight)
+            .reduce((a, b) => a > b ? a : b);
+        final totalReps = workingSets.fold<int>(
+          0,
+          (sum, set) => sum + set.reps,
+        );
+        final volume = workingSets.fold<double>(
+          0,
+          (sum, set) => sum + set.weight * set.reps,
+        );
+        final estimatedOneRepMax = bestEstimatedOneRepMaxForSets(workingSets);
         result.putIfAbsent(exercise.name, () => []).add({
           'date': session.startTime.toIso8601String(),
           'best_weight': bestWeight,
           'total_reps': totalReps,
+          'volume': volume,
+          'estimated_1rm': estimatedOneRepMax,
         });
       }
     }

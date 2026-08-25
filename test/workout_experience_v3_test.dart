@@ -10,9 +10,7 @@ WorkoutExercise _bench(double weight, int reps) {
     notes: '',
     muscleGroup: MuscleGroup.chest,
     technique: IntensityTechnique.none,
-    sets: [
-      ExerciseSet(weight: weight, reps: reps, isCompleted: true),
-    ],
+    sets: [ExerciseSet(weight: weight, reps: reps, isCompleted: true)],
   );
 }
 

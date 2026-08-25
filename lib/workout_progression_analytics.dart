@@ -90,8 +90,7 @@ List<ExercisePerformanceSnapshot> buildExercisePerformanceHistory({
       totalVolume += setVolume;
 
       final estimate = estimateOneRepMax(set.weight, set.reps);
-      if (estimate != null &&
-          (topEstimate == null || estimate > topEstimate)) {
+      if (estimate != null && (topEstimate == null || estimate > topEstimate)) {
         topEstimate = estimate;
         topSet = set;
       }
