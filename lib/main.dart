@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_preferences.dart';
 import 'local_notifications.dart';
-import 'screens/home.dart';
+import 'screens/home_ai_shell.dart';
 
 const _brandSeedColor = Color(0xFF6C4DFF);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await FlutterGemma.initialize(
+    inferenceEngines: const [LiteRtLmEngine()],
+  );
   await LocalNotificationService.initialize();
   runApp(const MainApp());
 }
@@ -62,7 +67,10 @@ class _MainAppState extends State<MainApp> {
       themeMode: _themeMode,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      home: HomePage(themeMode: _themeMode, onThemeModeChanged: _setThemeMode),
+      home: HomeAiShell(
+        themeMode: _themeMode,
+        onThemeModeChanged: _setThemeMode,
+      ),
     );
   }
 }
