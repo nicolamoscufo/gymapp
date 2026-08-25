@@ -2,12 +2,30 @@ import 'model_id.dart';
 import 'exercise.dart';
 import '../top_set_backoff.dart';
 
+enum SetType { normal, warmup, drop, failure }
+
+extension SetTypeLabel on SetType {
+  String get label => switch (this) {
+    SetType.normal => 'Normale',
+    SetType.warmup => 'Warm-up',
+    SetType.drop => 'Drop',
+    SetType.failure => 'Failure',
+  };
+
+  String get shortLabel => switch (this) {
+    SetType.normal => 'N',
+    SetType.warmup => 'W',
+    SetType.drop => 'D',
+    SetType.failure => 'F',
+  };
+}
+
 class ExerciseSet {
   final String id;
   double weight;
   int reps;
   bool isCompleted;
-  bool isWarmup;
+  SetType type;
   double? rpe;
   int? rir;
   String notes;
@@ -17,33 +35,60 @@ class ExerciseSet {
     required this.weight,
     required this.reps,
     this.isCompleted = false,
-    this.isWarmup = false,
+    bool isWarmup = false,
+    SetType? type,
     this.rpe,
     this.rir,
     this.notes = '',
-  }) : id = id ?? newModelId('set');
+  }) : id = id ?? newModelId('set'),
+       type = type ?? (isWarmup ? SetType.warmup : SetType.normal);
+
+  bool get isWarmup => type == SetType.warmup;
+
+  set isWarmup(bool value) {
+    if (value) {
+      type = SetType.warmup;
+    } else if (type == SetType.warmup) {
+      type = SetType.normal;
+    }
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'weight': weight,
     'reps': reps,
     'isCompleted': isCompleted,
+    'type': type.name,
+    // Kept for backwards/forwards compatibility with older backups.
     'isWarmup': isWarmup,
     'rpe': rpe,
     'rir': rir,
     'notes': notes,
   };
 
-  factory ExerciseSet.fromJson(Map<String, dynamic> json) => ExerciseSet(
-    id: json['id'] as String?,
-    weight: (json['weight'] as num).toDouble(),
-    reps: json['reps'] as int,
-    isCompleted: json['isCompleted'] as bool? ?? false,
-    isWarmup: json['isWarmup'] as bool? ?? false,
-    rpe: (json['rpe'] as num?)?.toDouble(),
-    rir: json['rir'] as int?,
-    notes: json['notes'] as String? ?? '',
-  );
+  factory ExerciseSet.fromJson(Map<String, dynamic> json) {
+    SetType? parsedType;
+    final rawType = json['type'];
+    if (rawType is String) {
+      try {
+        parsedType = SetType.values.byName(rawType);
+      } catch (_) {
+        parsedType = null;
+      }
+    }
+
+    return ExerciseSet(
+      id: json['id'] as String?,
+      weight: (json['weight'] as num).toDouble(),
+      reps: json['reps'] as int,
+      isCompleted: json['isCompleted'] as bool? ?? false,
+      isWarmup: json['isWarmup'] as bool? ?? false,
+      type: parsedType,
+      rpe: (json['rpe'] as num?)?.toDouble(),
+      rir: json['rir'] as int?,
+      notes: json['notes'] as String? ?? '',
+    );
+  }
 }
 
 class WorkoutExercise {
