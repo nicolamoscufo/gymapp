@@ -224,7 +224,7 @@ text = text.replace(
     '!_restController.hasActiveRest',
 )
 text = re.sub(
-    r'_restSecondsFor\(\s*exercise\s*\)',
+    r'_restSecondsFor\(\s*exercise\s*,?\s*\)',
     r'_restController.configuredSecondsFor(exercise)',
     text,
 )
