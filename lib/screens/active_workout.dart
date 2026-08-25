@@ -18,6 +18,15 @@ import '../workout_plate_calculator.dart';
 import 'exercise_picker.dart';
 import 'session_summary.dart';
 
+enum _WorkoutExerciseAction {
+  replace,
+  duplicate,
+  superset,
+  moveUp,
+  moveDown,
+  delete,
+}
+
 class ActiveWorkoutScreen extends StatefulWidget {
   final Schedule? schedule;
   final WorkoutSession? resumedSession;
@@ -1553,36 +1562,335 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _saveCurrentSession();
   }
 
-  void _addCatalogExercisesToSession(List<ExerciseCatalogEntry> entries) {
-    _addExercisesToSession(entries.map(_exerciseFromCatalogEntry).toList());
-  }
-
-  void _addCustomExercisesToSession(List<Exercise> exercises) {
-    _addExercisesToSession(exercises.map(_copyExerciseTemplate).toList());
-  }
-
-  Future<void> _openExercisePicker() async {
+  Future<List<Exercise>?> _pickExercisesForSession() async {
     final result = await Navigator.push<ExercisePickerResult>(
       context,
       MaterialPageRoute(builder: (context) => const ExercisePickerScreen()),
     );
 
     if (!mounted || result == null) {
-      return;
+      return null;
     }
 
     if (result.addCustom) {
       final customExercise = await _showCustomExerciseDialog();
-      if (customExercise != null) {
-        _addExercisesToSession([customExercise]);
+      return customExercise == null ? null : [customExercise];
+    }
+
+    return [
+      ...result.customExercises.map(_copyExerciseTemplate),
+      ...result.entries.map(_exerciseFromCatalogEntry),
+    ];
+  }
+
+  Future<void> _openExercisePicker() async {
+    final exercises = await _pickExercisesForSession();
+    if (!mounted || exercises == null || exercises.isEmpty) {
+      return;
+    }
+    _addExercisesToSession(exercises);
+  }
+
+  int _nextSupersetGroupId() {
+    var maxGroup = 0;
+    for (final exercise in session.exercises) {
+      final group = exercise.supersetGroup;
+      if (group != null && group > maxGroup) {
+        maxGroup = group;
       }
+    }
+    return maxGroup + 1;
+  }
+
+  List<WorkoutExercise> _supersetMembers(WorkoutExercise exercise) {
+    final group = exercise.supersetGroup;
+    if (group == null) {
+      return const [];
+    }
+    return session.exercises
+        .where((candidate) => candidate.supersetGroup == group)
+        .toList();
+  }
+
+  void _cleanupSupersetGroup(int? group) {
+    if (group == null) return;
+    final members = session.exercises
+        .where((exercise) => exercise.supersetGroup == group)
+        .toList();
+    if (members.length < 2) {
+      for (final member in members) {
+        member.supersetGroup = null;
+      }
+    }
+  }
+
+  bool _shouldStartRestAfterSet(WorkoutExercise exercise) {
+    final members = _supersetMembers(exercise);
+    return members.length < 2 || members.last.id == exercise.id;
+  }
+
+  void _advanceSupersetNavigation(WorkoutExercise exercise) {
+    final members = _supersetMembers(exercise);
+    if (members.length < 2) return;
+    final currentIndex = members.indexWhere(
+      (member) => member.id == exercise.id,
+    );
+    if (currentIndex < 0) return;
+    final next = members[(currentIndex + 1) % members.length];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _scrollToExercise(next.id);
+      }
+    });
+  }
+
+  Future<void> _replaceExercise(WorkoutExercise exercise) async {
+    final replacements = await _pickExercisesForSession();
+    if (!mounted || replacements == null || replacements.isEmpty) {
       return;
     }
 
-    if (result.customExercises.isNotEmpty) {
-      _addCustomExercisesToSession(result.customExercises);
+    final index = session.exercises.indexWhere(
+      (item) => item.id == exercise.id,
+    );
+    if (index < 0) return;
+
+    final previousSession = _previousSessionForAddedExercises();
+    final replacement = _workoutExerciseFromExercise(
+      replacements.first,
+      previousSession,
+      keepSourceExerciseId: false,
+    )..supersetGroup = exercise.supersetGroup;
+
+    final notificationId = LocalNotificationService.restNotificationId(
+      exercise.id,
+    );
+    setState(() {
+      _restSecondsByExerciseId.remove(exercise.id);
+      session.exercises[index] = replacement;
+      _exerciseCardKeys.remove(exercise.id);
+    });
+    await LocalNotificationService.cancel(notificationId);
+    await _saveCurrentSession();
+
+    if (replacements.length > 1 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Per la sostituzione è stato usato il primo esercizio selezionato.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
-    _addCatalogExercisesToSession(result.entries);
+  }
+
+  void _duplicateExercise(WorkoutExercise exercise) {
+    final index = session.exercises.indexWhere(
+      (item) => item.id == exercise.id,
+    );
+    if (index < 0) return;
+
+    final duplicate = _workoutExerciseFromExercise(
+      _exerciseFromWorkoutExercise(exercise),
+      null,
+      keepSourceExerciseId: false,
+    )..supersetGroup = null;
+    duplicate.sets = exercise.sets
+        .map(
+          (set) => ExerciseSet(
+            weight: set.weight,
+            reps: set.reps,
+            type: set.type,
+            rpe: set.rpe,
+            rir: set.rir,
+            notes: set.notes,
+          ),
+        )
+        .toList();
+    duplicate.previousWeights = List<double>.from(exercise.previousWeights);
+    duplicate.previousReps = List<int>.from(exercise.previousReps);
+
+    setState(() => session.exercises.insert(index + 1, duplicate));
+    HapticFeedback.selectionClick();
+    _saveCurrentSession();
+  }
+
+  void _moveExercise(WorkoutExercise exercise, int delta) {
+    final index = session.exercises.indexWhere(
+      (item) => item.id == exercise.id,
+    );
+    if (index < 0) return;
+    final nextIndex = index + delta;
+    if (nextIndex < 0 || nextIndex >= session.exercises.length) return;
+
+    setState(() {
+      final moved = session.exercises.removeAt(index);
+      session.exercises.insert(nextIndex, moved);
+    });
+    HapticFeedback.selectionClick();
+    _saveCurrentSession();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scrollToExercise(exercise.id);
+    });
+  }
+
+  void _removeExerciseFromSession(WorkoutExercise exercise) {
+    final index = session.exercises.indexWhere(
+      (item) => item.id == exercise.id,
+    );
+    if (index < 0) return;
+
+    final deletedGroup = exercise.supersetGroup;
+    final originalGroupMembers = deletedGroup == null
+        ? const <WorkoutExercise>[]
+        : session.exercises
+              .where((item) => item.supersetGroup == deletedGroup)
+              .toList();
+    final notificationId = LocalNotificationService.restNotificationId(
+      exercise.id,
+    );
+
+    setState(() {
+      _restSecondsByExerciseId.remove(exercise.id);
+      session.exercises.removeAt(index);
+      _exerciseCardKeys.remove(exercise.id);
+      _cleanupSupersetGroup(deletedGroup);
+    });
+    LocalNotificationService.cancel(notificationId);
+    _saveCurrentSession();
+
+    _showUndoSnackBar(
+      message: '${exercise.name} eliminato dalla sessione.',
+      onUndo: () {
+        if (!mounted ||
+            session.exercises.any((item) => item.id == exercise.id)) {
+          return;
+        }
+        setState(() {
+          final restoreIndex = index.clamp(0, session.exercises.length).toInt();
+          session.exercises.insert(restoreIndex, exercise);
+          if (deletedGroup != null) {
+            for (final member in originalGroupMembers) {
+              member.supersetGroup = deletedGroup;
+            }
+          }
+        });
+        _saveCurrentSession();
+      },
+    );
+  }
+
+  Future<void> _configureSuperset(WorkoutExercise exercise) async {
+    if (session.exercises.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Aggiungi almeno un altro esercizio per creare un superset.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final selectedId = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.only(bottom: 12),
+          children: [
+            ListTile(
+              title: Text(
+                exercise.supersetGroup == null
+                    ? 'Crea superset con ${exercise.name}'
+                    : 'Gestisci superset ${exercise.supersetGroup}',
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: const Text('Scegli un esercizio da collegare.'),
+            ),
+            if (exercise.supersetGroup != null)
+              ListTile(
+                key: ValueKey('remove-superset-${exercise.id}'),
+                leading: const Icon(Icons.link_off),
+                title: const Text('Rimuovi dal superset'),
+                onTap: () => Navigator.pop(context, '__remove__'),
+              ),
+            for (final candidate in session.exercises)
+              if (candidate.id != exercise.id)
+                ListTile(
+                  key: ValueKey('superset-target-${candidate.id}'),
+                  leading: Icon(
+                    candidate.supersetGroup == null ? Icons.link : Icons.hub,
+                  ),
+                  title: Text(candidate.name),
+                  subtitle: Text(
+                    candidate.supersetGroup == null
+                        ? 'Nessun superset'
+                        : 'Superset ${candidate.supersetGroup}',
+                  ),
+                  onTap: () => Navigator.pop(context, candidate.id),
+                ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || selectedId == null) return;
+
+    final oldGroup = exercise.supersetGroup;
+    if (selectedId == '__remove__') {
+      setState(() {
+        exercise.supersetGroup = null;
+        _cleanupSupersetGroup(oldGroup);
+      });
+      _saveCurrentSession();
+      return;
+    }
+
+    final targetIndex = session.exercises.indexWhere(
+      (candidate) => candidate.id == selectedId,
+    );
+    if (targetIndex < 0) return;
+    final target = session.exercises[targetIndex];
+
+    setState(() {
+      final group = target.supersetGroup ?? oldGroup ?? _nextSupersetGroupId();
+      exercise.supersetGroup = group;
+      target.supersetGroup = group;
+      if (oldGroup != null && oldGroup != group) {
+        _cleanupSupersetGroup(oldGroup);
+      }
+    });
+    HapticFeedback.selectionClick();
+    _saveCurrentSession();
+  }
+
+  Future<void> _handleWorkoutExerciseAction(
+    _WorkoutExerciseAction action,
+    WorkoutExercise exercise,
+  ) async {
+    switch (action) {
+      case _WorkoutExerciseAction.replace:
+        await _replaceExercise(exercise);
+        break;
+      case _WorkoutExerciseAction.duplicate:
+        _duplicateExercise(exercise);
+        break;
+      case _WorkoutExerciseAction.superset:
+        await _configureSuperset(exercise);
+        break;
+      case _WorkoutExerciseAction.moveUp:
+        _moveExercise(exercise, -1);
+        break;
+      case _WorkoutExerciseAction.moveDown:
+        _moveExercise(exercise, 1);
+        break;
+      case _WorkoutExerciseAction.delete:
+        _removeExerciseFromSession(exercise);
+        break;
+    }
   }
 
   Future<Exercise?> _showCustomExerciseDialog() async {
@@ -1939,7 +2247,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     });
     _saveCurrentSession();
     if (willComplete && !widget.editCompletedSession) {
-      _startRestForExercise(exercise);
+      if (_shouldStartRestAfterSet(exercise)) {
+        _startRestForExercise(exercise);
+      }
+      _advanceSupersetNavigation(exercise);
     }
 
     final delta = _setVolumeDelta(exercise, set, setIndex);
@@ -2376,7 +2687,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
             return Card(
               key: _exerciseCardKey(exercise.id),
-              margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              margin: const EdgeInsets.fromLTRB(8, 5, 8, 5),
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -2389,17 +2700,85 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                   ),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(14.0),
+                  padding: const EdgeInsets.all(10.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        exercise.name,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: accent,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              exercise.name,
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                                color: accent,
+                              ),
+                            ),
+                          ),
+                          PopupMenuButton<_WorkoutExerciseAction>(
+                            key: ValueKey('exercise-menu-${exercise.id}'),
+                            tooltip: 'Azioni esercizio',
+                            onSelected: (action) =>
+                                _handleWorkoutExerciseAction(action, exercise),
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: _WorkoutExerciseAction.replace,
+                                child: ListTile(
+                                  leading: Icon(Icons.swap_horiz),
+                                  title: Text('Sostituisci'),
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: _WorkoutExerciseAction.duplicate,
+                                child: ListTile(
+                                  leading: Icon(Icons.copy_all),
+                                  title: Text('Duplica'),
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: _WorkoutExerciseAction.superset,
+                                child: ListTile(
+                                  leading: const Icon(Icons.link),
+                                  title: Text(
+                                    exercise.supersetGroup == null
+                                        ? 'Crea superset'
+                                        : 'Gestisci superset',
+                                  ),
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: _WorkoutExerciseAction.moveUp,
+                                enabled: exIndex > 0,
+                                child: const ListTile(
+                                  leading: Icon(Icons.arrow_upward),
+                                  title: Text('Sposta su'),
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: _WorkoutExerciseAction.moveDown,
+                                enabled: exIndex < session.exercises.length - 1,
+                                child: const ListTile(
+                                  leading: Icon(Icons.arrow_downward),
+                                  title: Text('Sposta giù'),
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: _WorkoutExerciseAction.delete,
+                                child: ListTile(
+                                  leading: Icon(
+                                    Icons.delete_outline,
+                                    color: colorScheme.error,
+                                  ),
+                                  title: Text(
+                                    'Elimina',
+                                    style: TextStyle(color: colorScheme.error),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
