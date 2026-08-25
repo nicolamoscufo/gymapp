@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../app_data_store.dart';
 import '../app_preferences.dart';
 import '../dialog_form.dart';
+import '../home_data_policy.dart';
 import '../local_notifications.dart';
 import '../models/body_log.dart';
 import '../models/exercise.dart';
@@ -160,66 +161,34 @@ class _HomePageState extends State<HomePage> {
     List<Exercise> exercises,
     double reductionPercent,
   ) {
-    var changed = false;
-    final normalized = AppPreferences.normalizeBackoffReductionPercent(
+    return HomeDataPolicy.applyBackoffReductionToExercises(
+      exercises,
       reductionPercent,
     );
-    for (final exercise in exercises) {
-      if (exercise.backoffReductionPercent != normalized) {
-        exercise.backoffReductionPercent = normalized;
-        changed = true;
-      }
-    }
-    return changed;
   }
 
   bool _applyBackoffReductionToSchedules(double reductionPercent) {
-    var changed = false;
-    for (final schedule in schedules) {
-      changed |= _applyBackoffReductionToExercises(
-        schedule.exercises,
-        reductionPercent,
-      );
-    }
-    return changed;
-  }
-
-  bool _applyBackoffReductionToWorkoutExercises(
-    List<WorkoutExercise> exercises,
-    double reductionPercent,
-  ) {
-    var changed = false;
-    final normalized = AppPreferences.normalizeBackoffReductionPercent(
+    return HomeDataPolicy.applyBackoffReductionToSchedules(
+      schedules,
       reductionPercent,
     );
-    for (final exercise in exercises) {
-      if (exercise.backoffReductionPercent != normalized) {
-        exercise.backoffReductionPercent = normalized;
-        changed = true;
-      }
-    }
-    return changed;
   }
 
   bool _applyBackoffReductionToSession(
     WorkoutSession? session,
     double reductionPercent,
   ) {
-    if (session == null) {
-      return false;
-    }
-    return _applyBackoffReductionToWorkoutExercises(
-      session.exercises,
+    return HomeDataPolicy.applyBackoffReductionToSession(
+      session,
       reductionPercent,
     );
   }
 
   bool _applyBackoffReductionToHistory(double reductionPercent) {
-    var changed = false;
-    for (final session in history) {
-      changed |= _applyBackoffReductionToSession(session, reductionPercent);
-    }
-    return changed;
+    return HomeDataPolicy.applyBackoffReductionToHistory(
+      history,
+      reductionPercent,
+    );
   }
 
   Future<void> _saveBackoffReductionPercent(double reductionPercent) async {
@@ -282,20 +251,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _sortSchedules() {
-    schedules.sort((a, b) {
-      if (a.isArchived != b.isArchived) {
-        return a.isArchived ? 1 : -1;
-      }
-
-      final weekCompare = a.currentWeek().compareTo(b.currentWeek());
-      if (weekCompare != 0) {
-        return weekCompare;
-      }
-
-      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
-    });
-  }
+  void _sortSchedules() => HomeDataPolicy.sortSchedules(schedules);
 
   Future<void> _deleteHistory(int index) async {
     if (index < 0 || index >= history.length) {
@@ -329,8 +285,9 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showExerciseDetail(String exerciseName) {
@@ -543,8 +500,9 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Text(
                   'Strumenti rapidi',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 12),
                 Card(
@@ -676,8 +634,9 @@ class _HomePageState extends State<HomePage> {
 
   List<List<dynamic>> _decodeCsv(String rawText) {
     final normalizedText = _normalizeText(rawText);
-    List<List<dynamic>> rows = const CsvToListConverter(eol: '\n')
-        .convert(normalizedText);
+    List<List<dynamic>> rows = const CsvToListConverter(
+      eol: '\n',
+    ).convert(normalizedText);
 
     if (rows.isNotEmpty &&
         rows.first.length < 7 &&
@@ -3581,9 +3540,9 @@ class _HomePageState extends State<HomePage> {
     updated.arm = parseDecimalInput(armController.text);
     updated.thigh = parseDecimalInput(thighController.text);
     updated.sleepHours = parseIntInput(sleepController.text);
-    updated.readiness = parseIntInput(readinessController.text)
-        ?.clamp(1, 10)
-        .toInt();
+    updated.readiness = parseIntInput(
+      readinessController.text,
+    )?.clamp(1, 10).toInt();
     updated.notes = notesController.text.trim();
     updated.photoPath = photoPath;
     updated.photoName = photoName;
