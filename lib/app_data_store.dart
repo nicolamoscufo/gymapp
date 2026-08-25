@@ -1,7 +1,9 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'local_sqlite_store.dart';
 import 'models/body_log.dart';
 import 'models/exercise.dart';
 import 'models/schedule.dart';
@@ -41,16 +43,24 @@ class AppDataBundle {
 }
 
 class AppDataStore {
+  static LocalSqliteStore? _sqlite;
+
+  static bool get _sqliteSupported {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+  }
+
+  static LocalSqliteStore get _sqliteStore => _sqlite ??= LocalSqliteStore();
+
   static dynamic _decodeJsonOr(
     SharedPreferences prefs,
     String key,
     dynamic fallback,
   ) {
     final raw = prefs.getString(key);
-    if (raw == null || raw.trim().isEmpty) {
-      return fallback;
-    }
-
+    if (raw == null || raw.trim().isEmpty) return fallback;
     try {
       return jsonDecode(raw);
     } catch (_) {
@@ -58,12 +68,86 @@ class AppDataStore {
     }
   }
 
-  static AppDataBundle? _bundleFromAutoBackup(SharedPreferences prefs) {
-    final rawBackup = prefs.getString(AppDataKeys.autoBackupJson);
-    if (rawBackup == null || rawBackup.trim().isEmpty) {
-      return null;
+  static List<T> _safeLegacyList<T>(
+    SharedPreferences prefs,
+    String key,
+    T Function(Map<String, dynamic>) fromJson,
+  ) {
+    final raw = prefs.getString(key);
+    if (raw == null || raw.trim().isEmpty) return [];
+    try {
+      return (jsonDecode(raw) as List<dynamic>)
+          .whereType<Map>()
+          .map((entry) => fromJson(Map<String, dynamic>.from(entry)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Set<String> _legacyFavoriteIds(SharedPreferences prefs) {
+    final raw = prefs.getString(AppDataKeys.favoriteExerciseIds);
+    if (raw == null || raw.trim().isEmpty) return <String>{};
+    try {
+      return (jsonDecode(raw) as List<dynamic>)
+          .map((e) => e.toString())
+          .toSet();
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
+  static AppDataBundle _loadLegacyBundle(SharedPreferences prefs) {
+    var recovered = false;
+
+    List<T> checkedList<T>(
+      String key,
+      T Function(Map<String, dynamic>) parser,
+    ) {
+      final raw = prefs.getString(key);
+      if (raw == null || raw.trim().isEmpty) return [];
+      try {
+        return (jsonDecode(raw) as List<dynamic>)
+            .whereType<Map>()
+            .map((entry) => parser(Map<String, dynamic>.from(entry)))
+            .toList();
+      } catch (_) {
+        recovered = true;
+        return [];
+      }
     }
 
+    WorkoutSession? current;
+    final rawCurrent = prefs.getString(AppDataKeys.currentSession);
+    if (rawCurrent != null && rawCurrent.trim().isNotEmpty) {
+      try {
+        current = WorkoutSession.fromJson(
+          Map<String, dynamic>.from(jsonDecode(rawCurrent) as Map),
+        );
+      } catch (_) {
+        recovered = true;
+      }
+    }
+
+    final bundle = AppDataBundle(
+      schedules: checkedList(AppDataKeys.schedules, Schedule.fromJson),
+      history: checkedList(AppDataKeys.history, WorkoutSession.fromJson),
+      currentSession: current,
+      bodyLogs: checkedList(AppDataKeys.bodyLogs, BodyLog.fromJson),
+      customExercises: checkedList(
+        AppDataKeys.customExercises,
+        Exercise.fromJson,
+      ),
+      favoriteExerciseIds: _legacyFavoriteIds(prefs),
+      recoveredFromCorruption: recovered,
+    );
+    if (!recovered) return bundle;
+    return _bundleFromAutoBackup(prefs) ?? bundle;
+  }
+
+  static AppDataBundle? _bundleFromAutoBackup(SharedPreferences prefs) {
+    final rawBackup = prefs.getString(AppDataKeys.autoBackupJson);
+    if (rawBackup == null || rawBackup.trim().isEmpty) return null;
     try {
       final backupMap = Map<String, dynamic>.from(jsonDecode(rawBackup) as Map);
       return AppDataBundle(
@@ -101,9 +185,11 @@ class AppDataStore {
     }
   }
 
-  static Future<void> _writeAutoBackupSnapshot(SharedPreferences prefs) async {
+  static Future<void> _writeLegacyAutoBackupSnapshot(
+    SharedPreferences prefs,
+  ) async {
     final payload = {
-      'version': 4,
+      'version': 5,
       'auto': true,
       'exportedAt': DateTime.now().toIso8601String(),
       'schedules': _decodeJsonOr(prefs, AppDataKeys.schedules, []),
@@ -119,7 +205,6 @@ class AppDataStore {
         [],
       ),
     };
-
     await prefs.setString(AppDataKeys.autoBackupJson, jsonEncode(payload));
     await prefs.setString(
       AppDataKeys.lastAutoBackupAt,
@@ -127,167 +212,234 @@ class AppDataStore {
     );
   }
 
-  static Future<AppDataBundle> loadBundle() async {
+  static Future<void> _writeSqliteAutoBackup({bool force = false}) async {
     final prefs = await SharedPreferences.getInstance();
-    var recovered = false;
-
-    List<T> safeList<T>(String key, T Function(Map<String, dynamic>) fromJson) {
-      final raw = prefs.getString(key);
-      if (raw == null || raw.trim().isEmpty) {
-        return [];
-      }
-
-      try {
-        final decoded = jsonDecode(raw) as List<dynamic>;
-        return decoded
-            .whereType<Map>()
-            .map((entry) => fromJson(Map<String, dynamic>.from(entry)))
-            .toList();
-      } catch (_) {
-        recovered = true;
-        return [];
+    if (!force) {
+      final last = DateTime.tryParse(
+        prefs.getString(AppDataKeys.lastAutoBackupAt) ?? '',
+      );
+      if (last != null &&
+          DateTime.now().difference(last) < const Duration(minutes: 5)) {
+        return;
       }
     }
+    final snapshot = await _sqliteStore.loadAll();
+    final payload = {
+      'version': 5,
+      'auto': true,
+      'storage': 'sqlite',
+      'exportedAt': DateTime.now().toIso8601String(),
+      'schedules': snapshot.schedules.map((e) => e.toJson()).toList(),
+      'history': snapshot.history.map((e) => e.toJson()).toList(),
+      'bodyLogs': snapshot.bodyLogs.map((e) => e.toJson()).toList(),
+      'currentSession': snapshot.currentSession?.toJson(),
+      'customExercises': snapshot.customExercises
+          .map((e) => e.toJson())
+          .toList(),
+      'favoriteExerciseIds': snapshot.favoriteExerciseIds.toList(),
+    };
+    await prefs.setString(AppDataKeys.autoBackupJson, jsonEncode(payload));
+    await prefs.setString(
+      AppDataKeys.lastAutoBackupAt,
+      DateTime.now().toIso8601String(),
+    );
+  }
 
-    WorkoutSession? safeCurrentSession() {
-      final raw = prefs.getString(AppDataKeys.currentSession);
-      if (raw == null || raw.trim().isEmpty) {
-        return null;
-      }
+  static Future<void> _ensureSqliteMigration() async {
+    final store = _sqliteStore;
+    if (await store.migrationComplete) return;
+    if (await store.hasAnyData) {
+      await store.markMigrationComplete();
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final legacy = _loadLegacyBundle(prefs);
+    await store.migrateLegacyData(
+      schedules: legacy.schedules,
+      history: legacy.history,
+      currentSession: legacy.currentSession,
+      bodyLogs: legacy.bodyLogs,
+      customExercises: legacy.customExercises,
+      favoriteExerciseIds: legacy.favoriteExerciseIds,
+    );
+  }
 
+  static Future<AppDataBundle> loadBundle() async {
+    if (_sqliteSupported) {
       try {
-        return WorkoutSession.fromJson(
-          Map<String, dynamic>.from(jsonDecode(raw) as Map),
+        await _ensureSqliteMigration();
+        final data = await _sqliteStore.loadAll();
+        return AppDataBundle(
+          schedules: data.schedules,
+          history: data.history,
+          currentSession: data.currentSession,
+          bodyLogs: data.bodyLogs,
+          customExercises: data.customExercises,
+          favoriteExerciseIds: data.favoriteExerciseIds,
+          recoveredFromCorruption: false,
         );
       } catch (_) {
-        recovered = true;
-        return null;
+        final prefs = await SharedPreferences.getInstance();
+        return _bundleFromAutoBackup(prefs) ?? _loadLegacyBundle(prefs);
       }
     }
-
-    final bundle = AppDataBundle(
-      schedules: safeList(AppDataKeys.schedules, Schedule.fromJson),
-      history: safeList(AppDataKeys.history, WorkoutSession.fromJson),
-      currentSession: safeCurrentSession(),
-      bodyLogs: safeList(AppDataKeys.bodyLogs, BodyLog.fromJson),
-      recoveredFromCorruption: recovered,
-    );
-
-    if (recovered) {
-      return _bundleFromAutoBackup(prefs) ?? bundle;
-    }
-
-    return bundle;
+    return _loadLegacyBundle(await SharedPreferences.getInstance());
   }
 
-  static Future<List<WorkoutSession>> loadHistory() async {
-    return (await loadBundle()).history;
-  }
+  static Future<List<WorkoutSession>> loadHistory() async =>
+      (await loadBundle()).history;
 
   static Future<void> saveSchedules(List<Schedule> schedules) async {
+    if (_sqliteSupported) {
+      try {
+        await _ensureSqliteMigration();
+        await _sqliteStore.replaceSchedules(schedules);
+        await _writeSqliteAutoBackup(force: true);
+        return;
+      } catch (_) {}
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       AppDataKeys.schedules,
-      jsonEncode(schedules.map((entry) => entry.toJson()).toList()),
+      jsonEncode(schedules.map((e) => e.toJson()).toList()),
     );
-    await _writeAutoBackupSnapshot(prefs);
+    await _writeLegacyAutoBackupSnapshot(prefs);
   }
 
   static Future<void> saveHistory(List<WorkoutSession> history) async {
+    if (_sqliteSupported) {
+      try {
+        await _ensureSqliteMigration();
+        await _sqliteStore.replaceHistory(history);
+        await _writeSqliteAutoBackup(force: true);
+        return;
+      } catch (_) {}
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       AppDataKeys.history,
-      jsonEncode(history.map((entry) => entry.toJson()).toList()),
+      jsonEncode(history.map((e) => e.toJson()).toList()),
     );
-    await _writeAutoBackupSnapshot(prefs);
+    await _writeLegacyAutoBackupSnapshot(prefs);
   }
 
   static Future<void> saveBodyLogs(List<BodyLog> bodyLogs) async {
+    if (_sqliteSupported) {
+      try {
+        await _ensureSqliteMigration();
+        await _sqliteStore.replaceBodyLogs(bodyLogs);
+        await _writeSqliteAutoBackup(force: true);
+        return;
+      } catch (_) {}
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       AppDataKeys.bodyLogs,
-      jsonEncode(bodyLogs.map((entry) => entry.toJson()).toList()),
+      jsonEncode(bodyLogs.map((e) => e.toJson()).toList()),
     );
-    await _writeAutoBackupSnapshot(prefs);
+    await _writeLegacyAutoBackupSnapshot(prefs);
   }
 
   static Future<void> saveCurrentSession(WorkoutSession session) async {
+    if (_sqliteSupported) {
+      try {
+        await _ensureSqliteMigration();
+        await _sqliteStore.saveCurrentSession(session);
+        await _writeSqliteAutoBackup();
+        return;
+      } catch (_) {}
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       AppDataKeys.currentSession,
       jsonEncode(session.toJson()),
     );
-    await _writeAutoBackupSnapshot(prefs);
+    await _writeLegacyAutoBackupSnapshot(prefs);
   }
 
   static Future<void> clearCurrentSession() async {
+    if (_sqliteSupported) {
+      try {
+        await _ensureSqliteMigration();
+        await _sqliteStore.clearCurrentSession();
+        await _writeSqliteAutoBackup();
+        return;
+      } catch (_) {}
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AppDataKeys.currentSession);
-    await _writeAutoBackupSnapshot(prefs);
+    await _writeLegacyAutoBackupSnapshot(prefs);
   }
 
   static Future<Set<String>> loadFavoriteExerciseIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(AppDataKeys.favoriteExerciseIds);
-    if (raw == null || raw.trim().isEmpty) {
-      return <String>{};
+    if (_sqliteSupported) {
+      try {
+        await _ensureSqliteMigration();
+        return await _sqliteStore.loadFavoriteExerciseIds();
+      } catch (_) {}
     }
-
-    try {
-      return (jsonDecode(raw) as List<dynamic>)
-          .map((entry) => entry.toString())
-          .toSet();
-    } catch (_) {
-      return <String>{};
-    }
+    return _legacyFavoriteIds(await SharedPreferences.getInstance());
   }
 
   static Future<void> saveFavoriteExerciseIds(Set<String> ids) async {
+    if (_sqliteSupported) {
+      try {
+        await _ensureSqliteMigration();
+        await _sqliteStore.replaceFavoriteExerciseIds(ids);
+        await _writeSqliteAutoBackup(force: true);
+        return;
+      } catch (_) {}
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       AppDataKeys.favoriteExerciseIds,
       jsonEncode(ids.toList()),
     );
-    await _writeAutoBackupSnapshot(prefs);
+    await _writeLegacyAutoBackupSnapshot(prefs);
   }
 
   static Future<List<Exercise>> loadCustomExercises() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(AppDataKeys.customExercises);
-    if (raw == null || raw.trim().isEmpty) {
-      return [];
+    if (_sqliteSupported) {
+      try {
+        await _ensureSqliteMigration();
+        return await _sqliteStore.loadCustomExercises();
+      } catch (_) {}
     }
-
-    try {
-      return (jsonDecode(raw) as List<dynamic>)
-          .whereType<Map>()
-          .map((entry) => Exercise.fromJson(Map<String, dynamic>.from(entry)))
-          .toList();
-    } catch (_) {
-      return [];
-    }
+    return _safeLegacyList(
+      await SharedPreferences.getInstance(),
+      AppDataKeys.customExercises,
+      Exercise.fromJson,
+    );
   }
 
   static Future<void> saveCustomExercises(List<Exercise> exercises) async {
+    if (_sqliteSupported) {
+      try {
+        await _ensureSqliteMigration();
+        await _sqliteStore.replaceCustomExercises(exercises);
+        await _writeSqliteAutoBackup(force: true);
+        return;
+      } catch (_) {}
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       AppDataKeys.customExercises,
-      jsonEncode(exercises.map((entry) => entry.toJson()).toList()),
+      jsonEncode(exercises.map((e) => e.toJson()).toList()),
     );
-    await _writeAutoBackupSnapshot(prefs);
+    await _writeLegacyAutoBackupSnapshot(prefs);
   }
 
   static Future<void> addCustomExercise(Exercise exercise) async {
     final exercises = await loadCustomExercises();
     final normalizedName = exercise.name.trim().toLowerCase();
-    final existingIndex = exercises.indexWhere(
-      (entry) => entry.name.trim().toLowerCase() == normalizedName,
+    final index = exercises.indexWhere(
+      (e) => e.name.trim().toLowerCase() == normalizedName,
     );
     final template = Exercise.fromJson(exercise.toJson());
-    if (existingIndex == -1) {
+    if (index == -1) {
       exercises.add(template);
     } else {
-      exercises[existingIndex] = template;
+      exercises[index] = template;
     }
     exercises.sort(
       (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
@@ -298,14 +450,11 @@ class AppDataStore {
   static Future<Set<int>> loadScheduledReminderNotificationIds() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(AppDataKeys.scheduledReminderNotificationIds);
-    if (raw == null || raw.trim().isEmpty) {
-      return <int>{};
-    }
-
+    if (raw == null || raw.trim().isEmpty) return <int>{};
     try {
       return (jsonDecode(raw) as List<dynamic>)
           .whereType<num>()
-          .map((entry) => entry.toInt())
+          .map((e) => e.toInt())
           .toSet();
     } catch (_) {
       return <int>{};
@@ -322,13 +471,13 @@ class AppDataStore {
 
   static Future<DateTime?> loadLastAutoBackupAt() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(AppDataKeys.lastAutoBackupAt);
-    return raw == null ? null : DateTime.tryParse(raw);
+    return DateTime.tryParse(
+      prefs.getString(AppDataKeys.lastAutoBackupAt) ?? '',
+    );
   }
 
   static Future<AppDataBundle?> loadAutoBackupBundle() async {
-    final prefs = await SharedPreferences.getInstance();
-    return _bundleFromAutoBackup(prefs);
+    return _bundleFromAutoBackup(await SharedPreferences.getInstance());
   }
 
   static Future<Map<String, dynamic>> buildExportPayload({
@@ -340,17 +489,14 @@ class AppDataStore {
     final favoriteExerciseIds = (await loadFavoriteExerciseIds()).toList()
       ..sort();
     final customExercises = await loadCustomExercises();
-
     return {
       'version': 5,
       'exportedAt': DateTime.now().toIso8601String(),
-      'schedules': schedules.map((schedule) => schedule.toJson()).toList(),
-      'history': history.map((session) => session.toJson()).toList(),
-      'bodyLogs': bodyLogs.map((entry) => entry.toJson()).toList(),
+      'schedules': schedules.map((e) => e.toJson()).toList(),
+      'history': history.map((e) => e.toJson()).toList(),
+      'bodyLogs': bodyLogs.map((e) => e.toJson()).toList(),
       'currentSession': currentSession?.toJson(),
-      'customExercises': customExercises
-          .map((exercise) => exercise.toJson())
-          .toList(),
+      'customExercises': customExercises.map((e) => e.toJson()).toList(),
       'favoriteExerciseIds': favoriteExerciseIds,
     };
   }
@@ -360,19 +506,29 @@ class AppDataStore {
     required List<WorkoutSession> history,
     required List<BodyLog> bodyLogs,
   }) async {
+    if (_sqliteSupported) {
+      try {
+        await _ensureSqliteMigration();
+        await _sqliteStore.replaceSchedules(schedules);
+        await _sqliteStore.replaceHistory(history);
+        await _sqliteStore.replaceBodyLogs(bodyLogs);
+        await _writeSqliteAutoBackup(force: true);
+        return;
+      } catch (_) {}
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       AppDataKeys.schedules,
-      jsonEncode(schedules.map((entry) => entry.toJson()).toList()),
+      jsonEncode(schedules.map((e) => e.toJson()).toList()),
     );
     await prefs.setString(
       AppDataKeys.history,
-      jsonEncode(history.map((entry) => entry.toJson()).toList()),
+      jsonEncode(history.map((e) => e.toJson()).toList()),
     );
     await prefs.setString(
       AppDataKeys.bodyLogs,
-      jsonEncode(bodyLogs.map((entry) => entry.toJson()).toList()),
+      jsonEncode(bodyLogs.map((e) => e.toJson()).toList()),
     );
-    await _writeAutoBackupSnapshot(prefs);
+    await _writeLegacyAutoBackupSnapshot(prefs);
   }
 }

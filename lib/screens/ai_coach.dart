@@ -2,6 +2,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../ai_coach/ai_coach_memory.dart';
+import '../ai_coach/ai_plan_action_service.dart';
+import '../app_data_store.dart';
 import '../ai_coach/ai_coach_model_manager.dart';
 import '../ai_coach/ai_coach_models.dart';
 import '../ai_coach/ai_coach_user_profile.dart';
@@ -17,6 +19,7 @@ class AiCoachScreen extends StatefulWidget {
   final List<BodyLog> bodyLogs;
   final LocalAiCoachService service;
   final AiCoachModelInstaller modelInstaller;
+  final AiPlanActionService planActionService;
 
   const AiCoachScreen({
     super.key,
@@ -25,6 +28,7 @@ class AiCoachScreen extends StatefulWidget {
     this.bodyLogs = const [],
     this.service = const LocalAiCoachService(),
     this.modelInstaller = const FlutterGemmaAiCoachModelInstaller(),
+    this.planActionService = const AiPlanActionService(),
   });
 
   @override
@@ -48,6 +52,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   List<ChatConversation> _allConversations = [];
   List<AiCoachImageInput> _pendingImages = [];
   bool _isRunning = false;
+  bool _isAnalyzingPlan = false;
   bool _isCheckingModel = true;
   bool _isModelInstalled = false;
   bool _isDownloadingModel = false;
@@ -217,9 +222,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
     final images = files
         .where((file) => file.bytes != null)
         .take(4)
-        .map(
-          (file) => AiCoachImageInput(label: file.name, bytes: file.bytes!),
-        )
+        .map((file) => AiCoachImageInput(label: file.name, bytes: file.bytes!))
         .toList();
     if (images.isEmpty) return;
     setState(() {
@@ -285,18 +288,17 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
         messages: updatedMessages,
         newImages: userMessage.hasImages
             ? userMessage.imageBytes
-                .map(
-                  (bytes) => AiCoachImageInput(label: '', bytes: bytes),
-                )
-                .toList()
+                  .map((bytes) => AiCoachImageInput(label: '', bytes: bytes))
+                  .toList()
             : [],
       );
 
-      final assistantMessage = ChatMessage(role: 'assistant', content: response);
-      final finalMessages = [...updatedMessages, assistantMessage];
-      final finalConversation = conversation.copyWith(
-        messages: finalMessages,
+      final assistantMessage = ChatMessage(
+        role: 'assistant',
+        content: response,
       );
+      final finalMessages = [...updatedMessages, assistantMessage];
+      final finalConversation = conversation.copyWith(messages: finalMessages);
 
       if (!mounted) return;
       setState(() {
@@ -319,6 +321,79 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
     await _sendMessage();
   }
 
+  Future<void> _reviewPlanAdjustments() async {
+    if (_isAnalyzingPlan || _isRunning) return;
+    if (!_isModelInstalled) {
+      setState(
+        () => _errorMessage =
+            'Scarica il modello locale prima di analizzare la scheda.',
+      );
+      return;
+    }
+    setState(() {
+      _isAnalyzingPlan = true;
+      _errorMessage = null;
+    });
+    try {
+      final report = await widget.service.suggestWorkoutAdjustments(
+        history: widget.history,
+        schedules: widget.schedules,
+        bodyLogs: widget.bodyLogs,
+        profile: _profile,
+        memory: _memory,
+      );
+      final actions = widget.planActionService.validate(
+        report,
+        widget.schedules,
+      );
+      if (!mounted) return;
+      if (actions.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Nessuna modifica strutturata applicabile in sicurezza.',
+            ),
+          ),
+        );
+        return;
+      }
+      // Generation is complete: stop the app-bar spinner while the user reviews the diff.
+      setState(() => _isAnalyzingPlan = false);
+      final selected = await showModalBottomSheet<List<ValidatedPlanAction>>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (context) => _PlanActionsReviewSheet(actions: actions),
+      );
+      if (!mounted || selected == null || selected.isEmpty) return;
+      final result = widget.planActionService.apply(widget.schedules, selected);
+      if (result.applied > 0) {
+        await AppDataStore.saveSchedules(widget.schedules);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.skipped == 0
+                ? '${result.applied} modifiche applicate alla scheda.'
+                : '${result.applied} applicate, ${result.skipped} saltate perché i dati erano cambiati.',
+          ),
+        ),
+      );
+    } on AiCoachInsufficientDataException catch (e) {
+      if (!mounted) return;
+      setState(() => _errorMessage = e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+        () => _errorMessage =
+            'Impossibile generare modifiche sicure alla scheda.',
+      );
+    } finally {
+      if (mounted) setState(() => _isAnalyzingPlan = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -326,11 +401,20 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          _conversation.title,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(_conversation.title, overflow: TextOverflow.ellipsis),
         actions: [
+          if (_isModelInstalled)
+            IconButton(
+              key: const ValueKey('ai-plan-actions'),
+              icon: _isAnalyzingPlan
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome),
+              tooltip: 'Proponi modifiche alla scheda',
+              onPressed: _isAnalyzingPlan ? null : _reviewPlanAdjustments,
+            ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: 'Edit profile',
@@ -473,7 +557,9 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
                     Expanded(
                       child: TextField(
                         controller: heightController,
-                        decoration: const InputDecoration(labelText: 'Height cm'),
+                        decoration: const InputDecoration(
+                          labelText: 'Height cm',
+                        ),
                         keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
@@ -504,7 +590,9 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
                     Expanded(
                       child: TextField(
                         controller: daysController,
-                        decoration: const InputDecoration(labelText: 'Days/week'),
+                        decoration: const InputDecoration(
+                          labelText: 'Days/week',
+                        ),
                         keyboardType: TextInputType.number,
                       ),
                     ),
@@ -696,8 +784,8 @@ class _ChatHistoryDrawer extends StatelessWidget {
                                             conv.title,
                                             style: theme.textTheme.bodyMedium
                                                 ?.copyWith(
-                                              fontWeight: FontWeight.w700,
-                                            ),
+                                                  fontWeight: FontWeight.w700,
+                                                ),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -707,10 +795,9 @@ class _ChatHistoryDrawer extends StatelessWidget {
                                               preview,
                                               style: theme.textTheme.bodySmall
                                                   ?.copyWith(
-                                                color:
-                                                    colorScheme
+                                                    color: colorScheme
                                                         .onSurfaceVariant,
-                                              ),
+                                                  ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                             ),
@@ -768,10 +855,7 @@ class _DeleteButton extends StatelessWidget {
 }
 
 class _ModelReadyBanner extends StatelessWidget {
-  const _ModelReadyBanner({
-    required this.theme,
-    required this.colorScheme,
-  });
+  const _ModelReadyBanner({required this.theme, required this.colorScheme});
 
   final ThemeData theme;
   final ColorScheme colorScheme;
@@ -829,7 +913,11 @@ class _ErrorBanner extends StatelessWidget {
           ),
           GestureDetector(
             onTap: onDismiss,
-            child: Icon(Icons.close, size: 16, color: colorScheme.onSurfaceVariant),
+            child: Icon(
+              Icons.close,
+              size: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -961,18 +1049,36 @@ class _Suggestion {
 }
 
 const _suggestions = [
-  _Suggestion(Icons.summarize, 'Riassumi ultimo allenamento',
-      'Fammi un riassunto del mio ultimo allenamento. Cosa è andato bene?'),
-  _Suggestion(Icons.date_range, 'Report settimanale',
-      'Genera un report della mia settimana di allenamento'),
-  _Suggestion(Icons.crisis_alert, 'Analisi punti deboli',
-      'Quali sono i miei punti deboli negli ultimi allenamenti?'),
-  _Suggestion(Icons.tune, 'Suggerimenti',
-      'Hai suggerimenti per migliorare i miei allenamenti?'),
-  _Suggestion(Icons.notes, 'Riassumi note',
-      'Cosa dicono le mie note di allenamento?'),
-  _Suggestion(Icons.compare, 'Consiglio esercizi',
-      'Che esercizi mi consigli per la prossima sessione?'),
+  _Suggestion(
+    Icons.summarize,
+    'Riassumi ultimo allenamento',
+    'Fammi un riassunto del mio ultimo allenamento. Cosa è andato bene?',
+  ),
+  _Suggestion(
+    Icons.date_range,
+    'Report settimanale',
+    'Genera un report della mia settimana di allenamento',
+  ),
+  _Suggestion(
+    Icons.crisis_alert,
+    'Analisi punti deboli',
+    'Quali sono i miei punti deboli negli ultimi allenamenti?',
+  ),
+  _Suggestion(
+    Icons.tune,
+    'Suggerimenti',
+    'Hai suggerimenti per migliorare i miei allenamenti?',
+  ),
+  _Suggestion(
+    Icons.notes,
+    'Riassumi note',
+    'Cosa dicono le mie note di allenamento?',
+  ),
+  _Suggestion(
+    Icons.compare,
+    'Consiglio esercizi',
+    'Che esercizi mi consigli per la prossima sessione?',
+  ),
 ];
 
 class _ChatMessagesView extends StatelessWidget {
@@ -1038,14 +1144,13 @@ class _ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.role == 'user';
-    final alignment =
-        isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+    final alignment = isUser
+        ? CrossAxisAlignment.end
+        : CrossAxisAlignment.start;
     final bgColor = isUser
         ? colorScheme.primary
         : colorScheme.surfaceContainerHighest;
-    final textColor = isUser
-        ? colorScheme.onPrimary
-        : colorScheme.onSurface;
+    final textColor = isUser ? colorScheme.onPrimary : colorScheme.onSurface;
     final borderRadius = BorderRadius.only(
       topLeft: const Radius.circular(18),
       topRight: const Radius.circular(18),
@@ -1090,19 +1195,14 @@ class _ChatBubble extends StatelessWidget {
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.75,
               ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
                 color: bgColor,
                 borderRadius: borderRadius,
               ),
               child: Text(
                 message.content,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: textColor,
-                ),
+                style: theme.textTheme.bodyMedium?.copyWith(color: textColor),
               ),
             ),
         ],
@@ -1130,9 +1230,7 @@ class _PendingImagesBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerLow,
-        border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant),
-        ),
+        border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: Row(
         children: [
@@ -1146,10 +1244,7 @@ class _PendingImagesBar extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final image = images[index];
                   return Chip(
-                    label: Text(
-                      image.label,
-                      style: theme.textTheme.bodySmall,
-                    ),
+                    label: Text(image.label, style: theme.textTheme.bodySmall),
                     deleteIcon: const Icon(Icons.close, size: 16),
                     onDeleted: () => onRemove(index),
                     visualDensity: VisualDensity.compact,
@@ -1196,9 +1291,7 @@ class _ChatInputBar extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant),
-        ),
+        border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -1237,6 +1330,119 @@ class _ChatInputBar extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PlanActionsReviewSheet extends StatefulWidget {
+  final List<ValidatedPlanAction> actions;
+
+  const _PlanActionsReviewSheet({required this.actions});
+
+  @override
+  State<_PlanActionsReviewSheet> createState() =>
+      _PlanActionsReviewSheetState();
+}
+
+class _PlanActionsReviewSheetState extends State<_PlanActionsReviewSheet> {
+  late final Set<int> _selected = {
+    for (var i = 0; i < widget.actions.length; i += 1) i,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: FractionallySizedBox(
+        heightFactor: 0.82,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Modifiche proposte', style: theme.textTheme.titleLarge),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Il Coach propone, il validator controlla i valori e nulla cambia finché non confermi.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: widget.actions.length,
+                itemBuilder: (context, index) {
+                  final action = widget.actions[index];
+                  return Card(
+                    child: CheckboxListTile(
+                      key: ValueKey('plan-action-$index'),
+                      value: _selected.contains(index),
+                      onChanged: (value) {
+                        setState(() {
+                          if (value == true) {
+                            _selected.add(index);
+                          } else {
+                            _selected.remove(index);
+                          }
+                        });
+                      },
+                      title: Text(action.title),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${action.scheduleTitle}: ${action.currentValue} → ${action.suggestedValue}',
+                            ),
+                            if (action.source.rationale.trim().isNotEmpty)
+                              Text(action.source.rationale),
+                            if (action.suggestionReason.trim().isNotEmpty)
+                              Text('Motivo: ${action.suggestionReason}'),
+                            Text('Confidenza: ${action.confidence}'),
+                          ],
+                        ),
+                      ),
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Annulla'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      key: const ValueKey('apply-plan-actions'),
+                      onPressed: _selected.isEmpty
+                          ? null
+                          : () => Navigator.pop(
+                              context,
+                              _selected.map((i) => widget.actions[i]).toList(),
+                            ),
+                      child: Text('Applica ${_selected.length}'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
