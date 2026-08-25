@@ -1,0 +1,49 @@
+name: Routine System v2 Build
+
+on:
+  push:
+    branches:
+      - feat/routine-system-v2
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/routine-system-v2
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply Routine System v2
+        run: python tool/routine_system_v2.py
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Format
+        run: dart format lib/models/schedule.dart lib/local_sqlite_store.dart lib/routine_factory.dart lib/home_data_policy.dart lib/screens/home.dart test/local_sqlite_store_test.dart test/routine_system_v2_test.dart
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Commit Routine System v2
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/models/schedule.dart lib/local_sqlite_store.dart lib/routine_factory.dart lib/home_data_policy.dart lib/screens/home.dart test/local_sqlite_store_test.dart test/routine_system_v2_test.dart
+          git diff --cached --quiet && exit 0
+          git commit -m "Implement Routine System v2 foundations"
+          git push origin HEAD:feat/routine-system-v2
