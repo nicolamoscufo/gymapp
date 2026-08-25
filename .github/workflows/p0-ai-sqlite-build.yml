@@ -25,7 +25,9 @@ jobs:
           cache: true
 
       - name: Apply P0 patch
-        run: python tool/p0_patch.py
+        run: |
+          python tool/p0_patch.py
+          python tool/p0_fix_patch.py
 
       - name: Install dependencies
         run: flutter pub get
