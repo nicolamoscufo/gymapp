@@ -25,7 +25,15 @@ jobs:
           cache: true
 
       - name: Apply workout experience v3
-        run: python tool/workout_experience_v3_patch.py
+        run: |
+          python tool/workout_experience_v3_patch.py
+          python <<'PY'
+          from pathlib import Path
+          path = Path('lib/screens/active_workout.dart')
+          text = path.read_text()
+          text = text.replace("'e1RM\n${_formatWeight", "'e1RM\\n${_formatWeight")
+          path.write_text(text)
+          PY
 
       - name: Format
         run: dart format lib/screens/active_workout.dart lib/ai_coach/training_context_builder.dart lib/workout_progression_analytics.dart test/workout_progression_analytics_test.dart test/workout_experience_v3_test.dart
