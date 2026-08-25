@@ -30,6 +30,7 @@ jobs:
           python tool/p0_patch.py
           python tool/p0_fix_patch.py
           python tool/p0_analyzer_fix.py
+          python tool/p0_behavior_fix.py
 
       - name: Install dependencies
         run: flutter pub get
