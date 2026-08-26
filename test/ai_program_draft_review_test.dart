@@ -29,10 +29,15 @@ void main() {
     await tester.pump();
 
     final secondRemoveButton = find.byTooltip('Rimuovi esercizio').at(1);
+    final reviewScrollable = find.ancestor(
+      of: secondRemoveButton,
+      matching: find.byType(Scrollable),
+    );
+    expect(reviewScrollable, findsOneWidget);
     await tester.scrollUntilVisible(
       secondRemoveButton,
       180,
-      scrollable: find.byType(ListView),
+      scrollable: reviewScrollable,
     );
     await tester.pump();
     await tester.tap(secondRemoveButton);
