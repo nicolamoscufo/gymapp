@@ -246,7 +246,7 @@ void main() {
     addTearDown(store.close);
     // Force opening/migration without requiring the rest of the application
     // schema to exist in this focused fixture.
-    await store.hasAnyData;
+    expect(await store.migrationComplete, isFalse);
 
     final upgraded = await databaseFactoryFfi.openDatabase(path);
     addTearDown(upgraded.close);
