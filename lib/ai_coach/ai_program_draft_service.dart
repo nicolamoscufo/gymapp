@@ -50,11 +50,15 @@ class AiProgramDraftService {
       profile: profile,
       memory: memory,
     );
-    final catalogContext = await exerciseCatalogRetriever.retrieveForProgram(
+    final retrievedCatalog = await exerciseCatalogRetriever.retrieveForProgram(
       query: request,
       preferredExerciseNames: schedules.expand(
         (schedule) => schedule.exercises.map((exercise) => exercise.name),
       ),
+    );
+    final catalogContext = _constrainCatalogByExplicitEquipment(
+      retrievedCatalog,
+      request,
     );
     if (!catalogContext.isEmpty) {
       context['exercise_catalog'] = catalogContext.toJson();
@@ -124,6 +128,7 @@ Rules:
 - Respect user_profile preferences, equipment, available days, session duration and avoided exercises when provided.
 - Use program_history and deterministic_analytics as evidence. Do not contradict deterministic progression/recovery facts without explicitly preserving the uncertainty in rationale.
 - If exercise_catalog exists, it is a retrieved shortlist from the app's local exercise dataset, not an exhaustive list. Prefer suitable catalog matches for new exercises.
+- When the user explicitly limits equipment, only use retrieved candidates compatible with that equipment unless the user explicitly permits alternatives.
 - When selecting a retrieved catalog exercise, copy its canonical name, muscle_group, equipment and movement_pattern exactly. Do not invent catalog metadata.
 - If no suitable retrieved match exists, a custom exercise is allowed, but do not claim that it came from the catalog.
 - Existing active-plan exercises remain authoritative for their persistent IDs and current prescription even when the catalog contains a similar exercise.
@@ -192,4 +197,47 @@ ${jsonEncode(context)}
       ],
     },
   };
+}
+
+ExerciseCatalogContext _constrainCatalogByExplicitEquipment(
+  ExerciseCatalogContext context,
+  String request,
+) {
+  final requested = _explicitEquipment(request);
+  if (requested.isEmpty || context.isEmpty) return context;
+  final filtered = context.matches.where((match) {
+    final equipment = match.entry.equipment.trim().toLowerCase();
+    return requested.any(equipment.contains);
+  }).toList();
+  return ExerciseCatalogContext(
+    query: context.query,
+    mode: context.mode,
+    matches: filtered,
+  );
+}
+
+Set<String> _explicitEquipment(String request) {
+  final normalized = request.toLowerCase();
+  final equipment = <String>{};
+
+  bool mentions(Iterable<String> variants) =>
+      variants.any((variant) => normalized.contains(variant));
+
+  if (mentions(const ['cavi', 'cavo', 'cable'])) equipment.add('cable');
+  if (mentions(const ['manubri', 'manubrio', 'dumbbell'])) {
+    equipment.add('dumbbell');
+  }
+  if (mentions(const ['bilanciere', 'barbell'])) equipment.add('barbell');
+  if (mentions(const ['macchina', 'macchine', 'machine'])) {
+    equipment.add('machine');
+  }
+  if (mentions(const ['corpo libero', 'bodyweight', 'body weight'])) {
+    equipment.add('body weight');
+  }
+  if (mentions(const ['kettlebell'])) equipment.add('kettlebell');
+  if (mentions(const ['elastico', 'elastici', 'resistance band'])) {
+    equipment.add('band');
+  }
+
+  return equipment;
 }
