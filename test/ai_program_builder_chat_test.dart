@@ -5,6 +5,7 @@ import 'package:gymapp/ai_coach/ai_coach_memory.dart';
 import 'package:gymapp/ai_coach/ai_coach_model_manager.dart';
 import 'package:gymapp/ai_coach/ai_coach_user_profile.dart';
 import 'package:gymapp/ai_coach/ai_program_conversation_coordinator.dart';
+import 'package:gymapp/ai_coach/ai_program_draft_commit_service.dart';
 import 'package:gymapp/ai_coach/chat_conversation.dart';
 import 'package:gymapp/app_data_store.dart';
 import 'package:gymapp/models/body_log.dart';
@@ -36,6 +37,8 @@ void main() {
             scheduleVersions: versions,
             modelInstaller: const _InstalledModel(),
             programConversationCoordinator: const _FakeProgramCoordinator(),
+            programDraftCommitService:
+                const _DeterministicProgramDraftCommitService(),
           ),
         ),
       );
@@ -205,9 +208,6 @@ void main() {
 
 Future<void> _pumpUntilSaved(WidgetTester tester) async {
   await tester.runAsync(() async {
-    // The first save can cold-load the catalog asset on CI. Poll the
-    // persisted UI state with a bounded wall-clock wait instead of relying on
-    // pumpAndSettle, which cannot settle while Coach animations are active.
     for (var attempt = 0; attempt < 1000; attempt++) {
       final conversations = await const ChatConversationStore().loadAll();
       final saved = conversations.any(
@@ -313,6 +313,45 @@ class _FakeModifyProgramCoordinator extends AiProgramConversationCoordinator {
         content: proposal.summary,
         actionPayload: proposal.toJson(),
       ),
+    );
+  }
+}
+
+class _DeterministicProgramDraftCommitService
+    extends AiProgramDraftCommitService {
+  const _DeterministicProgramDraftCommitService();
+
+  @override
+  Future<AiProgramDraftCommitResult> commit(
+    AiProgramActionProposal proposal,
+  ) async {
+    final latest = await AppDataStore.loadBundle();
+    final working = latest.schedules
+        .map((schedule) => Schedule.fromJson(schedule.toJson()))
+        .toList();
+    final applyResult = const AiActionProtocolService().apply(
+      working,
+      proposal,
+    );
+    if (!applyResult.applied) {
+      return AiProgramDraftCommitResult(
+        saved: false,
+        errors: applyResult.errors,
+        schedules: working,
+      );
+    }
+
+    await AppDataStore.saveSchedules(
+      working,
+      source: ScheduleVersionSource.aiCoach,
+      reason: 'Widget test AI Coach program draft approved',
+    );
+    final persisted = await AppDataStore.loadBundle();
+    return AiProgramDraftCommitResult(
+      saved: true,
+      createdSchedules: applyResult.createdSchedules,
+      modifiedSchedules: applyResult.modifiedSchedules,
+      schedules: persisted.schedules,
     );
   }
 }
