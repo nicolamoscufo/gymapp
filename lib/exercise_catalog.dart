@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
+import 'exercise_catalog_identity.dart';
 import 'models/exercise.dart';
 
 const exerciseCatalogAssetPath = 'esercizi2_en_fields_minified.json';
@@ -117,6 +118,9 @@ List<ExerciseCatalogEntry> parseExerciseCatalog(String jsonText) {
       .toList();
 
   catalog.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  for (final entry in catalog) {
+    registerExerciseCatalogIdentity(name: entry.name, catalogId: entry.id);
+  }
   return catalog;
 }
 
