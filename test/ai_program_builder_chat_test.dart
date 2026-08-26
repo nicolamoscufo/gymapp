@@ -204,11 +204,20 @@ void main() {
 }
 
 Future<void> _pumpUntilSaved(WidgetTester tester) async {
-  for (var attempt = 0; attempt < 20; attempt++) {
-    await tester.pump(const Duration(milliseconds: 50));
-    if (find.text('Salvato').evaluate().isNotEmpty) return;
-  }
-  expect(find.text('Salvato'), findsOneWidget);
+  await tester.runAsync(() async {
+    for (var attempt = 0; attempt < 100; attempt++) {
+      final conversations = await const ChatConversationStore().loadAll();
+      final saved = conversations.any(
+        (conversation) => conversation.messages.any(
+          (message) => message.actionPayload?['ui_status'] == 'saved',
+        ),
+      );
+      if (saved) return;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    fail('Program draft was not persisted as saved.');
+  });
+  await tester.pump();
 }
 
 class _FakeProgramCoordinator extends AiProgramConversationCoordinator {
