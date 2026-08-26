@@ -162,7 +162,8 @@ class Exercise {
     this.progressionRepStep = 1,
     this.progressionScheme = ProgressionScheme.doubleProgression,
   }) : id = id ?? newModelId('exercise'),
-       catalogId = catalogId ?? catalogIdForExerciseName(name);
+       catalogId = catalogId ??
+           (id == null ? catalogIdForExerciseName(name) : null);
 
   String get targetRepsLabel {
     if (targetMinReps != null && targetMaxReps != null) {
