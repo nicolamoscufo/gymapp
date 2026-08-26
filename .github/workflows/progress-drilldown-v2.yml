@@ -1,0 +1,44 @@
+name: Progress Drill-down v2
+
+on:
+  push:
+    branches:
+      - feature/progress-drilldown-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/progress-drilldown-v2
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Apply Progress drill-down v2
+        run: python3 .github/scripts/add_progress_drilldown_v2.py
+      - name: Format
+        run: dart format lib/progress_intelligence.dart lib/screens/exercise_detail.dart lib/screens/progress_center.dart test/progress_drilldown_test.dart
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Run drill-down tests
+        run: flutter test test/progress_drilldown_test.dart test/progress_center_test.dart
+      - name: Analyze
+        run: flutter analyze
+      - name: Commit generated source changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/progress_intelligence.dart lib/screens/exercise_detail.dart lib/screens/progress_center.dart test/progress_drilldown_test.dart
+          git commit -m "Add Progress Center exercise drill-down"
+          git push origin HEAD:feature/progress-drilldown-v2
