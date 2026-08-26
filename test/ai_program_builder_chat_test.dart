@@ -63,7 +63,7 @@ void main() {
       );
       await tester.ensureVisible(saveFinder);
       await tester.tap(saveFinder);
-      await tester.pumpAndSettle();
+      await _pumpUntilSaved(tester);
 
       final after = await AppDataStore.loadBundle();
       expect(after.schedules, hasLength(2));
@@ -148,7 +148,7 @@ void main() {
     );
     await tester.ensureVisible(saveFinder);
     await tester.tap(saveFinder);
-    await tester.pumpAndSettle();
+    await _pumpUntilSaved(tester);
 
     final after = await AppDataStore.loadBundle();
     expect(after.schedules, hasLength(1));
@@ -201,6 +201,14 @@ void main() {
       findsOneWidget,
     );
   });
+}
+
+Future<void> _pumpUntilSaved(WidgetTester tester) async {
+  for (var attempt = 0; attempt < 20; attempt++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (find.text('Salvato').evaluate().isNotEmpty) return;
+  }
+  expect(find.text('Salvato'), findsOneWidget);
 }
 
 class _FakeProgramCoordinator extends AiProgramConversationCoordinator {
