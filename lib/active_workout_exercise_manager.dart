@@ -247,7 +247,11 @@ class ActiveWorkoutExerciseManager {
 
     final currentIndex = _indexOf(exercise);
     if (currentIndex < 0) return null;
-    for (var index = currentIndex + 1; index < session.exercises.length; index++) {
+    for (
+      var index = currentIndex + 1;
+      index < session.exercises.length;
+      index++
+    ) {
       final candidate = session.exercises[index];
       if (candidate.sets.any((set) => !set.isCompleted)) {
         return candidate;

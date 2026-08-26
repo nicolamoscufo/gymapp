@@ -24,10 +24,7 @@ WorkoutExercise _exercise(
     progressionScheme: ProgressionScheme.manual,
     sets:
         sets ??
-        [
-          ExerciseSet(weight: 50, reps: 8),
-          ExerciseSet(weight: 50, reps: 8),
-        ],
+        [ExerciseSet(weight: 50, reps: 8), ExerciseSet(weight: 50, reps: 8)],
     previousWeights: previousWeights,
     previousReps: previousReps,
   );
@@ -59,22 +56,25 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('smart navigation advances only after a normal exercise is complete', () {
-    final first = _exercise('Bench');
-    final completedMiddle = _exercise(
-      'Fly',
-      sets: [ExerciseSet(weight: 20, reps: 12, isCompleted: true)],
-    );
-    final next = _exercise('Press');
-    final session = _session([first, completedMiddle, next]);
-    final manager = _exerciseManager(session);
+  test(
+    'smart navigation advances only after a normal exercise is complete',
+    () {
+      final first = _exercise('Bench');
+      final completedMiddle = _exercise(
+        'Fly',
+        sets: [ExerciseSet(weight: 20, reps: 12, isCompleted: true)],
+      );
+      final next = _exercise('Press');
+      final session = _session([first, completedMiddle, next]);
+      final manager = _exerciseManager(session);
 
-    first.sets.first.isCompleted = true;
-    expect(manager.nextSupersetMemberAfterSet(first, 0), isNull);
+      first.sets.first.isCompleted = true;
+      expect(manager.nextSupersetMemberAfterSet(first, 0), isNull);
 
-    first.sets.last.isCompleted = true;
-    expect(manager.nextSupersetMemberAfterSet(first, 1)?.id, next.id);
-  });
+      first.sets.last.isCompleted = true;
+      expect(manager.nextSupersetMemberAfterSet(first, 1)?.id, next.id);
+    },
+  );
 
   test('smart navigation keeps drop-set and superset priority', () {
     final supersetA = _exercise('A', supersetGroup: 7);
