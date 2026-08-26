@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gymapp/local_sqlite_store.dart';
 import 'package:gymapp/models/body_log.dart';
@@ -107,6 +109,73 @@ void main() {
       expect(data.bodyLogs.single.bodyWeight, 79.5);
       expect(data.customExercises.single.id, 'bench-plan');
       expect(data.favoriteExerciseIds, contains('bench-plan'));
+    },
+  );
+
+  test(
+    'existing v1 sqlite database upgrades without losing base tables',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('gymapp-v1-upgrade-');
+      addTearDown(() => temp.delete(recursive: true));
+      final path = '${temp.path}/gymapp.db';
+      final legacyDb = await databaseFactoryFfi.openDatabase(
+        path,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: (db, _) async {
+            await db.execute(
+              'CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+            );
+            await db.execute('CREATE TABLE schedules (id TEXT PRIMARY KEY)');
+            await db.execute(
+              'CREATE TABLE workout_sessions (id TEXT PRIMARY KEY, session_kind TEXT NOT NULL, position INTEGER NOT NULL, schedule_id TEXT, schedule_title TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL)',
+            );
+            await db.insert('meta', {
+              'key': 'legacy_migrated_v1',
+              'value': '1',
+            });
+            await db.insert('schedules', {'id': 'legacy-plan'});
+          },
+        ),
+      );
+      await legacyDb.close();
+
+      final store = LocalSqliteStore(
+        factoryOverride: databaseFactoryFfi,
+        databasePath: path,
+      );
+      addTearDown(store.close);
+      expect(await store.migrationComplete, isTrue);
+
+      final upgraded = await databaseFactoryFfi.openDatabase(path);
+      addTearDown(upgraded.close);
+      final scheduleColumns = await upgraded.rawQuery(
+        'PRAGMA table_info(schedules)',
+      );
+      final workoutColumns = await upgraded.rawQuery(
+        'PRAGMA table_info(workout_sessions)',
+      );
+      final versionTable = await upgraded.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='schedule_versions'",
+      );
+
+      expect(
+        scheduleColumns.map((row) => row['name']),
+        containsAll(['current_version_id', 'current_version_number']),
+      );
+      expect(
+        workoutColumns.map((row) => row['name']),
+        contains('schedule_version_id'),
+      );
+      expect(versionTable, hasLength(1));
+      expect(
+        await upgraded.query(
+          'schedules',
+          where: 'id = ?',
+          whereArgs: ['legacy-plan'],
+        ),
+        hasLength(1),
+      );
     },
   );
 

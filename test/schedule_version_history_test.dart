@@ -50,6 +50,54 @@ void main() {
     expect(second.restoreSchedule().exercises.single.weight, 82.5);
   });
 
+  test(
+    'import merge keeps stable version ids and builds one ordered chain',
+    () {
+      final schedule = _schedule();
+      final local = ScheduleVersion.capture(
+        schedule: schedule,
+        versionNumber: 1,
+        createdAt: DateTime(2026, 7, 1),
+        source: ScheduleVersionSource.user,
+      );
+      schedule.exercises.single.weight = 82.5;
+      final imported = ScheduleVersion.capture(
+        schedule: schedule,
+        versionNumber: 1,
+        createdAt: DateTime(2026, 8, 1),
+        source: ScheduleVersionSource.aiCoach,
+      );
+      final deletedSchedule = Schedule(
+        id: 'old-program',
+        title: 'Old',
+        week: 1,
+        createdAt: DateTime(2026, 5, 1),
+        exercises: const [],
+      );
+      final historicalOnly = ScheduleVersion.capture(
+        schedule: deletedSchedule,
+        versionNumber: 1,
+        createdAt: DateTime(2026, 5, 1),
+        source: ScheduleVersionSource.import,
+      );
+
+      final merged = mergeScheduleVersionHistories(
+        current: [local],
+        incoming: [imported, historicalOnly],
+      );
+      final push = merged.where((entry) => entry.scheduleId == 'push').toList();
+
+      expect(push.map((entry) => entry.id), [local.id, imported.id]);
+      expect(push.map((entry) => entry.versionNumber), [1, 2]);
+      expect(push.last.parentVersionId, local.id);
+      expect(
+        merged.any((entry) => entry.id == historicalOnly.id),
+        isTrue,
+        reason: 'Deleted schedules still belong to long-term program history',
+      );
+    },
+  );
+
   test('legacy load backfills version one and persists the pointer', () async {
     final schedule = _schedule();
     SharedPreferences.setMockInitialValues({
