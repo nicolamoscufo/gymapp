@@ -22,6 +22,8 @@ jobs:
           cache: true
       - name: Apply Progress Center Focus UI
         run: python3 .github/scripts/add_progress_center_focus.py
+      - name: Make Focus widget test scroll-aware
+        run: python3 .github/scripts/fix_progress_center_focus_test_visibility.py
       - name: Format
         run: dart format lib/progress_intelligence.dart lib/screens/progress_center.dart test/progress_intelligence_test.dart test/progress_center_test.dart
       - name: Install dependencies
