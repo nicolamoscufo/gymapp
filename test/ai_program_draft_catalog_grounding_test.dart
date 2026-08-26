@@ -126,6 +126,49 @@ void main() {
     expect(updated.exercises.single.id, 'bench-instance');
     expect(updated.exercises.single.weight, 26);
   });
+
+  test('ambiguous exact catalog name remains ungrounded', () async {
+    final service = AiProgramDraftCommitService(
+      exerciseCatalogRetriever: ExerciseCatalogRetriever(
+        catalogLoader: _ambiguousCatalogLoader,
+      ),
+    );
+
+    final result = await service.commit(
+      AiProgramActionProposal(
+        kind: AiProgramActionKind.proposeProgram,
+        summary: 'Pull',
+        rationale: 'Ambiguous grounding test.',
+        confidence: 'medium',
+        schedules: const [
+          AiProgramScheduleDraft(
+            draftKey: 'pull',
+            title: 'Pull',
+            exercises: [
+              AiProgramDraftExercise(
+                name: 'dumbbell row',
+                sets: 3,
+                reps: 10,
+                weight: 20,
+                muscleGroup: 'back',
+                equipment: 'dumbbell',
+                movementPattern: 'Tirata',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    expect(result.saved, isTrue);
+    final exercise = (await AppDataStore.loadBundle())
+        .schedules
+        .single
+        .exercises
+        .single;
+    expect(exercise.catalogId, isNull);
+    expect(exercise.name, 'dumbbell row');
+  });
 }
 
 Future<List<ExerciseCatalogEntry>> _catalogLoader() async => const [
@@ -139,6 +182,33 @@ Future<List<ExerciseCatalogEntry>> _catalogLoader() async => const [
     target: 'pectorals',
     secondaryMuscles: ['triceps', 'deltoids'],
     instructions: ['Press the dumbbells upward.'],
+    gifUrl: '',
+  ),
+];
+
+Future<List<ExerciseCatalogEntry>> _ambiguousCatalogLoader() async => const [
+  ExerciseCatalogEntry(
+    id: 'row_a',
+    name: 'dumbbell row',
+    muscleGroup: MuscleGroup.back,
+    equipment: 'dumbbell',
+    movementPattern: 'Tirata',
+    bodyPart: 'back',
+    target: 'lats',
+    secondaryMuscles: ['biceps'],
+    instructions: [],
+    gifUrl: '',
+  ),
+  ExerciseCatalogEntry(
+    id: 'row_b',
+    name: 'dumbbell row',
+    muscleGroup: MuscleGroup.back,
+    equipment: 'dumbbell',
+    movementPattern: 'Tirata',
+    bodyPart: 'back',
+    target: 'upper back',
+    secondaryMuscles: ['biceps'],
+    instructions: [],
     gifUrl: '',
   ),
 ];
