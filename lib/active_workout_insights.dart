@@ -28,10 +28,7 @@ extension ActiveWorkoutPrKindLabel on ActiveWorkoutPrKind {
 }
 
 class ActiveWorkoutPrEvent {
-  const ActiveWorkoutPrEvent({
-    required this.exerciseName,
-    required this.kinds,
-  });
+  const ActiveWorkoutPrEvent({required this.exerciseName, required this.kinds});
 
   final String exerciseName;
   final List<ActiveWorkoutPrKind> kinds;
@@ -205,11 +202,7 @@ class ActiveWorkoutInsights {
     var count = 0;
     for (final exercise in session.exercises) {
       for (var index = 0; index < exercise.sets.length; index++) {
-        if (personalRecordEventFor(
-              exercise,
-              exercise.sets[index],
-              index,
-            ) !=
+        if (personalRecordEventFor(exercise, exercise.sets[index], index) !=
             null) {
           count++;
         }

@@ -92,6 +92,43 @@ void main() {
     expect(insights.sessionPrCount(currentSession), 1);
   });
 
+  test('active workout insights exposes structured PR celebration event', () {
+    final historical = workoutExercise(
+      id: 'historical_press',
+      name: 'Panca piana',
+      weight: 80,
+      reps: 5,
+    );
+    final current = workoutExercise(
+      id: 'current_press',
+      name: 'Panca piana',
+      weight: 82.5,
+      reps: 5,
+    );
+    final insights = ActiveWorkoutInsights(
+      history: [workoutSession(id: 'old_session', exercise: historical)],
+      currentSessionId: 'current_session',
+    );
+
+    final event = insights.personalRecordEventFor(
+      current,
+      current.sets.single,
+      0,
+    );
+
+    expect(event, isNotNull);
+    expect(event!.exerciseName, 'Panca piana');
+    expect(event.kinds, [
+      ActiveWorkoutPrKind.weight,
+      ActiveWorkoutPrKind.setVolume,
+      ActiveWorkoutPrKind.estimatedOneRepMax,
+      ActiveWorkoutPrKind.exerciseVolume,
+    ]);
+    expect(event.headline, '4 nuovi record personali!');
+    expect(event.summary, 'Carico · Volume set · e1RM · Volume esercizio');
+    expect(event.legacyLabels, ['PR kg', 'PR set', 'PR e1RM', 'PR volume']);
+  });
+
   test('active workout insights ignore warm-up sets for PRs', () {
     final historical = workoutExercise(
       id: 'historical_bench',
