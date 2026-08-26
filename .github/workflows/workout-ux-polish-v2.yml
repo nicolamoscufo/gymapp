@@ -1,0 +1,216 @@
+name: Workout UX Polish v2
+
+on:
+  push:
+    branches:
+      - feature/workout-ux-polish-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/workout-ux-polish-v2
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply active workout UX patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('lib/screens/active_workout.dart')
+          text = path.read_text()
+
+          previous_method = """  void _applyPreviousSetValues(WorkoutExercise exercise, int setIndex) {
+            if (setIndex >= exercise.previousWeights.length ||
+                setIndex >= exercise.previousReps.length ||
+                setIndex >= exercise.sets.length) {
+              return;
+            }
+            setState(() {
+              exercise.sets[setIndex].weight = exercise.previousWeights[setIndex];
+              exercise.sets[setIndex].reps = exercise.previousReps[setIndex];
+            });
+            HapticFeedback.selectionClick();
+            _saveCurrentSession();
+          }
+          """
+          previous_method_replacement = previous_method + """
+          void _applyPreviousValuesForExercise(WorkoutExercise exercise) {
+            var changed = false;
+            setState(() {
+              changed = _setManager.applyPreviousValues(exercise);
+            });
+            if (!changed) return;
+            HapticFeedback.selectionClick();
+            _saveCurrentSession();
+          }
+          """
+          if text.count(previous_method) != 1:
+              raise SystemExit('previous-values method anchor not found exactly once')
+          text = text.replace(previous_method, previous_method_replacement)
+
+          previous_ui = """                      if (exercise.previousWeights.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          _formatPreviousWeights(exercise.previousWeights),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+          """
+          previous_ui_replacement = """                      if (exercise.previousWeights.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _formatPreviousWeights(exercise.previousWeights),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ActionChip(
+                              key: ValueKey(
+                                'use-previous-values-${exercise.id}',
+                              ),
+                              avatar: const Icon(Icons.history, size: 16),
+                              label: const Text('Usa precedenti'),
+                              tooltip:
+                                  'Carica kg e reps dell’ultima sessione nei set non completati',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () =>
+                                  _applyPreviousValuesForExercise(exercise),
+                            ),
+                          ],
+                        ),
+                      ],
+          """
+          if text.count(previous_ui) != 1:
+              raise SystemExit('previous-values UI anchor not found exactly once')
+          text = text.replace(previous_ui, previous_ui_replacement)
+
+          timer_field = """                          SizedBox(
+                            width: 96,
+                            child: TextFormField(
+                              key: ValueKey('rest-${exercise.id}'),
+                              initialValue: _restController
+                                  .configuredSecondsFor(exercise)
+                                  .toString(),
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              decoration: InputDecoration(
+                                labelText: 'sec',
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 10,
+                                ),
+                                border: compactInputBorder,
+                                enabledBorder: compactInputBorder,
+                                focusedBorder: compactInputBorder.copyWith(
+                                  borderSide: BorderSide(
+                                    color: colorScheme.primary,
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                              onChanged: (value) =>
+                                  _updateExerciseRestSeconds(exercise, value),
+                            ),
+                          ),
+          """
+          timer_field_replacement = """                          SizedBox(
+                            width: 88,
+                            child: _StableSetTextField(
+                              key: ValueKey('rest-${exercise.id}'),
+                              text: _restController
+                                  .configuredSecondsFor(exercise)
+                                  .toString(),
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.center,
+                              decoration: InputDecoration(
+                                labelText: 'sec',
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 10,
+                                ),
+                                border: compactInputBorder,
+                                enabledBorder: compactInputBorder,
+                                focusedBorder: compactInputBorder.copyWith(
+                                  borderSide: BorderSide(
+                                    color: colorScheme.primary,
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                              onChanged: (value) =>
+                                  _updateExerciseRestSeconds(exercise, value),
+                            ),
+                          ),
+                          PopupMenuButton<int>(
+                            key: ValueKey('rest-preset-${exercise.id}'),
+                            tooltip: 'Preset recupero',
+                            icon: const Icon(Icons.tune),
+                            onSelected: (seconds) =>
+                                _updateExerciseRestSeconds(
+                                  exercise,
+                                  seconds.toString(),
+                                ),
+                            itemBuilder: (context) => const [60, 90, 120, 180]
+                                .map(
+                                  (seconds) => PopupMenuItem<int>(
+                                    value: seconds,
+                                    child: Text('$seconds s'),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+          """
+          if text.count(timer_field) != 1:
+              raise SystemExit('timer field anchor not found exactly once')
+          text = text.replace(timer_field, timer_field_replacement)
+
+          path.write_text(text)
+          PY
+
+      - name: Format
+        run: dart format lib/screens/active_workout.dart lib/active_workout_exercise_manager.dart lib/active_workout_set_manager.dart test/workout_ux_polish_v2_test.dart
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run focused tests
+        run: flutter test test/workout_ux_polish_v2_test.dart test/active_workout_exercise_manager_test.dart
+
+      - name: Analyze
+        run: dart analyze
+
+      - name: Commit generated patch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/screens/active_workout.dart lib/active_workout_exercise_manager.dart lib/active_workout_set_manager.dart test/workout_ux_polish_v2_test.dart
+          git commit -m "Polish live workout logging UX"
+          git push origin HEAD:feature/workout-ux-polish-v2
