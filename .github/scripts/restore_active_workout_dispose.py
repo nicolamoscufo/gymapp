@@ -5,8 +5,8 @@ text = path.read_text()
 marker = '  Future<void> _finishWorkout() async {'
 if marker not in text:
     raise SystemExit('finish workout marker not found')
-if 'void dispose() {' in text:
-    raise SystemExit('dispose already present; refusing duplicate insertion')
+if 'WidgetsBinding.instance.removeObserver(this);' in text:
+    raise SystemExit('Active Workout lifecycle dispose already present; refusing duplicate insertion')
 
 dispose = '''  @override
   void dispose() {
