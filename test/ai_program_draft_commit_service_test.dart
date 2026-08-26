@@ -13,16 +13,7 @@ void main() {
   });
 
   test('approved new program is persisted and versioned as AI Coach', () async {
-    final proposal = AiProgramActionProposal(
-      kind: AiProgramActionKind.proposeProgram,
-      summary: 'Upper Lower',
-      rationale: 'Programma di prova.',
-      confidence: 'high',
-      schedules: [
-        _newScheduleDraft('upper_a', 'Upper A', 1),
-        _newScheduleDraft('lower_a', 'Lower A', 2),
-      ],
-    );
+    final proposal = _newProgramProposal();
 
     final result = await const AiProgramDraftCommitService().commit(proposal);
     expect(result.saved, isTrue);
@@ -39,10 +30,28 @@ void main() {
     );
     expect(
       bundle.schedules.every(
-        (schedule) => schedule.currentVersionId != null && schedule.currentVersionNumber == 1,
+        (schedule) =>
+            schedule.currentVersionId != null &&
+            schedule.currentVersionNumber == 1,
       ),
       isTrue,
     );
+  });
+
+  test('same approved new-program draft cannot be applied twice', () async {
+    final proposal = _newProgramProposal();
+    const service = AiProgramDraftCommitService();
+
+    final first = await service.commit(proposal);
+    final second = await service.commit(proposal);
+
+    expect(first.saved, isTrue);
+    expect(second.saved, isFalse);
+    expect(second.errors, contains('already_applied'));
+
+    final bundle = await AppDataStore.loadBundle();
+    expect(bundle.schedules, hasLength(2));
+    expect(bundle.scheduleVersions, hasLength(2));
   });
 
   test('stale modify draft is rejected after persisted schedule changes', () async {
@@ -94,12 +103,26 @@ void main() {
 
     final result = await const AiProgramDraftCommitService().commit(proposal);
     expect(result.saved, isFalse);
-    expect(result.errors.any((error) => error.endsWith(':stale_base_version')), isTrue);
+    expect(
+      result.errors.any((error) => error.endsWith(':stale_base_version')),
+      isTrue,
+    );
 
     final after = await AppDataStore.loadBundle();
     expect(after.schedules.single.exercises.single.weight, 85);
   });
 }
+
+AiProgramActionProposal _newProgramProposal() => AiProgramActionProposal(
+  kind: AiProgramActionKind.proposeProgram,
+  summary: 'Upper Lower',
+  rationale: 'Programma di prova.',
+  confidence: 'high',
+  schedules: [
+    _newScheduleDraft('upper_a', 'Upper A', 1),
+    _newScheduleDraft('lower_a', 'Lower A', 2),
+  ],
+);
 
 AiProgramScheduleDraft _newScheduleDraft(
   String key,
