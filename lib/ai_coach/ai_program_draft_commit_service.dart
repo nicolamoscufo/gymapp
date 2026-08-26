@@ -1,11 +1,10 @@
-import 'dart:convert';
-
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_data_store.dart';
 import '../models/schedule.dart';
 import '../models/schedule_version.dart';
 import 'ai_action_protocol.dart';
+import 'ai_program_draft_instance.dart';
 
 class AiProgramDraftCommitResult {
   final bool saved;
@@ -24,9 +23,9 @@ class AiProgramDraftCommitResult {
 }
 
 class AiProgramDraftCommitService {
-  static const _appliedNewProgramDraftsKey =
-      'aiCoachAppliedNewProgramDraftFingerprints';
-  static const _maxRememberedDrafts = 40;
+  static const _appliedDraftInstancesKey =
+      'aiCoachAppliedProgramDraftInstanceIds';
+  static const _maxRememberedDrafts = 80;
 
   final AiActionProtocolService actionProtocolService;
 
@@ -37,12 +36,10 @@ class AiProgramDraftCommitService {
   Future<AiProgramDraftCommitResult> commit(
     AiProgramActionProposal proposal,
   ) async {
-    // Modification drafts are naturally idempotent because their base version
-    // becomes stale after a successful save. New-program drafts have no base
-    // version, so remember successful exact proposals to prevent an old chat
-    // card (or a UI race while switching conversations) from creating the same
-    // program twice.
-    if (await _wasNewProgramDraftApplied(proposal)) {
+    final instanceId = proposal is InstancedAiProgramActionProposal
+        ? proposal.draftInstanceId.trim()
+        : '';
+    if (instanceId.isNotEmpty && await _wasDraftInstanceApplied(instanceId)) {
       final latest = await AppDataStore.loadBundle();
       return AiProgramDraftCommitResult(
         saved: false,
@@ -79,7 +76,9 @@ class AiProgramDraftCommitService {
       source: ScheduleVersionSource.aiCoach,
       reason: 'AI Coach program draft approved by user',
     );
-    await _rememberAppliedNewProgramDraft(proposal);
+    if (instanceId.isNotEmpty) {
+      await _rememberAppliedDraftInstance(instanceId);
+    }
     final persisted = await AppDataStore.loadBundle();
 
     return AiProgramDraftCommitResult(
@@ -90,32 +89,22 @@ class AiProgramDraftCommitService {
     );
   }
 
-  Future<bool> _wasNewProgramDraftApplied(
-    AiProgramActionProposal proposal,
-  ) async {
-    if (proposal.kind != AiProgramActionKind.proposeProgram) return false;
+  Future<bool> _wasDraftInstanceApplied(String instanceId) async {
     final prefs = await SharedPreferences.getInstance();
     final remembered =
-        prefs.getStringList(_appliedNewProgramDraftsKey) ?? const <String>[];
-    return remembered.contains(_proposalFingerprint(proposal));
+        prefs.getStringList(_appliedDraftInstancesKey) ?? const <String>[];
+    return remembered.contains(instanceId);
   }
 
-  Future<void> _rememberAppliedNewProgramDraft(
-    AiProgramActionProposal proposal,
-  ) async {
-    if (proposal.kind != AiProgramActionKind.proposeProgram) return;
+  Future<void> _rememberAppliedDraftInstance(String instanceId) async {
     final prefs = await SharedPreferences.getInstance();
-    final fingerprint = _proposalFingerprint(proposal);
     final remembered = <String>[
-      ...(prefs.getStringList(_appliedNewProgramDraftsKey) ?? const <String>[]),
-    ]..remove(fingerprint);
-    remembered.add(fingerprint);
+      ...(prefs.getStringList(_appliedDraftInstancesKey) ?? const <String>[]),
+    ]..remove(instanceId);
+    remembered.add(instanceId);
     if (remembered.length > _maxRememberedDrafts) {
       remembered.removeRange(0, remembered.length - _maxRememberedDrafts);
     }
-    await prefs.setStringList(_appliedNewProgramDraftsKey, remembered);
+    await prefs.setStringList(_appliedDraftInstancesKey, remembered);
   }
-
-  String _proposalFingerprint(AiProgramActionProposal proposal) =>
-      jsonEncode(proposal.toJson());
 }
