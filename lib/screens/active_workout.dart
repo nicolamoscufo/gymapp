@@ -250,7 +250,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   Future<void> _scrollToSet(String exerciseId, String setId) async {
     var setContext = _setRowKeys[setId]?.currentContext;
-    if (setContext != null) {
+    if (setContext != null && setContext.mounted) {
       await Scrollable.ensureVisible(
         setContext,
         duration: const Duration(milliseconds: 320),
@@ -270,7 +270,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       );
       await Future<void>.delayed(const Duration(milliseconds: 24));
       setContext = _setRowKeys[setId]?.currentContext;
-      if (setContext != null) {
+      if (setContext != null && setContext.mounted) {
         await Scrollable.ensureVisible(
           setContext,
           duration: const Duration(milliseconds: 220),
@@ -302,7 +302,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
     final revealedExerciseContext =
         _exerciseCardKeys[exerciseId]?.currentContext;
-    if (revealedExerciseContext != null) {
+    if (revealedExerciseContext != null && revealedExerciseContext.mounted) {
       await Scrollable.ensureVisible(
         revealedExerciseContext,
         duration: const Duration(milliseconds: 180),
@@ -312,7 +312,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
     await Future<void>.delayed(const Duration(milliseconds: 24));
     setContext = _setRowKeys[setId]?.currentContext;
-    if (setContext != null) {
+    if (setContext != null && setContext.mounted) {
       await Scrollable.ensureVisible(
         setContext,
         duration: const Duration(milliseconds: 220),
