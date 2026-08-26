@@ -1,3 +1,4 @@
+import '../app_data_store.dart';
 import '../models/body_log.dart';
 import '../models/schedule.dart';
 import '../models/schedule_version.dart';
@@ -44,11 +45,19 @@ class AiProgramConversationCoordinator {
       return const AiProgramConversationResult(isProgramActionIntent: false);
     }
 
+    // Some callers (notably the Home AI Coach tab) historically did not pass
+    // scheduleVersions. Program drafting needs the persisted version graph for
+    // longitudinal context and safe modification proposals, so hydrate it only
+    // when the caller has not supplied an explicit snapshot.
+    final resolvedScheduleVersions = scheduleVersions.isNotEmpty
+        ? scheduleVersions
+        : await AppDataStore.loadScheduleVersions();
+
     final proposal = await draftService.generate(
       userRequest: userRequest,
       history: history,
       schedules: schedules,
-      scheduleVersions: scheduleVersions,
+      scheduleVersions: resolvedScheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
