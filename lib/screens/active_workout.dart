@@ -1276,6 +1276,24 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     await AppDataStore.saveSchedules(bundle.schedules);
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _prBannerTimer?.cancel();
+    _prBannerTimer = null;
+    _handoffPulseTimer?.cancel();
+    _handoffPulseTimer = null;
+    _handoffClearTimer?.cancel();
+    _handoffClearTimer = null;
+    _restController.dispose();
+    _durationTimer?.cancel();
+    _workoutScrollController.dispose();
+    if (!widget.editCompletedSession) {
+      WakelockPlus.disable();
+    }
+    super.dispose();
+  }
+
   Future<void> _finishWorkout() async {
     if (widget.editCompletedSession) {
       await _saveEditedCompletedSession();
