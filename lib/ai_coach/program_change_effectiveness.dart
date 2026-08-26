@@ -11,6 +11,23 @@ enum ProgramChangeEffectivenessStatus {
   insufficient,
 }
 
+const _performanceRelevantFields = <String>{
+  'weight',
+  'reps',
+  'set',
+  'targetMinReps',
+  'targetMaxReps',
+  'technique',
+  'backoffReps',
+  'backoffReductionPercent',
+  'restSeconds',
+  'supersetGroup',
+  'progressionKgStep',
+  'progressionRepStep',
+  'progressionScheme',
+  'equipment',
+};
+
 Map<String, dynamic> buildProgramChangeEffectiveness({
   required Map<String, dynamic> previousSnapshot,
   required Map<String, dynamic> currentSnapshot,
@@ -34,6 +51,7 @@ Map<String, dynamic> buildProgramChangeEffectiveness({
         'exercise_id': exerciseId,
         'exercise': after['name'],
         'change_type': 'added',
+        'changed_fields': const <String>['exercise_added'],
         'status': ProgramChangeEffectivenessStatus.insufficient.name,
         'primary_metric': null,
         'reason': 'exercise_added_without_pre_change_baseline',
@@ -50,6 +68,7 @@ Map<String, dynamic> buildProgramChangeEffectiveness({
         'exercise_id': exerciseId,
         'exercise': before['name'],
         'change_type': 'removed',
+        'changed_fields': const <String>['exercise_removed'],
         'status': ProgramChangeEffectivenessStatus.insufficient.name,
         'primary_metric': null,
         'reason': 'exercise_removed_without_post_change_outcome',
@@ -62,6 +81,11 @@ Map<String, dynamic> buildProgramChangeEffectiveness({
       continue;
     }
     if (before == null || after == null || _sameJson(before, after)) {
+      continue;
+    }
+
+    final changedFields = _changedPerformanceFields(before, after);
+    if (changedFields.isEmpty) {
       continue;
     }
 
@@ -81,7 +105,9 @@ Map<String, dynamic> buildProgramChangeEffectiveness({
     signals.add(
       _compareExerciseChange(
         exerciseId: exerciseId,
-        exerciseName: after['name']?.toString() ?? before['name']?.toString() ?? '',
+        exerciseName:
+            after['name']?.toString() ?? before['name']?.toString() ?? '',
+        changedFields: changedFields,
         previousWindow: previousWindow,
         currentWindow: currentWindow,
       ),
@@ -91,16 +117,23 @@ Map<String, dynamic> buildProgramChangeEffectiveness({
   final statuses = signals
       .map((signal) => signal['status'] as String?)
       .whereType<String>()
-      .where((status) => status != ProgramChangeEffectivenessStatus.insufficient.name)
+      .where(
+        (status) =>
+            status != ProgramChangeEffectivenessStatus.insufficient.name,
+      )
       .toList();
   final improved = statuses
-      .where((status) => status == ProgramChangeEffectivenessStatus.improved.name)
+      .where(
+        (status) => status == ProgramChangeEffectivenessStatus.improved.name,
+      )
       .length;
   final stable = statuses
       .where((status) => status == ProgramChangeEffectivenessStatus.stable.name)
       .length;
   final declined = statuses
-      .where((status) => status == ProgramChangeEffectivenessStatus.declined.name)
+      .where(
+        (status) => status == ProgramChangeEffectivenessStatus.declined.name,
+      )
       .length;
   final insufficient = signals.length - statuses.length;
 
@@ -123,6 +156,7 @@ Map<String, dynamic> buildProgramChangeEffectiveness({
       'does_not_prove_causality': true,
       'exact_schedule_version_links_only': true,
       'exact_source_exercise_id_only': true,
+      'prescription_changes_only': true,
       'comparison_window': comparisonWindow,
       'minimum_sessions_per_side': 2,
       'e1rm_change_threshold_percent': 2.0,
@@ -146,6 +180,7 @@ Map<String, dynamic> buildProgramChangeEffectiveness({
 Map<String, dynamic> _compareExerciseChange({
   required String exerciseId,
   required String exerciseName,
+  required List<String> changedFields,
   required List<_ExerciseSessionMetric> previousWindow,
   required List<_ExerciseSessionMetric> currentWindow,
 }) {
@@ -154,6 +189,7 @@ Map<String, dynamic> _compareExerciseChange({
       'exercise_id': exerciseId,
       'exercise': exerciseName,
       'change_type': 'modified',
+      'changed_fields': changedFields,
       'status': ProgramChangeEffectivenessStatus.insufficient.name,
       'primary_metric': null,
       'reason': 'requires_at_least_two_exact_sessions_per_side',
@@ -204,6 +240,7 @@ Map<String, dynamic> _compareExerciseChange({
     'exercise_id': exerciseId,
     'exercise': exerciseName,
     'change_type': 'modified',
+    'changed_fields': changedFields,
     'status': status.name,
     'primary_metric': primaryMetric,
     'primary_change_percent': primaryChange,
@@ -256,13 +293,26 @@ List<_ExerciseSessionMetric> _exerciseSessionMetrics(
     );
     result.add(
       _ExerciseSessionMetric(
-        date: session.startTime,
         volume: volume,
         estimatedOneRepMax: bestEstimatedOneRepMaxForSets(workSets),
       ),
     );
   }
   return result;
+}
+
+List<String> _changedPerformanceFields(
+  Map<String, dynamic> before,
+  Map<String, dynamic> after,
+) {
+  final changed = <String>[];
+  for (final field in _performanceRelevantFields) {
+    if (!_sameJson(before[field], after[field])) {
+      changed.add(field);
+    }
+  }
+  changed.sort();
+  return changed;
 }
 
 Map<String, Map<String, dynamic>> _exerciseMap(dynamic raw) {
@@ -289,12 +339,10 @@ double? _percentChange(double previous, double current) {
 }
 
 class _ExerciseSessionMetric {
-  final DateTime date;
   final double volume;
   final double? estimatedOneRepMax;
 
   const _ExerciseSessionMetric({
-    required this.date,
     required this.volume,
     required this.estimatedOneRepMax,
   });
