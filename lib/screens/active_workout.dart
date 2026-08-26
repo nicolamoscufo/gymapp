@@ -1862,6 +1862,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
   }
 
+  void _submitSetFromKeyboard(
+    WorkoutExercise exercise,
+    ExerciseSet set,
+    int setIndex,
+    String value,
+  ) {
+    final reps = parseIntInput(value);
+    if (reps == null || reps <= 0 || set.isCompleted) return;
+    FocusScope.of(context).unfocus();
+    _toggleSetCompleted(exercise, set, setIndex);
+  }
+
   Future<void> _showSetDetailsDialog(ExerciseSet set) async {
     final rpeController = TextEditingController(
       text: set.rpe?.toString() ?? '',
@@ -2545,6 +2557,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                   .configuredSecondsFor(exercise)
                                   .toString(),
                               keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              textInputAction: TextInputAction.done,
+                              selectAllOnFocus: true,
+                              onSubmitted: (_) =>
+                                  FocusScope.of(context).unfocus(),
                               textAlign: TextAlign.center,
                               decoration: InputDecoration(
                                 labelText: 'sec',
@@ -2732,6 +2751,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                               const TextInputType.numberWithOptions(
                                                 decimal: true,
                                               ),
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter.allow(
+                                              RegExp(r'[0-9.,]'),
+                                            ),
+                                          ],
+                                          textInputAction: TextInputAction.next,
+                                          selectAllOnFocus: true,
                                           textAlign: TextAlign.center,
                                           decoration: InputDecoration(
                                             isDense: true,
@@ -2783,6 +2809,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                           key: ValueKey('${exSet.id}-reps'),
                                           text: exSet.reps.toString(),
                                           keyboardType: TextInputType.number,
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter
+                                                .digitsOnly,
+                                          ],
+                                          textInputAction: TextInputAction.done,
+                                          selectAllOnFocus: true,
+                                          onSubmitted: (value) =>
+                                              _submitSetFromKeyboard(
+                                                exercise,
+                                                exSet,
+                                                setIndex,
+                                                value,
+                                              ),
                                           textAlign: TextAlign.center,
                                           decoration: InputDecoration(
                                             isDense: true,
@@ -3187,6 +3226,10 @@ class _StableSetTextField extends StatefulWidget {
   final TextAlign textAlign;
   final InputDecoration decoration;
   final ValueChanged<String> onChanged;
+  final List<TextInputFormatter>? inputFormatters;
+  final TextInputAction textInputAction;
+  final ValueChanged<String>? onSubmitted;
+  final bool selectAllOnFocus;
 
   const _StableSetTextField({
     super.key,
@@ -3195,6 +3238,10 @@ class _StableSetTextField extends StatefulWidget {
     required this.textAlign,
     required this.decoration,
     required this.onChanged,
+    this.inputFormatters,
+    this.textInputAction = TextInputAction.next,
+    this.onSubmitted,
+    this.selectAllOnFocus = false,
   });
 
   @override
@@ -3209,7 +3256,20 @@ class _StableSetTextFieldState extends State<_StableSetTextField> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.text);
-    _focusNode = FocusNode();
+    _focusNode = FocusNode()..addListener(_handleFocusChanged);
+  }
+
+  void _handleFocusChanged() {
+    if (_focusNode.hasFocus && widget.selectAllOnFocus) {
+      _selectAll();
+    }
+  }
+
+  void _selectAll() {
+    _controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _controller.text.length,
+    );
   }
 
   @override
@@ -3222,6 +3282,7 @@ class _StableSetTextFieldState extends State<_StableSetTextField> {
 
   @override
   void dispose() {
+    _focusNode.removeListener(_handleFocusChanged);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -3233,10 +3294,13 @@ class _StableSetTextFieldState extends State<_StableSetTextField> {
       controller: _controller,
       focusNode: _focusNode,
       keyboardType: widget.keyboardType,
-      textInputAction: TextInputAction.next,
+      inputFormatters: widget.inputFormatters,
+      textInputAction: widget.textInputAction,
       textAlign: widget.textAlign,
       decoration: widget.decoration,
+      onTap: widget.selectAllOnFocus ? _selectAll : null,
       onChanged: widget.onChanged,
+      onFieldSubmitted: widget.onSubmitted,
     );
   }
 }
