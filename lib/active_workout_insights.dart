@@ -1,6 +1,51 @@
 import 'models/workout.dart';
 import 'workout_progression_analytics.dart';
 
+enum ActiveWorkoutPrKind {
+  weight,
+  reps,
+  setVolume,
+  estimatedOneRepMax,
+  exerciseVolume,
+}
+
+extension ActiveWorkoutPrKindLabel on ActiveWorkoutPrKind {
+  String get legacyLabel => switch (this) {
+    ActiveWorkoutPrKind.weight => 'PR kg',
+    ActiveWorkoutPrKind.reps => 'PR reps',
+    ActiveWorkoutPrKind.setVolume => 'PR set',
+    ActiveWorkoutPrKind.estimatedOneRepMax => 'PR e1RM',
+    ActiveWorkoutPrKind.exerciseVolume => 'PR volume',
+  };
+
+  String get displayLabel => switch (this) {
+    ActiveWorkoutPrKind.weight => 'Carico',
+    ActiveWorkoutPrKind.reps => 'Reps',
+    ActiveWorkoutPrKind.setVolume => 'Volume set',
+    ActiveWorkoutPrKind.estimatedOneRepMax => 'e1RM',
+    ActiveWorkoutPrKind.exerciseVolume => 'Volume esercizio',
+  };
+}
+
+class ActiveWorkoutPrEvent {
+  const ActiveWorkoutPrEvent({
+    required this.exerciseName,
+    required this.kinds,
+  });
+
+  final String exerciseName;
+  final List<ActiveWorkoutPrKind> kinds;
+
+  String get headline => kinds.length == 1
+      ? 'Nuovo record personale!'
+      : '${kinds.length} nuovi record personali!';
+
+  String get summary => kinds.map((kind) => kind.displayLabel).join(' · ');
+
+  List<String> get legacyLabels =>
+      kinds.map((kind) => kind.legacyLabel).toList(growable: false);
+}
+
 /// Pure, UI-independent analytics used while logging an active workout.
 ///
 /// Keeping historical comparisons here prevents the workout screen from
@@ -97,29 +142,29 @@ class ActiveWorkoutInsights {
     return null;
   }
 
-  List<String> personalRecordLabelsFor(
+  ActiveWorkoutPrEvent? personalRecordEventFor(
     WorkoutExercise exercise,
     ExerciseSet set,
     int setIndex,
   ) {
     if (!set.isCompleted || set.isWarmup) {
-      return const [];
+      return null;
     }
 
-    final labels = <String>[];
+    final kinds = <ActiveWorkoutPrKind>[];
     final maxWeight = maxHistoricalWeightFor(exercise);
     if (maxWeight != null && set.weight > maxWeight) {
-      labels.add('PR kg');
+      kinds.add(ActiveWorkoutPrKind.weight);
     }
 
     final maxReps = maxHistoricalRepsFor(exercise);
     if (maxReps != null && set.reps > maxReps) {
-      labels.add('PR reps');
+      kinds.add(ActiveWorkoutPrKind.reps);
     }
 
     final bestSetVolume = bestHistoricalSetVolumeFor(exercise);
     if (bestSetVolume != null && setVolume(set) > bestSetVolume) {
-      labels.add('PR set');
+      kinds.add(ActiveWorkoutPrKind.setVolume);
     }
 
     final setEstimatedOneRepMax = estimateOneRepMax(set.weight, set.reps);
@@ -131,28 +176,41 @@ class ActiveWorkoutInsights {
     if (setEstimatedOneRepMax != null &&
         historicalEstimatedOneRepMax != null &&
         setEstimatedOneRepMax > historicalEstimatedOneRepMax + 0.05) {
-      labels.add('PR e1RM');
+      kinds.add(ActiveWorkoutPrKind.estimatedOneRepMax);
     }
 
     final bestExerciseVolume = bestHistoricalExerciseVolumeFor(exercise);
     if (bestExerciseVolume != null &&
         lastCompletedWorkSetIndex(exercise) == setIndex &&
         completedExerciseVolume(exercise) > bestExerciseVolume) {
-      labels.add('PR volume');
+      kinds.add(ActiveWorkoutPrKind.exerciseVolume);
     }
 
-    return labels;
+    if (kinds.isEmpty) {
+      return null;
+    }
+    return ActiveWorkoutPrEvent(exerciseName: exercise.name, kinds: kinds);
+  }
+
+  List<String> personalRecordLabelsFor(
+    WorkoutExercise exercise,
+    ExerciseSet set,
+    int setIndex,
+  ) {
+    return personalRecordEventFor(exercise, set, setIndex)?.legacyLabels ??
+        const [];
   }
 
   int sessionPrCount(WorkoutSession session) {
     var count = 0;
     for (final exercise in session.exercises) {
       for (var index = 0; index < exercise.sets.length; index++) {
-        if (personalRecordLabelsFor(
-          exercise,
-          exercise.sets[index],
-          index,
-        ).isNotEmpty) {
+        if (personalRecordEventFor(
+              exercise,
+              exercise.sets[index],
+              index,
+            ) !=
+            null) {
           count++;
         }
       }
