@@ -285,8 +285,9 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showExerciseDetail(String exerciseName) {
@@ -499,8 +500,9 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Text(
                   'Strumenti rapidi',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 12),
                 Card(
@@ -632,8 +634,9 @@ class _HomePageState extends State<HomePage> {
 
   List<List<dynamic>> _decodeCsv(String rawText) {
     final normalizedText = _normalizeText(rawText);
-    List<List<dynamic>> rows = const CsvToListConverter(eol: '\n')
-        .convert(normalizedText);
+    List<List<dynamic>> rows = const CsvToListConverter(
+      eol: '\n',
+    ).convert(normalizedText);
 
     if (rows.isNotEmpty &&
         rows.first.length < 7 &&
@@ -3537,9 +3540,9 @@ class _HomePageState extends State<HomePage> {
     updated.arm = parseDecimalInput(armController.text);
     updated.thigh = parseDecimalInput(thighController.text);
     updated.sleepHours = parseIntInput(sleepController.text);
-    updated.readiness = parseIntInput(readinessController.text)
-        ?.clamp(1, 10)
-        .toInt();
+    updated.readiness = parseIntInput(
+      readinessController.text,
+    )?.clamp(1, 10).toInt();
     updated.notes = notesController.text.trim();
     updated.photoPath = photoPath;
     updated.photoName = photoName;
