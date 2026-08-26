@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_data_store.dart';
+import '../exercise_catalog.dart';
 import '../models/exercise.dart';
 import '../models/schedule.dart';
 import '../models/schedule_version.dart';
