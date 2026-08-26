@@ -61,19 +61,13 @@ void main() {
     await tester.tap(find.text('Apri'));
     await tester.pumpAndSettle();
 
-    final firstExercise = find.byKey(
-      const ValueKey('ai-draft-exercise-upper_a-0'),
-    );
-    final seriesField = find.descendant(
-      of: firstExercise,
-      matching: find.widgetWithText(TextFormField, 'Serie'),
-    );
-    await tester.enterText(seriesField, '0');
+    final title = find.byKey(const ValueKey('ai-draft-title-upper_a'));
+    await tester.enterText(title, '');
     await tester.tap(find.byKey(const ValueKey('ai-program-draft-done')));
     await tester.pump();
 
     expect(find.text('Correggi la bozza prima di continuare'), findsOneWidget);
-    expect(find.text('Le serie devono essere tra 1 e 20.'), findsOneWidget);
+    expect(find.text('Inserisci un nome valido per la seduta.'), findsOneWidget);
     expect(key.currentState!.result, isNull);
   });
 }
