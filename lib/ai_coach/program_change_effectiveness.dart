@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../models/schedule_version.dart';
 import '../models/workout.dart';
 import '../workout_progression_analytics.dart';
 
@@ -27,6 +28,90 @@ const _performanceRelevantFields = <String>{
   'progressionScheme',
   'equipment',
 };
+
+Map<String, dynamic> buildProgramChangeEffectivenessContext({
+  required List<ScheduleVersion> scheduleVersions,
+  required List<WorkoutSession> history,
+  int comparisonWindow = 3,
+}) {
+  final knownVersionIds = scheduleVersions.map((version) => version.id).toSet();
+  final sessionsByVersion = <String, List<WorkoutSession>>{};
+  for (final session in history) {
+    final versionId = session.scheduleVersionId?.trim();
+    if (versionId == null || !knownVersionIds.contains(versionId)) continue;
+    sessionsByVersion.putIfAbsent(versionId, () => []).add(session);
+  }
+
+  final versionsBySchedule = <String, List<ScheduleVersion>>{};
+  for (final version in scheduleVersions) {
+    versionsBySchedule.putIfAbsent(version.scheduleId, () => []).add(version);
+  }
+
+  final transitions = <Map<String, dynamic>>[];
+  final scheduleIds = versionsBySchedule.keys.toList()..sort();
+  for (final scheduleId in scheduleIds) {
+    final versions = versionsBySchedule[scheduleId]!..sort(_compareVersions);
+    for (var index = 1; index < versions.length; index += 1) {
+      final previous = versions[index - 1];
+      final current = versions[index];
+      final effectiveness = Map<String, dynamic>.from(
+        buildProgramChangeEffectiveness(
+          previousSnapshot: previous.snapshot,
+          currentSnapshot: current.snapshot,
+          previousVersionSessions:
+              sessionsByVersion[previous.id] ?? const <WorkoutSession>[],
+          currentVersionSessions:
+              sessionsByVersion[current.id] ?? const <WorkoutSession>[],
+          comparisonWindow: comparisonWindow,
+        ),
+      )..remove('contract');
+      final signals = effectiveness['exercise_signals'] as List? ?? const [];
+      transitions.add({
+        'schedule_id': scheduleId,
+        'schedule_title': current.snapshot['title']?.toString() ?? '',
+        'from_version_id': previous.id,
+        'from_version_number': previous.versionNumber,
+        'to_version_id': current.id,
+        'to_version_number': current.versionNumber,
+        'changed_at': current.createdAt.toIso8601String(),
+        'source': current.source.name,
+        'reason': current.reason,
+        if (signals.isEmpty)
+          'evaluation_note': 'no_performance_relevant_exercise_changes',
+        ...effectiveness,
+      });
+    }
+  }
+
+  int countStatus(ProgramChangeEffectivenessStatus status) => transitions
+      .where((transition) => transition['status'] == status.name)
+      .length;
+
+  return {
+    'contract': {
+      'association_only': true,
+      'does_not_prove_causality': true,
+      'exact_schedule_version_links_only': true,
+      'exact_source_exercise_id_only': true,
+      'prescription_changes_only': true,
+      'comparison_window': comparisonWindow,
+      'minimum_sessions_per_side': 2,
+      'e1rm_change_threshold_percent': 2.0,
+      'volume_change_threshold_percent': 5.0,
+      'window_semantics':
+          'last sessions of previous version vs first sessions of current version',
+    },
+    'summary': {
+      'transition_count': transitions.length,
+      'improved': countStatus(ProgramChangeEffectivenessStatus.improved),
+      'stable': countStatus(ProgramChangeEffectivenessStatus.stable),
+      'declined': countStatus(ProgramChangeEffectivenessStatus.declined),
+      'mixed': countStatus(ProgramChangeEffectivenessStatus.mixed),
+      'insufficient': countStatus(ProgramChangeEffectivenessStatus.insufficient),
+    },
+    'transitions': transitions,
+  };
+}
 
 Map<String, dynamic> buildProgramChangeEffectiveness({
   required Map<String, dynamic> previousSnapshot,
@@ -326,6 +411,14 @@ Map<String, Map<String, dynamic>> _exerciseMap(dynamic raw) {
     result[id] = exercise;
   }
   return result;
+}
+
+int _compareVersions(ScheduleVersion a, ScheduleVersion b) {
+  final byNumber = a.versionNumber.compareTo(b.versionNumber);
+  if (byNumber != 0) return byNumber;
+  final byDate = a.createdAt.compareTo(b.createdAt);
+  if (byDate != 0) return byDate;
+  return a.id.compareTo(b.id);
 }
 
 bool _sameJson(dynamic a, dynamic b) => jsonEncode(a) == jsonEncode(b);
