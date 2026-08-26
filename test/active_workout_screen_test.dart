@@ -124,4 +124,58 @@ void main() {
             as Map<String, dynamic>;
     expect((storedExercise['sets'] as List).length, 2);
   });
+  testWidgets('drop set skips automatic rest until the drop chain ends', (
+    tester,
+  ) async {
+    final session = WorkoutSession(
+      id: 'drop_session',
+      scheduleTitle: 'Drop workout',
+      startTime: DateTime(2026, 8, 26, 10),
+      endTime: DateTime(2026, 8, 26, 10),
+      exercises: [
+        WorkoutExercise(
+          id: 'drop_exercise',
+          name: 'Alzate laterali',
+          notes: '',
+          technique: IntensityTechnique.none,
+          restSeconds: 90,
+          sets: [
+            ExerciseSet(id: 'normal_set', weight: 12, reps: 12),
+            ExerciseSet(
+              id: 'drop_set',
+              weight: 9,
+              reps: 10,
+              type: SetType.drop,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActiveWorkoutScreen.resume(
+          resumedSession: session,
+          history: const [],
+          defaultRestSeconds: 90,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final normalComplete = find.byKey(const ValueKey('complete-normal_set'));
+    await tester.ensureVisible(normalComplete);
+    await tester.tap(normalComplete);
+    await tester.pump();
+
+    expect(find.text('Prossimo: drop set, senza recupero.'), findsOneWidget);
+    expect(find.textContaining('Recupero 01:'), findsNothing);
+
+    final dropComplete = find.byKey(const ValueKey('complete-drop_set'));
+    await tester.ensureVisible(dropComplete);
+    await tester.tap(dropComplete);
+    await tester.pump();
+
+    expect(find.textContaining('Recupero 01:'), findsOneWidget);
+  });
 }

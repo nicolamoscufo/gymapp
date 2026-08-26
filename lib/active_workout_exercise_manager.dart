@@ -186,7 +186,28 @@ class ActiveWorkoutExerciseManager {
         .toList();
   }
 
-  bool shouldStartRestAfterSet(WorkoutExercise exercise) {
+  bool hasPendingDropContinuation(
+    WorkoutExercise exercise,
+    int completedSetIndex,
+  ) {
+    if (completedSetIndex < 0 ||
+        completedSetIndex >= exercise.sets.length - 1) {
+      return false;
+    }
+
+    final nextSet = exercise.sets[completedSetIndex + 1];
+    return nextSet.type == SetType.drop && !nextSet.isCompleted;
+  }
+
+  bool shouldStartRestAfterSet(
+    WorkoutExercise exercise, {
+    int? completedSetIndex,
+  }) {
+    if (completedSetIndex != null &&
+        hasPendingDropContinuation(exercise, completedSetIndex)) {
+      return false;
+    }
+
     final members = supersetMembers(exercise);
     return members.length < 2 || members.last.id == exercise.id;
   }
@@ -199,6 +220,16 @@ class ActiveWorkoutExerciseManager {
     );
     if (currentIndex < 0) return null;
     return members[(currentIndex + 1) % members.length];
+  }
+
+  WorkoutExercise? nextSupersetMemberAfterSet(
+    WorkoutExercise exercise,
+    int completedSetIndex,
+  ) {
+    if (hasPendingDropContinuation(exercise, completedSetIndex)) {
+      return null;
+    }
+    return nextSupersetMember(exercise);
   }
 
   bool removeFromSuperset(WorkoutExercise exercise) {
