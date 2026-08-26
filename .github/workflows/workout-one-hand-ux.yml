@@ -23,7 +23,9 @@ jobs:
           cache: true
 
       - name: Apply one-hand UX patch
-        run: python3 .github/scripts/workout_one_hand_ux_patch.py
+        run: |
+          python3 .github/scripts/workout_one_hand_ux_patch.py
+          python3 .github/scripts/workout_one_hand_test_fix.py
 
       - name: Format
         run: dart format lib/screens/active_workout.dart test/workout_ux_polish_v2_test.dart
