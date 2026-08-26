@@ -76,12 +76,23 @@ void main() {
 
       final history = [
         _session('s1', DateTime(2026, 5, 10), versionId: v1.id, weight: 80),
-        _session('s2', DateTime(2026, 6, 10), versionId: v2.id, weight: 82.5),
+        _session(
+          's2',
+          DateTime(2026, 6, 10),
+          versionId: v2.id,
+          weight: 82.5,
+        ),
         _session(
           'legacy',
           DateTime(2026, 4, 10),
           versionId: null,
           weight: 77.5,
+        ),
+        _session(
+          'orphan',
+          DateTime(2026, 4, 20),
+          versionId: 'missing-version',
+          weight: 78,
         ),
       ];
 
@@ -95,7 +106,8 @@ void main() {
       expect(coverage['version_count'], 4);
       expect(coverage['exactly_linked_workouts'], 2);
       expect(coverage['unresolved_legacy_workouts'], 1);
-      expect(coverage['exact_link_coverage'], closeTo(2 / 3, 0.0001));
+      expect(coverage['orphaned_version_link_workouts'], 1);
+      expect(coverage['exact_link_coverage'], closeTo(0.5, 0.0001));
 
       final programs = (context['programs'] as List)
           .map((entry) => Map<String, dynamic>.from(entry as Map))
@@ -171,6 +183,16 @@ void main() {
         containsPair('sessions', 1),
       );
 
+      final orphaned = Map<String, dynamic>.from(
+        context['orphaned_version_links'] as Map,
+      );
+      expect(orphaned['count'], 1);
+      expect(orphaned['version_ids'], contains('missing-version'));
+      expect(
+        (orphaned['sessions'] as List).single,
+        containsPair('schedule_version_id', 'missing-version'),
+      );
+
       final oldProgram = programs.singleWhere(
         (entry) => entry['schedule_id'] == 'old-plan',
       );
@@ -178,48 +200,51 @@ void main() {
     },
   );
 
-  test('recent detail stays bounded while program history spans all exact sessions', () {
-    final schedule = _schedule();
-    final version = ScheduleVersion.capture(
-      schedule: schedule,
-      versionNumber: 1,
-      createdAt: DateTime(2026, 1, 1),
-      source: ScheduleVersionSource.user,
-    );
-    schedule
-      ..currentVersionId = version.id
-      ..currentVersionNumber = 1;
-    final history = List.generate(
-      15,
-      (index) => _session(
-        'session-$index',
-        DateTime(2026, 1, 2 + index),
-        versionId: version.id,
-        weight: 70 + index.toDouble(),
-      ),
-    );
+  test(
+    'recent detail stays bounded while program history spans all exact sessions',
+    () {
+      final schedule = _schedule();
+      final version = ScheduleVersion.capture(
+        schedule: schedule,
+        versionNumber: 1,
+        createdAt: DateTime(2026, 1, 1),
+        source: ScheduleVersionSource.user,
+      );
+      schedule
+        ..currentVersionId = version.id
+        ..currentVersionNumber = 1;
+      final history = List.generate(
+        15,
+        (index) => _session(
+          'session-$index',
+          DateTime(2026, 1, 2 + index),
+          versionId: version.id,
+          weight: 70 + index.toDouble(),
+        ),
+      );
 
-    final context = TrainingContextBuilder(now: DateTime(2026, 2, 1)).recent(
-      history: history,
-      schedules: [schedule],
-      scheduleVersions: [version],
-    );
+      final context = TrainingContextBuilder(now: DateTime(2026, 2, 1)).recent(
+        history: history,
+        schedules: [schedule],
+        scheduleVersions: [version],
+      );
 
-    expect(context['workouts'], hasLength(12));
-    final programHistory = Map<String, dynamic>.from(
-      context['program_history'] as Map,
-    );
-    final program = Map<String, dynamic>.from(
-      (programHistory['programs'] as List).single as Map,
-    );
-    final versionEntry = Map<String, dynamic>.from(
-      (program['versions'] as List).single as Map,
-    );
-    final performance = Map<String, dynamic>.from(
-      versionEntry['performance'] as Map,
-    );
-    expect(performance['session_count'], 15);
-  });
+      expect(context['workouts'], hasLength(12));
+      final programHistory = Map<String, dynamic>.from(
+        context['program_history'] as Map,
+      );
+      final program = Map<String, dynamic>.from(
+        (programHistory['programs'] as List).single as Map,
+      );
+      final versionEntry = Map<String, dynamic>.from(
+        (program['versions'] as List).single as Map,
+      );
+      final performance = Map<String, dynamic>.from(
+        versionEntry['performance'] as Map,
+      );
+      expect(performance['session_count'], 15);
+    },
+  );
 }
 
 Schedule _schedule() => Schedule(
