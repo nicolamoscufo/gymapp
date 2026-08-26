@@ -64,6 +64,34 @@ void main() {
     expect(find.text('Salvataggio…'), findsOneWidget);
     expect(calls, 0);
   });
+
+  testWidgets('saved draft cannot be edited or saved twice', (tester) async {
+    var calls = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AiProgramDraftCard(
+            proposal: _proposal(),
+            isSaved: true,
+            onEdit: () => calls += 1,
+            onSave: () => calls += 1,
+          ),
+        ),
+      ),
+    );
+
+    final edit = tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('edit-ai-program-draft')),
+    );
+    final save = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('save-ai-program-draft')),
+    );
+    expect(edit.onPressed, isNull);
+    expect(save.onPressed, isNull);
+    expect(find.text('Salvato'), findsOneWidget);
+    expect(find.textContaining('già stata applicata'), findsOneWidget);
+    expect(calls, 0);
+  });
 }
 
 AiProgramActionProposal _proposal() => const AiProgramActionProposal(
