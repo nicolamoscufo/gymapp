@@ -17,9 +17,10 @@ replace_once(
 ''',
     '''  final Set<String> _exerciseIdsAddedToScheduleThisFinish = {};
   int _prBannerGeneration = 0;
+  Timer? _prBannerTimer;
   final ActiveWorkoutSessionController _sessionPersistence =
 ''',
-    'PR banner generation state',
+    'PR banner lifecycle state',
 )
 
 replace_once(
@@ -36,6 +37,8 @@ replace_once(
     final generation = ++_prBannerGeneration;
     final messenger = ScaffoldMessenger.of(context);
     final colorScheme = Theme.of(context).colorScheme;
+    _prBannerTimer?.cancel();
+    _prBannerTimer = null;
     messenger.removeCurrentMaterialBanner();
     HapticFeedback.mediumImpact();
     messenger.showMaterialBanner(
@@ -73,6 +76,8 @@ replace_once(
             key: const ValueKey('dismiss-live-pr'),
             onPressed: () {
               _prBannerGeneration++;
+              _prBannerTimer?.cancel();
+              _prBannerTimer = null;
               messenger.hideCurrentMaterialBanner();
             },
             child: const Text('OK'),
@@ -81,7 +86,8 @@ replace_once(
       ),
     );
 
-    Future<void>.delayed(const Duration(seconds: 4), () {
+    _prBannerTimer = Timer(const Duration(seconds: 4), () {
+      _prBannerTimer = null;
       if (!mounted || generation != _prBannerGeneration) return;
       _prBannerGeneration++;
       ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
@@ -132,6 +138,25 @@ replace_once(
         mounted) {
 ''',
     'toggle PR event integration',
+)
+
+replace_once(
+    screen,
+    '''  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _restController.dispose();
+    _durationTimer?.cancel();
+''',
+    '''  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _prBannerTimer?.cancel();
+    _prBannerTimer = null;
+    _restController.dispose();
+    _durationTimer?.cancel();
+''',
+    'PR banner timer dispose',
 )
 
 foundations = Path('test/refactor_foundations_test.dart')
@@ -255,6 +280,9 @@ widget_test = r'''
       findsOneWidget,
     );
     expect(find.textContaining('volume set migliorato'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 '''
 screen_test.write_text(text[:-3] + widget_test + '\n}\n')
