@@ -7,6 +7,9 @@ import 'package:gymapp/ai_coach/ai_program_conversation_coordinator.dart';
 import 'package:gymapp/ai_coach/ai_program_draft_service.dart';
 import 'package:gymapp/ai_coach/chat_conversation.dart';
 import 'package:gymapp/ai_coach/local_llm_engine.dart';
+import 'package:gymapp/app_data_store.dart';
+import 'package:gymapp/models/exercise.dart';
+import 'package:gymapp/models/schedule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -53,6 +56,47 @@ void main() {
     expect(proposal!.kind, AiProgramActionKind.proposeProgram);
     expect(proposal.schedules.single.title, 'Upper A');
   });
+
+  test(
+    'program request hydrates persisted version history when caller omits it',
+    () async {
+      final schedule = Schedule(
+        id: 'push',
+        title: 'Push',
+        week: 1,
+        createdAt: DateTime(2026, 8, 1),
+        exercises: [
+          Exercise(
+            id: 'bench',
+            name: 'Panca',
+            reps: 8,
+            set: 3,
+            notes: '',
+            weight: 80,
+            muscleGroup: MuscleGroup.chest,
+            technique: IntensityTechnique.none,
+          ),
+        ],
+      );
+      await AppDataStore.saveSchedules([schedule]);
+      final bundle = await AppDataStore.loadBundle();
+      expect(bundle.scheduleVersions, isNotEmpty);
+
+      final engine = _Engine(jsonEncode(_proposalJson()));
+      final coordinator = AiProgramConversationCoordinator(
+        draftService: AiProgramDraftService(engine: engine),
+      );
+
+      final result = await coordinator.handle(
+        userRequest: 'Fammi una nuova scheda upper lower',
+        history: const [],
+        schedules: bundle.schedules,
+      );
+
+      expect(result.hasDraft, isTrue);
+      expect(engine.lastPrompt, contains(bundle.scheduleVersions.single.id));
+    },
+  );
 
   test('invalid generated draft is handled but never exposed as actionable', () async {
     final invalid = _proposalJson();
@@ -135,6 +179,7 @@ Map<String, dynamic> _proposalJson() => {
 class _Engine implements LocalLlmEngine {
   final String response;
   int calls = 0;
+  String lastPrompt = '';
 
   _Engine(this.response);
 
@@ -150,6 +195,7 @@ class _Engine implements LocalLlmEngine {
     Map<String, dynamic> schema,
   ) async {
     calls += 1;
+    lastPrompt = prompt;
     return response;
   }
 
