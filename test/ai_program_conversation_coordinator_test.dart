@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gymapp/ai_coach/ai_action_protocol.dart';
 import 'package:gymapp/ai_coach/ai_coach_models.dart';
 import 'package:gymapp/ai_coach/ai_program_conversation_coordinator.dart';
+import 'package:gymapp/ai_coach/ai_program_draft_instance.dart';
 import 'package:gymapp/ai_coach/ai_program_draft_service.dart';
 import 'package:gymapp/ai_coach/chat_conversation.dart';
 import 'package:gymapp/ai_coach/local_llm_engine.dart';
@@ -53,8 +54,49 @@ void main() {
     expect(message.role, 'assistant');
     final proposal = programDraftFromMessage(message);
     expect(proposal, isNotNull);
+    expect(proposal, isA<InstancedAiProgramActionProposal>());
     expect(proposal!.kind, AiProgramActionKind.proposeProgram);
     expect(proposal.schedules.single.title, 'Upper A');
+    final instanced = proposal as InstancedAiProgramActionProposal;
+    expect(instanced.draftInstanceId, isNotEmpty);
+    expect(
+      message.actionPayload?[InstancedAiProgramActionProposal.payloadKey],
+      instanced.draftInstanceId,
+    );
+  });
+
+  test('draft identity survives editor-style copyWith and payload roundtrip', () async {
+    final engine = _Engine(jsonEncode(_proposalJson()));
+    final coordinator = AiProgramConversationCoordinator(
+      draftService: AiProgramDraftService(engine: engine),
+    );
+    final result = await coordinator.handle(
+      userRequest: 'Creami una scheda nuova',
+      history: const [],
+      schedules: const [],
+    );
+    final original = programDraftFromMessage(result.assistantMessage!)!
+        as InstancedAiProgramActionProposal;
+
+    final edited = original.copyWith(summary: 'Upper A rivista');
+    expect(edited.draftInstanceId, original.draftInstanceId);
+    expect(
+      edited.toJson()[InstancedAiProgramActionProposal.payloadKey],
+      original.draftInstanceId,
+    );
+
+    final reparsed = programDraftFromMessage(
+      ChatMessage(
+        role: 'assistant',
+        content: edited.summary,
+        actionPayload: edited.toJson(),
+      ),
+    );
+    expect(reparsed, isA<InstancedAiProgramActionProposal>());
+    expect(
+      (reparsed as InstancedAiProgramActionProposal).draftInstanceId,
+      original.draftInstanceId,
+    );
   });
 
   test(
