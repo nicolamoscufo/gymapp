@@ -10,26 +10,34 @@ import '../workout_progression_analytics.dart';
 /// The first version of each schedule carries a baseline snapshot. Later
 /// versions carry only their diff from the previous version, so the full
 /// program history remains reconstructable without repeating every snapshot.
-/// Workout outcomes are attributed only through an exact `scheduleVersionId`.
+/// Workout outcomes are attributed only through an exact `scheduleVersionId`
+/// that resolves to a stored [ScheduleVersion].
 Map<String, dynamic> buildProgramHistoryContext({
   required List<ScheduleVersion> scheduleVersions,
   required List<WorkoutSession> history,
   required List<Schedule> schedules,
 }) {
   final versionsBySchedule = <String, List<ScheduleVersion>>{};
+  final knownVersionIds = <String>{};
   for (final version in scheduleVersions) {
     versionsBySchedule.putIfAbsent(version.scheduleId, () => []).add(version);
+    knownVersionIds.add(version.id);
   }
 
   final currentById = {for (final schedule in schedules) schedule.id: schedule};
   final sessionsByVersion = <String, List<WorkoutSession>>{};
-  final unresolved = <WorkoutSession>[];
+  final unresolvedLegacy = <WorkoutSession>[];
+  final orphanedVersionLinks = <WorkoutSession>[];
   var linkedWorkoutCount = 0;
 
   for (final session in history) {
-    final versionId = session.scheduleVersionId;
-    if (versionId == null || versionId.trim().isEmpty) {
-      unresolved.add(session);
+    final versionId = session.scheduleVersionId?.trim();
+    if (versionId == null || versionId.isEmpty) {
+      unresolvedLegacy.add(session);
+      continue;
+    }
+    if (!knownVersionIds.contains(versionId)) {
+      orphanedVersionLinks.add(session);
       continue;
     }
     sessionsByVersion.putIfAbsent(versionId, () => []).add(session);
@@ -82,29 +90,34 @@ Map<String, dynamic> buildProgramHistoryContext({
     });
   }
 
-  final unresolvedSummary = _unresolvedSummary(unresolved);
   final totalWorkouts = history.length;
   return {
     'contract': {
-      'version_links_are_authoritative': true,
+      'version_links_are_authoritative_only_when_resolved': true,
       'null_version_link_means_unknown': true,
+      'unknown_version_id_means_unresolved': true,
       'do_not_infer_legacy_version_links': true,
       'version_performance_uses_exact_links_only': true,
       'timeline_is_deterministic': true,
-      'representation': 'first version is a baseline; later versions are diffs from the previous stored version',
+      'representation':
+          'first version is a baseline; later versions are diffs from the previous stored version',
     },
     'coverage': {
       'program_count': programs.length,
       'version_count': scheduleVersions.length,
       'workout_count': totalWorkouts,
       'exactly_linked_workouts': linkedWorkoutCount,
-      'unresolved_legacy_workouts': unresolved.length,
+      'unresolved_legacy_workouts': unresolvedLegacy.length,
+      'orphaned_version_link_workouts': orphanedVersionLinks.length,
       'exact_link_coverage': totalWorkouts == 0
           ? null
           : linkedWorkoutCount / totalWorkouts,
     },
     'programs': programs,
-    'unresolved_legacy': unresolvedSummary,
+    'unresolved_legacy': _unresolvedSummary(unresolvedLegacy),
+    'orphaned_version_links': _orphanedVersionLinkSummary(
+      orphanedVersionLinks,
+    ),
   };
 }
 
@@ -319,6 +332,43 @@ Map<String, dynamic> _unresolvedSummary(List<WorkoutSession> sessions) {
     'last_session_at': sorted.last.startTime.toIso8601String(),
     'by_schedule': names
         .map((name) => {'schedule_title': name, 'sessions': counts[name]})
+        .toList(),
+  };
+}
+
+Map<String, dynamic> _orphanedVersionLinkSummary(
+  List<WorkoutSession> sessions,
+) {
+  if (sessions.isEmpty) {
+    return const {
+      'count': 0,
+      'version_ids': <String>[],
+      'sessions': <Map<String, dynamic>>[],
+    };
+  }
+
+  final sorted = [...sessions]
+    ..sort((a, b) => a.startTime.compareTo(b.startTime));
+  final versionIds = sorted
+      .map((session) => session.scheduleVersionId?.trim())
+      .whereType<String>()
+      .where((id) => id.isNotEmpty)
+      .toSet()
+      .toList()
+    ..sort();
+  return {
+    'count': sorted.length,
+    'version_ids': versionIds,
+    'sessions': sorted
+        .map(
+          (session) => {
+            'session_id': session.id,
+            'schedule_id': session.scheduleId,
+            'schedule_title': session.scheduleTitle,
+            'schedule_version_id': session.scheduleVersionId,
+            'start_time': session.startTime.toIso8601String(),
+          },
+        )
         .toList(),
   };
 }
