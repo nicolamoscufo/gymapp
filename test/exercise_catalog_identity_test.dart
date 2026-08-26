@@ -43,6 +43,28 @@ void main() {
     expect(exercise.catalogId, 'cable_fly');
   });
 
+  test('persisted exercise ids are not silently backfilled from registry', () {
+    registerExerciseCatalogIdentity(
+      name: 'barbell bench press',
+      catalogId: 'bench_catalog',
+    );
+
+    final restored = Exercise(
+      id: 'persisted-bench',
+      name: 'barbell bench press',
+      reps: 8,
+      set: 3,
+      notes: '',
+      weight: 80,
+      muscleGroup: MuscleGroup.chest,
+      equipment: 'barbell',
+      movementPattern: 'Spinta',
+      technique: IntensityTechnique.none,
+    );
+
+    expect(restored.catalogId, isNull);
+  });
+
   test('ambiguous duplicate canonical names are not auto-linked', () {
     parseExerciseCatalog(
       jsonEncode([
