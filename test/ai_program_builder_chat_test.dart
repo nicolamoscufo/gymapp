@@ -133,6 +133,8 @@ void main() {
           modelInstaller: const _InstalledModel(),
           programConversationCoordinator:
               const _FakeModifyProgramCoordinator(),
+          programDraftCommitService:
+              const _DeterministicProgramDraftCommitService(),
         ),
       ),
     );
