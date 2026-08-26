@@ -150,9 +150,9 @@ void main() {
 
     expect(find.byType(TextField), findsOneWidget);
     expect(find.text('Il tuo coach AI personale'), findsOneWidget);
+    expect(find.text('Crea una scheda con il Coach'), findsOneWidget);
     expect(find.text('Riassumi ultimo allenamento'), findsOneWidget);
     expect(find.text('Report settimanale'), findsOneWidget);
-    expect(find.text('Suggerimenti'), findsOneWidget);
   });
 
   testWidgets('AI plan actions show a diff and apply only after confirmation', (
