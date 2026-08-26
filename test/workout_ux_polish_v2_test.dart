@@ -370,4 +370,90 @@ void main() {
     expect(find.text('Bench'), findsWidgets);
     expect(find.textContaining('62.5 kg'), findsOneWidget);
   });
+
+  testWidgets('rest expiry hands off to the exact next set', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(900, 1200);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final first = ExerciseSet(weight: 50, reps: 8);
+    final second = ExerciseSet(weight: 52.5, reps: 8);
+    final exercise = _exercise('Bench', sets: [first, second])..restSeconds = 1;
+    final session = _session([exercise]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActiveWorkoutScreen.resume(
+          resumedSession: session,
+          defaultRestSeconds: 90,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final complete = find.byKey(ValueKey('thumb-complete-${first.id}'));
+    await tester.ensureVisible(complete);
+    await tester.tap(complete);
+    await tester.pump();
+    expect(find.byKey(ValueKey('rest-mode-${exercise.id}')), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1100));
+    await tester.pump(const Duration(milliseconds: 40));
+
+    expect(find.byKey(ValueKey('rest-mode-${exercise.id}')), findsNothing);
+    expect(find.byKey(ValueKey('current-set-${second.id}')), findsOneWidget);
+    expect(find.byKey(ValueKey('handoff-set-${second.id}')), findsOneWidget);
+    expect(find.text('TOCCA A TE'), findsOneWidget);
+    expect(find.textContaining('Recupero finito · Bench'), findsOneWidget);
+  });
+
+  testWidgets('rest expiry hands a superset to the next round leader', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(900, 1500);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final a1 = ExerciseSet(weight: 60, reps: 8);
+    final a2 = ExerciseSet(weight: 62.5, reps: 8);
+    final b1 = ExerciseSet(weight: 30, reps: 10);
+    final b2 = ExerciseSet(weight: 32.5, reps: 10);
+    final a = _exercise('Bench', sets: [a1, a2], supersetGroup: 7)
+      ..restSeconds = 1;
+    final b = _exercise('Row', sets: [b1, b2], supersetGroup: 7)
+      ..restSeconds = 1;
+    final session = _session([a, b]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActiveWorkoutScreen.resume(
+          resumedSession: session,
+          defaultRestSeconds: 90,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final completeA = find.byKey(ValueKey('complete-${a1.id}'));
+    await tester.ensureVisible(completeA);
+    await tester.tap(completeA);
+    await tester.pump();
+    expect(find.byKey(ValueKey('rest-mode-${a.id}')), findsNothing);
+
+    final completeB = find.byKey(ValueKey('complete-${b1.id}'));
+    await tester.ensureVisible(completeB);
+    await tester.tap(completeB);
+    await tester.pump();
+    expect(find.byKey(ValueKey('rest-mode-${b.id}')), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1100));
+    await tester.pump(const Duration(milliseconds: 40));
+
+    expect(find.byKey(ValueKey('rest-mode-${b.id}')), findsNothing);
+    expect(find.byKey(ValueKey('handoff-set-${a2.id}')), findsOneWidget);
+    expect(find.byKey(ValueKey('current-set-${a2.id}')), findsOneWidget);
+    expect(find.byKey(ValueKey('handoff-set-${b2.id}')), findsNothing);
+  });
 }

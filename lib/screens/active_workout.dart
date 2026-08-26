@@ -92,6 +92,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   Timer? _durationTimer;
   int _elapsedSeconds = 0;
   final Map<String, GlobalKey> _exerciseCardKeys = {};
+  final Map<String, GlobalKey> _setRowKeys = {};
+  final ScrollController _workoutScrollController = ScrollController();
+  String? _handoffSetId;
+  bool _handoffPulseEmphasis = false;
+  Timer? _handoffPulseTimer;
+  Timer? _handoffClearTimer;
   final Set<String> _exerciseIdsAddedToScheduleThisFinish = {};
   int _prBannerGeneration = 0;
   Timer? _prBannerTimer;
@@ -118,6 +124,84 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   GlobalKey _exerciseCardKey(String exerciseId) {
     return _exerciseCardKeys.putIfAbsent(exerciseId, GlobalKey.new);
+  }
+
+  GlobalKey _setRowKey(String setId) {
+    return _setRowKeys.putIfAbsent(setId, GlobalKey.new);
+  }
+
+  Future<void> _scrollToSet(String exerciseId, String setId) async {
+    var setContext = _setRowKeys[setId]?.currentContext;
+    if (setContext != null) {
+      await Scrollable.ensureVisible(
+        setContext,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+        alignment: 0.28,
+      );
+      return;
+    }
+
+    final exerciseContext = _exerciseCardKeys[exerciseId]?.currentContext;
+    if (exerciseContext != null) {
+      await Scrollable.ensureVisible(
+        exerciseContext,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+        alignment: 0.08,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 24));
+      setContext = _setRowKeys[setId]?.currentContext;
+      if (setContext != null) {
+        await Scrollable.ensureVisible(
+          setContext,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: 0.28,
+        );
+      }
+      return;
+    }
+
+    if (!_workoutScrollController.hasClients || session.exercises.isEmpty) {
+      return;
+    }
+    final exerciseIndex = session.exercises.indexWhere(
+      (exercise) => exercise.id == exerciseId,
+    );
+    if (exerciseIndex < 0) return;
+
+    final position = _workoutScrollController.position;
+    final fraction = session.exercises.length <= 1
+        ? 0.0
+        : exerciseIndex / (session.exercises.length - 1);
+    await _workoutScrollController.animateTo(
+      position.maxScrollExtent * fraction,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 24));
+
+    final revealedExerciseContext =
+        _exerciseCardKeys[exerciseId]?.currentContext;
+    if (revealedExerciseContext != null) {
+      await Scrollable.ensureVisible(
+        revealedExerciseContext,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        alignment: 0.08,
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 24));
+    setContext = _setRowKeys[setId]?.currentContext;
+    if (setContext != null) {
+      await Scrollable.ensureVisible(
+        setContext,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: 0.28,
+      );
+    }
   }
 
   void _scrollToExercise(String exerciseId) {
@@ -747,19 +831,80 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
   }
 
+  void _triggerPostRestHandoff(WorkoutExercise exercise, ExerciseSet set) {
+    _handoffPulseTimer?.cancel();
+    _handoffClearTimer?.cancel();
+    var pulseTransitions = 0;
+    setState(() {
+      _handoffSetId = set.id;
+      _handoffPulseEmphasis = true;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _scrollToSet(exercise.id, set.id);
+      }
+    });
+
+    _handoffPulseTimer = Timer.periodic(const Duration(milliseconds: 260), (
+      timer,
+    ) {
+      if (!mounted || _handoffSetId != set.id) {
+        timer.cancel();
+        return;
+      }
+      pulseTransitions++;
+      setState(() {
+        _handoffPulseEmphasis = !_handoffPulseEmphasis;
+      });
+      if (pulseTransitions >= 4) {
+        timer.cancel();
+        _handoffPulseTimer = null;
+      }
+    });
+    _handoffClearTimer = Timer(const Duration(milliseconds: 1800), () {
+      _handoffClearTimer = null;
+      if (!mounted || _handoffSetId != set.id) return;
+      setState(() {
+        _handoffSetId = null;
+        _handoffPulseEmphasis = false;
+      });
+    });
+  }
+
   void _handleRestFinished(String exerciseId, String? exerciseName) {
+    WorkoutExercise? restExercise;
+    for (final candidate in session.exercises) {
+      if (candidate.id == exerciseId) {
+        restExercise = candidate;
+        break;
+      }
+    }
+    final handoffTarget = restExercise == null
+        ? null
+        : _nextSetAfterRest(restExercise);
+
     _saveCurrentSession();
-    HapticFeedback.mediumImpact();
+    if (handoffTarget == null) {
+      HapticFeedback.mediumImpact();
+    } else {
+      HapticFeedback.heavyImpact();
+    }
     SystemSound.play(SystemSoundType.alert);
     LocalNotificationService.showRestFinished(exerciseName ?? '');
 
     if (!mounted) return;
+    if (handoffTarget != null) {
+      _triggerPostRestHandoff(handoffTarget.exercise, handoffTarget.set);
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          exerciseName == null
-              ? 'Recupero finito.'
-              : 'Recupero finito: $exerciseName.',
+          handoffTarget == null
+              ? (exerciseName == null
+                    ? 'Recupero finito.'
+                    : 'Recupero finito: $exerciseName.')
+              : 'Recupero finito · ${handoffTarget.exercise.name}: ${_formatWeight(handoffTarget.set.weight)} kg × ${handoffTarget.set.reps}.',
         ),
         behavior: SnackBarBehavior.floating,
       ),
@@ -1031,8 +1176,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     WidgetsBinding.instance.removeObserver(this);
     _prBannerTimer?.cancel();
     _prBannerTimer = null;
+    _handoffPulseTimer?.cancel();
+    _handoffPulseTimer = null;
+    _handoffClearTimer?.cancel();
+    _handoffClearTimer = null;
     _restController.dispose();
     _durationTimer?.cancel();
+    _workoutScrollController.dispose();
     if (!widget.editCompletedSession) {
       WakelockPlus.disable();
     }
@@ -2337,6 +2487,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
           ),
         ),
         body: ListView.builder(
+          controller: _workoutScrollController,
           padding: const EdgeInsets.only(bottom: 96),
           itemCount:
               session.exercises.length + (session.exercises.length > 1 ? 1 : 0),
@@ -2760,6 +2911,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                         final exSet = exercise.sets[setIndex];
                         final currentSetIndex = _currentSetIndexFor(exercise);
                         final isCurrentSet = setIndex == currentSetIndex;
+                        final isHandoffSet = _handoffSetId == exSet.id;
                         final setMetadataSummary = _setMetadataSummary(exSet);
                         final setLabel =
                             exercise.technique ==
@@ -2806,13 +2958,36 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                               color: colorScheme.onErrorContainer,
                             ),
                           ),
-                          child: Container(
+                          child: AnimatedContainer(
+                            key: _setRowKey(exSet.id),
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeInOut,
+                            transformAlignment: Alignment.center,
+                            transform: Matrix4.diagonal3Values(
+                              isHandoffSet && _handoffPulseEmphasis
+                                  ? 1.012
+                                  : 1.0,
+                              isHandoffSet && _handoffPulseEmphasis
+                                  ? 1.012
+                                  : 1.0,
+                              1.0,
+                            ),
                             margin: const EdgeInsets.symmetric(vertical: 3),
                             padding: const EdgeInsets.symmetric(vertical: 5.0),
                             decoration: BoxDecoration(
                               color: exSet.isCompleted
                                   ? colorScheme.tertiaryContainer.withValues(
                                       alpha: isDark ? 0.38 : 0.62,
+                                    )
+                                  : isHandoffSet
+                                  ? colorScheme.primaryContainer.withValues(
+                                      alpha: isDark
+                                          ? (_handoffPulseEmphasis
+                                                ? 0.58
+                                                : 0.36)
+                                          : (_handoffPulseEmphasis
+                                                ? 0.82
+                                                : 0.58),
                                     )
                                   : isCurrentSet
                                   ? colorScheme.primaryContainer.withValues(
@@ -2825,11 +3000,26 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                     ? colorScheme.tertiary.withValues(
                                         alpha: 0.35,
                                       )
-                                    : isCurrentSet
+                                    : isHandoffSet || isCurrentSet
                                     ? colorScheme.primary
                                     : Colors.transparent,
-                                width: isCurrentSet ? 1.6 : 1,
+                                width: isHandoffSet
+                                    ? (_handoffPulseEmphasis ? 2.8 : 2.0)
+                                    : isCurrentSet
+                                    ? 1.6
+                                    : 1,
                               ),
+                              boxShadow: isHandoffSet && _handoffPulseEmphasis
+                                  ? [
+                                      BoxShadow(
+                                        color: colorScheme.primary.withValues(
+                                          alpha: 0.24,
+                                        ),
+                                        blurRadius: 14,
+                                        spreadRadius: 1,
+                                      ),
+                                    ]
+                                  : null,
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3033,6 +3223,50 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                     ),
                                   ],
                                 ),
+                                if (isHandoffSet && !exSet.isCompleted)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      72,
+                                      6,
+                                      8,
+                                      0,
+                                    ),
+                                    child: Container(
+                                      key: ValueKey('handoff-set-${exSet.id}'),
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 7,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: colorScheme.primary.withValues(
+                                          alpha: isDark ? 0.18 : 0.10,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.bolt,
+                                            size: 17,
+                                            color: colorScheme.primary,
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            'TOCCA A TE',
+                                            style: theme.textTheme.labelMedium
+                                                ?.copyWith(
+                                                  color: colorScheme.primary,
+                                                  fontWeight: FontWeight.w900,
+                                                  letterSpacing: 0.7,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 if (isCurrentSet && !exSet.isCompleted)
                                   Padding(
                                     padding: const EdgeInsets.fromLTRB(
