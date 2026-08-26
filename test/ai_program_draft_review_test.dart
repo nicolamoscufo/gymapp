@@ -29,7 +29,12 @@ void main() {
     await tester.pump();
 
     final secondRemoveButton = find.byTooltip('Rimuovi esercizio').at(1);
-    await tester.ensureVisible(secondRemoveButton);
+    await tester.scrollUntilVisible(
+      secondRemoveButton,
+      180,
+      scrollable: find.byType(ListView),
+    );
+    await tester.pump();
     await tester.tap(secondRemoveButton);
     await tester.pump();
 
