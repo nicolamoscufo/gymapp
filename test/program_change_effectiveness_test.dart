@@ -253,7 +253,10 @@ void main() {
     final effectiveness = Map<String, dynamic>.from(
       context['program_change_effectiveness'] as Map,
     );
-    expect((effectiveness['transitions'] as List).single, containsPair('status', 'improved'));
+    expect(
+      (effectiveness['transitions'] as List).single,
+      containsPair('status', 'improved'),
+    );
   });
 }
 
@@ -304,7 +307,7 @@ Schedule _schedule({double weight = 80, bool twoExercises = false}) => Schedule(
         set: 3,
         notes: '',
         weight: 100,
-        muscleGroup: MuscleGroup.quads,
+        muscleGroup: MuscleGroup.quadriceps,
         technique: IntensityTechnique.none,
       ),
   ],
