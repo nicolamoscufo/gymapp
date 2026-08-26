@@ -205,7 +205,10 @@ void main() {
 
 Future<void> _pumpUntilSaved(WidgetTester tester) async {
   await tester.runAsync(() async {
-    for (var attempt = 0; attempt < 100; attempt++) {
+    // The first save can cold-load the catalog asset on CI. Poll the
+    // persisted UI state with a bounded wall-clock wait instead of relying on
+    // pumpAndSettle, which cannot settle while Coach animations are active.
+    for (var attempt = 0; attempt < 1000; attempt++) {
       final conversations = await const ChatConversationStore().loadAll();
       final saved = conversations.any(
         (conversation) => conversation.messages.any(
