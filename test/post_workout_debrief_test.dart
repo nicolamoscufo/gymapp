@@ -24,12 +24,7 @@ WorkoutExercise _exercise(
     progressionKgStep: 2.5,
     sets: List.generate(
       setCount,
-      (_) => ExerciseSet(
-        weight: weight,
-        reps: reps,
-        isCompleted: true,
-        rir: 2,
-      ),
+      (_) => ExerciseSet(weight: weight, reps: reps, isCompleted: true, rir: 2),
     ),
   );
 }
@@ -98,24 +93,30 @@ void main() {
     expect(debrief.readyToProgressCount, 1);
   });
 
-  test('first comparable session keeps absolute metrics without fake deltas', () {
-    final current = _session(
-      id: 'current',
-      scheduleId: 'push-plan',
-      start: DateTime(2026, 8, 26, 18),
-      duration: const Duration(minutes: 45),
-      exercise: _exercise('Bench Press', weight: 80, reps: 8),
-    );
+  test(
+    'first comparable session keeps absolute metrics without fake deltas',
+    () {
+      final current = _session(
+        id: 'current',
+        scheduleId: 'push-plan',
+        start: DateTime(2026, 8, 26, 18),
+        duration: const Duration(minutes: 45),
+        exercise: _exercise('Bench Press', weight: 80, reps: 8),
+      );
 
-    final debrief = buildPostWorkoutDebrief(session: current, history: const []);
+      final debrief = buildPostWorkoutDebrief(
+        session: current,
+        history: const [],
+      );
 
-    expect(debrief.hasComparableSession, isFalse);
-    expect(debrief.volumeChangePercent, isNull);
-    expect(debrief.completedWorkSetDelta, isNull);
-    expect(debrief.densityChangePercent, isNull);
-    expect(debrief.totalVolume, 1920);
-    expect(debrief.completedWorkSets, 3);
-  });
+      expect(debrief.hasComparableSession, isFalse);
+      expect(debrief.volumeChangePercent, isNull);
+      expect(debrief.completedWorkSetDelta, isNull);
+      expect(debrief.densityChangePercent, isNull);
+      expect(debrief.totalVolume, 1920);
+      expect(debrief.completedWorkSets, 3);
+    },
+  );
 
   testWidgets('session summary surfaces comparison and next-session action', (
     tester,

@@ -71,9 +71,8 @@ PostWorkoutDebrief buildPostWorkoutDebrief({
 
   final exerciseDebriefs = session.exercises
       .where(
-        (exercise) => exercise.sets.any(
-          (set) => set.isCompleted && !set.isWarmup,
-        ),
+        (exercise) =>
+            exercise.sets.any((set) => set.isCompleted && !set.isWarmup),
       )
       .map(
         (exercise) => ExerciseDebrief(
@@ -94,7 +93,9 @@ PostWorkoutDebrief buildPostWorkoutDebrief({
     totalVolume: currentVolume,
     volumeChangePercent: _percentChange(currentVolume, previousVolume),
     completedWorkSets: currentSets,
-    completedWorkSetDelta: previousSets == null ? null : currentSets - previousSets,
+    completedWorkSetDelta: previousSets == null
+        ? null
+        : currentSets - previousSets,
     densityKgPerMinute: currentDensity,
     densityChangePercent: _percentChange(currentDensity, previousDensity),
     exercises: exerciseDebriefs,
