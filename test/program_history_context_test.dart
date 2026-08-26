@@ -40,6 +40,7 @@ void main() {
         name: 'Croci',
         reps: 12,
         set: 3,
+        notes: '',
         weight: 20,
         technique: IntensityTechnique.none,
       ),
@@ -114,31 +115,51 @@ void main() {
     final fields = (benchChange['fields'] as List)
         .map((entry) => Map<String, dynamic>.from(entry as Map))
         .toList();
-    expect(fields.any((entry) => entry['field'] == 'weight' && entry['to'] == 82.5), isTrue);
-    expect(fields.any((entry) => entry['field'] == 'reps' && entry['to'] == 9), isTrue);
+    expect(
+      fields.any(
+        (entry) => entry['field'] == 'weight' && entry['to'] == 82.5,
+      ),
+      isTrue,
+    );
+    expect(
+      fields.any((entry) => entry['field'] == 'reps' && entry['to'] == 9),
+      isTrue,
+    );
 
     final v3Diff = Map<String, dynamic>.from(
       versions[2]['changes_from_previous'] as Map,
     );
     expect(
       (v3Diff['exercises'] as List).any(
-        (entry) => (entry as Map)['type'] == 'added' && entry['exercise_id'] == 'fly',
+        (entry) =>
+            (entry as Map)['type'] == 'added' && entry['exercise_id'] == 'fly',
       ),
       isTrue,
     );
 
-    final v1Performance = Map<String, dynamic>.from(versions[0]['performance'] as Map);
-    final v2Performance = Map<String, dynamic>.from(versions[1]['performance'] as Map);
-    final v3Performance = Map<String, dynamic>.from(versions[2]['performance'] as Map);
+    final v1Performance = Map<String, dynamic>.from(
+      versions[0]['performance'] as Map,
+    );
+    final v2Performance = Map<String, dynamic>.from(
+      versions[1]['performance'] as Map,
+    );
+    final v3Performance = Map<String, dynamic>.from(
+      versions[2]['performance'] as Map,
+    );
     expect(v1Performance['session_count'], 1);
     expect(v2Performance['session_count'], 1);
     expect(v3Performance['session_count'], 0);
     expect(v1Performance['total_volume'], 80 * 8);
     expect(v2Performance['total_volume'], 82.5 * 8);
 
-    final unresolved = Map<String, dynamic>.from(context['unresolved_legacy'] as Map);
+    final unresolved = Map<String, dynamic>.from(
+      context['unresolved_legacy'] as Map,
+    );
     expect(unresolved['count'], 1);
-    expect((unresolved['by_schedule'] as List).single, containsPair('sessions', 1));
+    expect(
+      (unresolved['by_schedule'] as List).single,
+      containsPair('sessions', 1),
+    );
 
     final oldProgram = programs.singleWhere(
       (entry) => entry['schedule_id'] == 'old-plan',
@@ -174,10 +195,18 @@ void main() {
     );
 
     expect(context['workouts'], hasLength(12));
-    final programHistory = Map<String, dynamic>.from(context['program_history'] as Map);
-    final program = Map<String, dynamic>.from((programHistory['programs'] as List).single as Map);
-    final versionEntry = Map<String, dynamic>.from((program['versions'] as List).single as Map);
-    final performance = Map<String, dynamic>.from(versionEntry['performance'] as Map);
+    final programHistory = Map<String, dynamic>.from(
+      context['program_history'] as Map,
+    );
+    final program = Map<String, dynamic>.from(
+      (programHistory['programs'] as List).single as Map,
+    );
+    final versionEntry = Map<String, dynamic>.from(
+      (program['versions'] as List).single as Map,
+    );
+    final performance = Map<String, dynamic>.from(
+      versionEntry['performance'] as Map,
+    );
     expect(performance['session_count'], 15);
   });
 }
@@ -194,6 +223,7 @@ Schedule _schedule() => Schedule(
       name: 'Panca',
       reps: 8,
       set: 3,
+      notes: '',
       weight: 80,
       muscleGroup: MuscleGroup.chest,
       technique: IntensityTechnique.none,
@@ -218,6 +248,7 @@ WorkoutSession _session(
       id: 'exercise-$id',
       sourceExerciseId: 'bench',
       name: 'Panca',
+      notes: '',
       muscleGroup: MuscleGroup.chest,
       technique: IntensityTechnique.none,
       sets: [
