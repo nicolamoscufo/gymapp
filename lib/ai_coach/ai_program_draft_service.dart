@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/body_log.dart';
+import '../models/exercise.dart';
 import '../models/schedule.dart';
 import '../models/schedule_version.dart';
 import '../models/workout.dart';
