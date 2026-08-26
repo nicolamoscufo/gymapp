@@ -25,31 +25,21 @@ void main() {
 
     for (var index = 0; index < dates.length; index++) {
       history.add(
-        _session(
-          dates[index],
-          [
-            _exercise('Panca', MuscleGroup.chest, benchWeights[index], 8),
-            _exercise(
-              'Squat',
-              MuscleGroup.quadriceps,
-              squatWeights[index],
-              8,
-            ),
-          ],
-        ),
+        _session(dates[index], [
+          _exercise('Panca', MuscleGroup.chest, benchWeights[index], 8),
+          _exercise('Squat', MuscleGroup.quadriceps, squatWeights[index], 8),
+        ]),
       );
     }
     history.add(
-      _session(
-        DateTime(2026, 5, 1),
-        [_exercise('Rematore', MuscleGroup.back, 60, 10)],
-      ),
+      _session(DateTime(2026, 5, 1), [
+        _exercise('Rematore', MuscleGroup.back, 60, 10),
+      ]),
     );
     history.add(
-      _session(
-        DateTime(2026, 5, 8),
-        [_exercise('Rematore', MuscleGroup.back, 62, 10)],
-      ),
+      _session(DateTime(2026, 5, 8), [
+        _exercise('Rematore', MuscleGroup.back, 62, 10),
+      ]),
     );
 
     final analytics = buildProgressAnalytics(
@@ -85,55 +75,52 @@ void main() {
     expect(intelligence.attentionExercises.first.name, 'Squat');
   });
 
-  test('compares muscle exposure and PR counts across rolling 30-day windows', () {
-    final history = [
-      _session(
-        DateTime(2026, 7, 2),
-        [_exercise('Panca', MuscleGroup.chest, 70, 8)],
-      ),
-      _session(
-        DateTime(2026, 7, 16),
-        [_exercise('Panca', MuscleGroup.chest, 72, 8)],
-      ),
-      _session(
-        DateTime(2026, 8, 5),
-        [_exercise('Panca', MuscleGroup.chest, 75, 8)],
-      ),
-      _session(
-        DateTime(2026, 8, 20),
-        [
+  test(
+    'compares muscle exposure and PR counts across rolling 30-day windows',
+    () {
+      final history = [
+        _session(DateTime(2026, 7, 2), [
+          _exercise('Panca', MuscleGroup.chest, 70, 8),
+        ]),
+        _session(DateTime(2026, 7, 16), [
+          _exercise('Panca', MuscleGroup.chest, 72, 8),
+        ]),
+        _session(DateTime(2026, 8, 5), [
+          _exercise('Panca', MuscleGroup.chest, 75, 8),
+        ]),
+        _session(DateTime(2026, 8, 20), [
           _exercise('Panca', MuscleGroup.chest, 77, 8),
           _exercise('Lat machine', MuscleGroup.back, 60, 10),
-        ],
-      ),
-    ];
+        ]),
+      ];
 
-    final analytics = buildProgressAnalytics(
-      history: history,
-      now: DateTime(2026, 8, 26),
-    );
-    final intelligence = buildProgressCenterIntelligence(
-      history: history,
-      analytics: analytics,
-      now: DateTime(2026, 8, 26),
-    );
+      final analytics = buildProgressAnalytics(
+        history: history,
+        now: DateTime(2026, 8, 26),
+      );
+      final intelligence = buildProgressCenterIntelligence(
+        history: history,
+        analytics: analytics,
+        now: DateTime(2026, 8, 26),
+      );
 
-    final chest = intelligence.muscleShifts.firstWhere(
-      (entry) => entry.muscleGroup == MuscleGroup.chest,
-    );
-    final back = intelligence.muscleShifts.firstWhere(
-      (entry) => entry.muscleGroup == MuscleGroup.back,
-    );
+      final chest = intelligence.muscleShifts.firstWhere(
+        (entry) => entry.muscleGroup == MuscleGroup.chest,
+      );
+      final back = intelligence.muscleShifts.firstWhere(
+        (entry) => entry.muscleGroup == MuscleGroup.back,
+      );
 
-    expect(chest.previousSets, 4);
-    expect(chest.recentSets, 4);
-    expect(chest.setChangePercent, closeTo(0, 0.001));
-    expect(back.previousSets, 0);
-    expect(back.recentSets, 2);
-    expect(back.newlyActive, isTrue);
-    expect(intelligence.personalRecordsLast30Days, greaterThan(0));
-    expect(intelligence.personalRecordsPrevious30Days, greaterThan(0));
-  });
+      expect(chest.previousSets, 4);
+      expect(chest.recentSets, 4);
+      expect(chest.setChangePercent, closeTo(0, 0.001));
+      expect(back.previousSets, 0);
+      expect(back.recentSets, 2);
+      expect(back.newlyActive, isTrue);
+      expect(intelligence.personalRecordsLast30Days, greaterThan(0));
+      expect(intelligence.personalRecordsPrevious30Days, greaterThan(0));
+    },
+  );
 }
 
 WorkoutSession _session(DateTime start, List<WorkoutExercise> exercises) {

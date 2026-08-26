@@ -119,10 +119,11 @@ ProgressCenterIntelligence buildProgressCenterIntelligence({
   DateTime? now,
 }) {
   final reference = _dateOnly(now ?? DateTime.now());
-  final exerciseInsights = analytics.exercises
-      .map((summary) => _buildExerciseInsight(summary, reference))
-      .toList()
-    ..sort((a, b) => b.lastTrainedAt.compareTo(a.lastTrainedAt));
+  final exerciseInsights =
+      analytics.exercises
+          .map((summary) => _buildExerciseInsight(summary, reference))
+          .toList()
+        ..sort((a, b) => b.lastTrainedAt.compareTo(a.lastTrainedAt));
 
   final recentStart = reference.subtract(const Duration(days: 29));
   final previousStart = recentStart.subtract(const Duration(days: 30));
@@ -163,8 +164,7 @@ ProgressCenterIntelligence buildProgressCenterIntelligence({
           ? null
           : ((recent - previous) / previous) * 100,
     );
-  }).toList()
-    ..sort((a, b) => b.recentSets.compareTo(a.recentSets));
+  }).toList()..sort((a, b) => b.recentSets.compareTo(a.recentSets));
 
   var recentPrs = 0;
   var previousPrs = 0;
@@ -243,4 +243,5 @@ double? _windowChange(List<double> values) {
 double _average(List<double> values) =>
     values.reduce((left, right) => left + right) / values.length;
 
-DateTime _dateOnly(DateTime value) => DateTime(value.year, value.month, value.day);
+DateTime _dateOnly(DateTime value) =>
+    DateTime(value.year, value.month, value.day);

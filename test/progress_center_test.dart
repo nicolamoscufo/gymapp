@@ -3,8 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gymapp/models/exercise.dart';
 import 'package:gymapp/models/workout.dart';
 import 'package:gymapp/screens/progress_center.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets(
     'progress center exposes overview, exercise, muscle and PR views',
     (tester) async {
@@ -26,10 +31,32 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Panoramica'), findsOneWidget);
+      expect(find.text('Focus'), findsOneWidget);
       expect(find.text('Esercizi'), findsOneWidget);
       expect(find.text('Muscoli'), findsOneWidget);
       expect(find.text('Record'), findsOneWidget);
       expect(find.text('Trend mensile'), findsOneWidget);
+
+      await tester.tap(find.text('Focus'));
+      await tester.pumpAndSettle();
+      expect(find.text('Progress Intelligence'), findsOneWidget);
+      expect(find.text('Da monitorare'), findsOneWidget);
+      expect(find.text('Momentum esercizi'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('progress-pr-momentum')),
+        findsOneWidget,
+      );
+
+      final focusList = find.byType(ListView).last;
+      for (
+        var i = 0;
+        i < 3 && find.text('Esposizione muscolare').evaluate().isEmpty;
+        i++
+      ) {
+        await tester.drag(focusList, const Offset(0, -350));
+        await tester.pumpAndSettle();
+      }
+      expect(find.text('Esposizione muscolare'), findsOneWidget);
 
       await tester.tap(find.text('Esercizi'));
       await tester.pumpAndSettle();
