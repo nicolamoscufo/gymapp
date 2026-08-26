@@ -238,6 +238,61 @@ void main() {
     expect(manager.removeFromSuperset(a), isFalse);
   });
 
+  test('drop continuation suppresses rest until the drop chain ends', () {
+    final exercise = _workoutExercise('Lateral raise');
+    exercise.sets = [
+      ExerciseSet(weight: 12, reps: 12),
+      ExerciseSet(weight: 9, reps: 10, type: SetType.drop),
+      ExerciseSet(weight: 6, reps: 10, type: SetType.drop),
+    ];
+    final current = _session(exercises: [exercise]);
+    final manager = _manager(current);
+
+    expect(manager.hasPendingDropContinuation(exercise, 0), isTrue);
+    expect(manager.hasPendingDropContinuation(exercise, 1), isTrue);
+    expect(manager.hasPendingDropContinuation(exercise, 2), isFalse);
+    expect(
+      manager.shouldStartRestAfterSet(exercise, completedSetIndex: 0),
+      isFalse,
+    );
+    expect(
+      manager.shouldStartRestAfterSet(exercise, completedSetIndex: 1),
+      isFalse,
+    );
+    expect(
+      manager.shouldStartRestAfterSet(exercise, completedSetIndex: 2),
+      isTrue,
+    );
+
+    exercise.sets[1].isCompleted = true;
+    expect(manager.hasPendingDropContinuation(exercise, 0), isFalse);
+  });
+
+  test('drop continuation takes priority over superset rest and navigation', () {
+    final partner = _workoutExercise('Curl', supersetGroup: 11);
+    final dropExercise = _workoutExercise('Pushdown', supersetGroup: 11);
+    dropExercise.sets = [
+      ExerciseSet(weight: 30, reps: 10),
+      ExerciseSet(weight: 22.5, reps: 10, type: SetType.drop),
+    ];
+    final current = _session(exercises: [partner, dropExercise]);
+    final manager = _manager(current);
+
+    // Pushdown is the last superset member, so the legacy rule would rest here.
+    expect(
+      manager.shouldStartRestAfterSet(dropExercise, completedSetIndex: 0),
+      isFalse,
+    );
+    expect(manager.nextSupersetMemberAfterSet(dropExercise, 0), isNull);
+
+    // After the final drop, the normal superset cycle resumes.
+    expect(
+      manager.shouldStartRestAfterSet(dropExercise, completedSetIndex: 1),
+      isTrue,
+    );
+    expect(manager.nextSupersetMemberAfterSet(dropExercise, 1)?.id, partner.id);
+  });
+
   test('superset navigation and rest semantics follow session order', () {
     final a = _workoutExercise('A', supersetGroup: 9);
     final middle = _workoutExercise('Middle');

@@ -315,6 +315,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       return null;
     }
 
+    if (_exerciseManager.hasPendingDropContinuation(exercise, setIndex)) {
+      return 'Prossimo: drop set, senza recupero.';
+    }
+
     if (exercise.technique == IntensityTechnique.topsetBackoff &&
         setIndex == 0) {
       final backoffWeight = _setManager.recommendedBackoffWeightFor(
@@ -1116,12 +1120,24 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _addExercisesToSession(exercises);
   }
 
-  bool _shouldStartRestAfterSet(WorkoutExercise exercise) {
-    return _exerciseManager.shouldStartRestAfterSet(exercise);
+  bool _shouldStartRestAfterSet(
+    WorkoutExercise exercise,
+    int completedSetIndex,
+  ) {
+    return _exerciseManager.shouldStartRestAfterSet(
+      exercise,
+      completedSetIndex: completedSetIndex,
+    );
   }
 
-  void _advanceSupersetNavigation(WorkoutExercise exercise) {
-    final next = _exerciseManager.nextSupersetMember(exercise);
+  void _advanceSupersetNavigation(
+    WorkoutExercise exercise,
+    int completedSetIndex,
+  ) {
+    final next = _exerciseManager.nextSupersetMemberAfterSet(
+      exercise,
+      completedSetIndex,
+    );
     if (next == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -1733,10 +1749,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     });
     _saveCurrentSession();
     if (willComplete && !widget.editCompletedSession) {
-      if (_shouldStartRestAfterSet(exercise)) {
+      if (_shouldStartRestAfterSet(exercise, setIndex)) {
         _startRestForExercise(exercise);
       }
-      _advanceSupersetNavigation(exercise);
+      _advanceSupersetNavigation(exercise, setIndex);
     }
 
     final delta = _setVolumeDelta(exercise, set, setIndex);
@@ -2677,6 +2693,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                       ),
                                     ),
                                     InkWell(
+                                      key: ValueKey('complete-${exSet.id}'),
                                       onTap: () => _toggleSetCompleted(
                                         exercise,
                                         exSet,
