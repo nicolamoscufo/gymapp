@@ -984,8 +984,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.check).last);
     await tester.pump();
 
-    expect(find.textContaining('Rest 00:'), findsOneWidget);
-    expect(find.textContaining('Recupero 00:'), findsOneWidget);
+    expect(find.byKey(const ValueKey('rest-mode-countdown')), findsOneWidget);
     expect(find.text('Salta'), findsOneWidget);
   });
 
@@ -1129,7 +1128,13 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextFormField).at(2), '80');
-    await tester.tap(find.byIcon(Icons.check).last);
+    final completeSetButton = find.byWidgetPredicate((widget) {
+      final key = widget.key;
+      return key is ValueKey<String> && key.value.startsWith('thumb-complete-');
+    });
+    expect(completeSetButton, findsOneWidget);
+    await tester.ensureVisible(completeSetButton);
+    await tester.tap(completeSetButton);
     await tester.pump();
 
     expect(find.byIcon(Icons.emoji_events), findsWidgets);
