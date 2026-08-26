@@ -1,5 +1,6 @@
-import 'model_id.dart';
+import '../exercise_catalog_identity.dart';
 import '../top_set_backoff.dart';
+import 'model_id.dart';
 
 enum MuscleGroup {
   unassigned,
@@ -79,17 +80,16 @@ MuscleGroup muscleGroupFromJson(Object? value) {
   return MuscleGroup.unassigned;
 }
 
-// Definiamo un enum con le tecniche di intensità più comuni
 enum IntensityTechnique {
-  none, // Nessuna tecnica (serie normale)
-  dropSet, // Stripping / Drop Set
-  restPause, // Rest-Pause
-  superSet, // Superset
-  cluster, // Cluster Set
-  isometric, // Isometria
-  negative, // Ripetizioni negative
-  forcedReps, // Ripetizioni forzate
-  topsetBackoff, // Top Set + Back off
+  none,
+  dropSet,
+  restPause,
+  superSet,
+  cluster,
+  isometric,
+  negative,
+  forcedReps,
+  topsetBackoff,
 }
 
 enum ProgressionScheme { doubleProgression, loadOnly, repsOnly, linear, manual }
@@ -131,7 +131,7 @@ class Exercise {
   String movementPattern;
   int? targetMinReps;
   int? targetMaxReps;
-  IntensityTechnique technique; // Aggiornato per usare l'enum
+  IntensityTechnique technique;
   int? backoffReps;
   double backoffReductionPercent;
   int? restSeconds;
@@ -142,7 +142,7 @@ class Exercise {
 
   Exercise({
     String? id,
-    this.catalogId,
+    String? catalogId,
     required this.name,
     required this.reps,
     required this.set,
@@ -161,7 +161,8 @@ class Exercise {
     this.progressionKgStep = 2.5,
     this.progressionRepStep = 1,
     this.progressionScheme = ProgressionScheme.doubleProgression,
-  }) : id = id ?? newModelId('exercise');
+  }) : id = id ?? newModelId('exercise'),
+       catalogId = catalogId ?? catalogIdForExerciseName(name);
 
   String get targetRepsLabel {
     if (targetMinReps != null && targetMaxReps != null) {
@@ -186,7 +187,7 @@ class Exercise {
     'movementPattern': movementPattern,
     'targetMinReps': targetMinReps,
     'targetMaxReps': targetMaxReps,
-    'technique': technique.name, // Salviamo l'enum come Stringa (es: "dropSet")
+    'technique': technique.name,
     'backoffReps': backoffReps,
     'backoffReductionPercent': backoffReductionPercent,
     'restSeconds': restSeconds,
@@ -197,13 +198,11 @@ class Exercise {
   };
 
   factory Exercise.fromJson(Map<String, dynamic> json) {
-    // Gestione sicura del parsing dell'enum
     IntensityTechnique parsedTechnique = IntensityTechnique.none;
     if (json['technique'] != null) {
       try {
         parsedTechnique = IntensityTechnique.values.byName(json['technique']);
-      } catch (e) {
-        // Fallback in caso di valore non valido nel JSON
+      } catch (_) {
         parsedTechnique = IntensityTechnique.none;
       }
     }
@@ -217,13 +216,13 @@ class Exercise {
       notes: json['notes'],
       weight: json['weight'] is int
           ? (json['weight'] as int).toDouble()
-          : (json['weight'] ?? 0.0), // Aggiunto fallback per evitare null
+          : (json['weight'] ?? 0.0),
       muscleGroup: muscleGroupFromJson(json['muscleGroup']),
       equipment: json['equipment'] as String? ?? '',
       movementPattern: json['movementPattern'] as String? ?? '',
       targetMinReps: json['targetMinReps'] as int?,
       targetMaxReps: json['targetMaxReps'] as int?,
-      technique: parsedTechnique, // Ripristiniamo l'enum
+      technique: parsedTechnique,
       backoffReps: json['backoffReps'] as int?,
       backoffReductionPercent:
           (json['backoffReductionPercent'] as num?)?.toDouble() ??
