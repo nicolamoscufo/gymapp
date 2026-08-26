@@ -34,7 +34,7 @@ void main() {
     expect(engine.lastPrompt, contains('exercise_catalog'));
     expect(engine.lastPrompt, contains('cable_fly'));
     expect(engine.lastPrompt, contains('db_row'));
-    expect(engine.lastPrompt, contains('barbell_squat'));
+    expect(engine.lastPrompt, isNot(contains('barbell_squat')));
     expect(engine.lastPrompt, isNot(contains('Set the pulleys.')));
   });
 }
