@@ -23,7 +23,9 @@ jobs:
           cache: true
 
       - name: Apply Coach handoff patch
-        run: python3 .github/scripts/coach_handoff_patch.py
+        run: |
+          python3 .github/scripts/coach_handoff_patch.py
+          python3 .github/scripts/coach_handoff_test_fix.py
 
       - name: Format
         run: dart format lib/ai_coach/ai_coach_handoff.dart lib/ai_coach/local_ai_coach_service.dart lib/post_workout_debrief.dart lib/screens/ai_coach.dart lib/screens/ai_coach_entry.dart lib/screens/session_summary.dart test/ai_coach_handoff_test.dart
