@@ -6,6 +6,7 @@ import '../models/workout.dart';
 import 'ai_action_protocol.dart';
 import 'ai_coach_memory.dart';
 import 'ai_coach_user_profile.dart';
+import 'ai_program_draft_instance.dart';
 import 'ai_program_draft_service.dart';
 import 'chat_conversation.dart';
 
@@ -70,12 +71,20 @@ class AiProgramConversationCoordinator {
       );
     }
 
+    // Identity belongs to this concrete proposal card, not to its semantic
+    // content. This makes repeated taps idempotent while still allowing a new
+    // conversation to intentionally create an identical program later.
+    final instancedProposal = InstancedAiProgramActionProposal.fromProposal(
+      proposal,
+      generateConversationId(),
+    );
+
     return AiProgramConversationResult(
       isProgramActionIntent: true,
       assistantMessage: ChatMessage(
         role: 'assistant',
         content: proposal.summary,
-        actionPayload: proposal.toJson(),
+        actionPayload: instancedProposal.toJson(),
       ),
     );
   }
@@ -85,7 +94,8 @@ AiProgramActionProposal? programDraftFromMessage(ChatMessage message) {
   final payload = message.actionPayload;
   if (payload == null || payload.isEmpty) return null;
   try {
-    return AiProgramActionProposal.fromActionPayload(payload);
+    final proposal = AiProgramActionProposal.fromActionPayload(payload);
+    return restoreProgramDraftInstance(proposal, payload);
   } catch (_) {
     return null;
   }
