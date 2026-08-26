@@ -1,0 +1,49 @@
+name: Drop Set Rest Suppression Build
+
+on:
+  push:
+    branches:
+      - feat/drop-set-rest-suppression
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/drop-set-rest-suppression
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply feature
+        run: python tool/drop_set_rest_suppression_patch.py
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Format
+        run: dart format lib/active_workout_exercise_manager.dart lib/screens/active_workout.dart test/active_workout_exercise_manager_test.dart test/active_workout_screen_test.dart
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Commit feature
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/active_workout_exercise_manager.dart lib/screens/active_workout.dart test/active_workout_exercise_manager_test.dart test/active_workout_screen_test.dart
+          git diff --cached --quiet && exit 0
+          git commit -m "Skip rest before drop sets"
+          git push origin HEAD:feat/drop-set-rest-suppression
