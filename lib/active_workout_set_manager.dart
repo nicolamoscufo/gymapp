@@ -71,6 +71,39 @@ class ActiveWorkoutSetManager {
     return true;
   }
 
+  /// Copies the previous session's kg/reps into the matching live sets.
+  ///
+  /// By default completed sets are preserved, making this safe as a one-tap
+  /// "previous values" mode during an in-progress workout.
+  bool applyPreviousValues(
+    WorkoutExercise exercise, {
+    bool pendingOnly = true,
+  }) {
+    var count = exercise.sets.length;
+    if (exercise.previousWeights.length < count) {
+      count = exercise.previousWeights.length;
+    }
+    if (exercise.previousReps.length < count) {
+      count = exercise.previousReps.length;
+    }
+    if (count == 0) return false;
+
+    var changed = false;
+    for (var index = 0; index < count; index++) {
+      final set = exercise.sets[index];
+      if (pendingOnly && set.isCompleted) continue;
+
+      final previousWeight = exercise.previousWeights[index];
+      final previousReps = exercise.previousReps[index];
+      if (set.weight == previousWeight && set.reps == previousReps) continue;
+
+      set.weight = previousWeight;
+      set.reps = previousReps;
+      changed = true;
+    }
+    return changed;
+  }
+
   ExerciseSet addSet(WorkoutExercise exercise, {bool isWarmup = false}) {
     final added = exercise.sets.isNotEmpty
         ? ExerciseSet(
