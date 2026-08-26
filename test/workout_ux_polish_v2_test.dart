@@ -153,58 +153,59 @@ void main() {
     expect(restField.controller?.text, '90');
   });
 
-  testWidgets('numeric set flow selects, advances and completes from keyboard', (
-    tester,
-  ) async {
-    final set = ExerciseSet(weight: 50, reps: 8);
-    final exercise = _exercise('Bench', sets: [set])..restSeconds = 0;
-    final session = _session([exercise]);
+  testWidgets(
+    'numeric set flow selects, advances and completes from keyboard',
+    (tester) async {
+      final set = ExerciseSet(weight: 50, reps: 8);
+      final exercise = _exercise('Bench', sets: [set])..restSeconds = 0;
+      final session = _session([exercise]);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ActiveWorkoutScreen.resume(
-          resumedSession: session,
-          defaultRestSeconds: 90,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ActiveWorkoutScreen.resume(
+            resumedSession: session,
+            defaultRestSeconds: 90,
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    final weightField = find.descendant(
-      of: find.byKey(ValueKey('${set.id}-weight')),
-      matching: find.byType(TextFormField),
-    );
-    final repsField = find.descendant(
-      of: find.byKey(ValueKey('${set.id}-reps')),
-      matching: find.byType(TextFormField),
-    );
+      final weightField = find.descendant(
+        of: find.byKey(ValueKey('${set.id}-weight')),
+        matching: find.byType(TextFormField),
+      );
+      final repsField = find.descendant(
+        of: find.byKey(ValueKey('${set.id}-reps')),
+        matching: find.byType(TextFormField),
+      );
 
-    await tester.tap(weightField);
-    await tester.pump();
-    var weightWidget = tester.widget<TextFormField>(weightField);
-    expect(weightWidget.controller?.selection.baseOffset, 0);
-    expect(weightWidget.controller?.selection.extentOffset, 2);
+      await tester.tap(weightField);
+      await tester.pump();
+      var weightWidget = tester.widget<TextFormField>(weightField);
+      expect(weightWidget.controller?.selection.baseOffset, 0);
+      expect(weightWidget.controller?.selection.extentOffset, 2);
 
-    await tester.enterText(weightField, '55x');
-    weightWidget = tester.widget<TextFormField>(weightField);
-    expect(weightWidget.controller?.text, '55');
+      await tester.enterText(weightField, '55x');
+      weightWidget = tester.widget<TextFormField>(weightField);
+      expect(weightWidget.controller?.text, '55');
 
-    await tester.testTextInput.receiveAction(TextInputAction.next);
-    await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.next);
+      await tester.pump();
 
-    var repsWidget = tester.widget<TextFormField>(repsField);
-    expect(repsWidget.controller?.selection.baseOffset, 0);
-    expect(repsWidget.controller?.selection.extentOffset, 1);
+      var repsWidget = tester.widget<TextFormField>(repsField);
+      expect(repsWidget.controller?.selection.baseOffset, 0);
+      expect(repsWidget.controller?.selection.extentOffset, 1);
 
-    await tester.enterText(repsField, '10x');
-    repsWidget = tester.widget<TextFormField>(repsField);
-    expect(repsWidget.controller?.text, '10');
+      await tester.enterText(repsField, '10x');
+      repsWidget = tester.widget<TextFormField>(repsField);
+      expect(repsWidget.controller?.text, '10');
 
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
 
-    expect(set.weight, 55);
-    expect(set.reps, 10);
-    expect(set.isCompleted, isTrue);
-  });
+      expect(set.weight, 55);
+      expect(set.reps, 10);
+      expect(set.isCompleted, isTrue);
+    },
+  );
 }
