@@ -4,15 +4,19 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../models/workout.dart';
+import '../progress_analytics.dart';
+import '../progress_intelligence.dart';
 
 class ExerciseDetailScreen extends StatelessWidget {
   final String exerciseName;
   final List<WorkoutSession> history;
+  final DateTime? now;
 
   const ExerciseDetailScreen({
     super.key,
     required this.exerciseName,
     required this.history,
+    this.now,
   });
 
   @override
@@ -20,6 +24,12 @@ class ExerciseDetailScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final entries = _buildEntries();
+    final analytics = buildProgressAnalytics(history: history, now: now);
+    final drilldown = buildExerciseProgressDrilldown(
+      exerciseName: exerciseName,
+      analytics: analytics,
+      now: now,
+    );
 
     return Scaffold(
       appBar: AppBar(title: Text(exerciseName)),
@@ -40,6 +50,10 @@ class ExerciseDetailScreen extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               children: [
                 _SummaryCard(entries: entries),
+                if (drilldown != null) ...[
+                  const SizedBox(height: 14),
+                  _ProgressInterpretationCard(drilldown: drilldown),
+                ],
                 const SizedBox(height: 14),
                 _MetricLineChart(
                   title: 'Volume',
@@ -77,6 +91,12 @@ class ExerciseDetailScreen extends StatelessWidget {
                   valueFor: (entry) => entry.bestSetVolume,
                   formatValue: _formatKg,
                 ),
+                if (drilldown != null) ...[
+                  const SizedBox(height: 14),
+                  _PersonalRecordTimelineCard(
+                    records: drilldown.personalRecords.take(12).toList(),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Text(
                   'Sessioni',
@@ -176,6 +196,233 @@ class ExerciseDetailScreen extends StatelessWidget {
     return entries;
   }
 }
+
+class _ProgressInterpretationCard extends StatelessWidget {
+  final ExerciseProgressDrilldown drilldown;
+
+  const _ProgressInterpretationCard({required this.drilldown});
+
+  @override
+  Widget build(BuildContext context) {
+    final insight = drilldown.insight;
+    final scheme = Theme.of(context).colorScheme;
+    final accent = switch (insight.momentum) {
+      ProgressMomentum.growing => scheme.primary,
+      ProgressMomentum.stable => scheme.tertiary,
+      ProgressMomentum.declining => scheme.error,
+      ProgressMomentum.insufficient => scheme.onSurfaceVariant,
+    };
+    final recency = insight.daysSinceLastTrained == 0
+        ? 'Allenato oggi'
+        : '${insight.daysSinceLastTrained} giorni dall’ultima seduta';
+
+    return Card(
+      key: const ValueKey('exercise-progress-drilldown'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Analisi del trend',
+                    style: Theme.of(context).textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    insight.momentum.label,
+                    style: TextStyle(
+                      color: accent,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              insight.primarySignal,
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            _ComparisonRow(
+              label: 'e1RM blocchi',
+              window: drilldown.estimatedOneRepMax,
+            ),
+            const Divider(height: 18),
+            _ComparisonRow(label: 'Volume blocchi', window: drilldown.volume),
+            const Divider(height: 18),
+            Row(
+              children: [
+                const Icon(Icons.history_toggle_off, size: 18),
+                const SizedBox(width: 8),
+                Expanded(child: Text(recency)),
+                if (insight.isStale)
+                  Text(
+                    'Poco recente',
+                    style: TextStyle(
+                      color: scheme.error,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Classificazione: crescita oltre +2%, calo sotto -2%, altrimenti stabile. Il confronto usa fino a 3 sedute recenti contro lo stesso numero di sedute precedenti.',
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ComparisonRow extends StatelessWidget {
+  final String label;
+  final ProgressMetricComparisonWindow window;
+
+  const _ComparisonRow({required this.label, required this.window});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (!window.hasComparison) {
+      return Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+          Text(
+            'Dati insufficienti',
+            style: TextStyle(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      );
+    }
+    final change = window.changePercent;
+    final changeColor = change != null && change < -2
+        ? scheme.error
+        : change != null && change > 2
+        ? scheme.primary
+        : scheme.onSurfaceVariant;
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 2),
+              Text(
+                '${window.windowSize} sedute vs ${window.windowSize} sedute',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+        Text(
+          '${_formatKg(window.previousAverage!)} → ${_formatKg(window.recentAverage!)}',
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          change == null ? '-' : _signedPercent(change),
+          style: TextStyle(color: changeColor, fontWeight: FontWeight.w900),
+        ),
+      ],
+    );
+  }
+}
+
+class _PersonalRecordTimelineCard extends StatelessWidget {
+  final List<PersonalRecordEvent> records;
+
+  const _PersonalRecordTimelineCard({required this.records});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      key: const ValueKey('exercise-pr-timeline'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'PR timeline',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Gli ultimi record rilevati per questo esercizio.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (records.isEmpty)
+              const Text('Nessun PR disponibile.')
+            else
+              ...records.map(
+                (record) => ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.emoji_events_outlined),
+                  title: Text(
+                    record.kind.label,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: Text(
+                    '${record.date.day}/${record.date.month}/${record.date.year}',
+                  ),
+                  trailing: Text(
+                    _formatPersonalRecord(record),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _formatPersonalRecord(PersonalRecordEvent record) =>
+    switch (record.kind) {
+      PersonalRecordKind.weight => _formatKg(record.value),
+      PersonalRecordKind.reps => '${record.value.toStringAsFixed(0)} reps',
+      PersonalRecordKind.setVolume => _formatKg(record.value),
+      PersonalRecordKind.estimatedOneRepMax =>
+        '${_formatKg(record.value)} e1RM',
+      PersonalRecordKind.sessionVolume => _formatKg(record.value),
+    };
+
+String _signedPercent(double value) =>
+    '${value > 0 ? '+' : ''}${value.toStringAsFixed(1)}%';
 
 class _SummaryCard extends StatelessWidget {
   final List<_ExerciseHistoryEntry> entries;
@@ -282,16 +529,14 @@ class _CombinedExerciseTrendChart extends StatelessWidget {
           children: [
             Text(
               'Kg / Reps / RPE nel tempo',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w900),
             ),
             const SizedBox(height: 4),
             Text(
               'Linee normalizzate per confrontare trend diversi.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
             SizedBox(
@@ -458,9 +703,8 @@ class _MetricLineChart extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(context).textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 Text(formatValue(latestValue)),
               ],

@@ -48,6 +48,39 @@ class ExerciseProgressInsight {
   }
 }
 
+class ProgressMetricComparisonWindow {
+  final int windowSize;
+  final double? previousAverage;
+  final double? recentAverage;
+  final double? changePercent;
+
+  const ProgressMetricComparisonWindow({
+    required this.windowSize,
+    required this.previousAverage,
+    required this.recentAverage,
+    required this.changePercent,
+  });
+
+  bool get hasComparison =>
+      windowSize > 0 && previousAverage != null && recentAverage != null;
+}
+
+class ExerciseProgressDrilldown {
+  final ExerciseProgressInsight insight;
+  final ExerciseProgressSummary summary;
+  final ProgressMetricComparisonWindow estimatedOneRepMax;
+  final ProgressMetricComparisonWindow volume;
+  final List<PersonalRecordEvent> personalRecords;
+
+  const ExerciseProgressDrilldown({
+    required this.insight,
+    required this.summary,
+    required this.estimatedOneRepMax,
+    required this.volume,
+    required this.personalRecords,
+  });
+}
+
 class MuscleVolumeShift {
   final MuscleGroup muscleGroup;
   final int recentSets;
@@ -111,6 +144,44 @@ class ProgressCenterIntelligence {
     });
     return entries;
   }
+}
+
+ExerciseProgressDrilldown? buildExerciseProgressDrilldown({
+  required String exerciseName,
+  required ProgressAnalytics analytics,
+  DateTime? now,
+}) {
+  final reference = _dateOnly(now ?? DateTime.now());
+  final normalized = exerciseName.trim().toLowerCase();
+  ExerciseProgressSummary? summary;
+  for (final candidate in analytics.exercises) {
+    if (candidate.name.trim().toLowerCase() == normalized) {
+      summary = candidate;
+      break;
+    }
+  }
+  if (summary == null) return null;
+
+  final eligiblePoints = summary.points
+      .where((point) => !_dateOnly(point.date).isAfter(reference))
+      .toList();
+  final e1rmValues = eligiblePoints
+      .where((point) => point.estimatedOneRepMax != null)
+      .map((point) => point.estimatedOneRepMax!)
+      .toList();
+  final volumeValues = eligiblePoints.map((point) => point.volume).toList();
+  final records = analytics.personalRecords.where((record) {
+    return record.exerciseName.trim().toLowerCase() == normalized &&
+        !_dateOnly(record.date).isAfter(reference);
+  }).toList();
+
+  return ExerciseProgressDrilldown(
+    insight: _buildExerciseInsight(summary, reference),
+    summary: summary,
+    estimatedOneRepMax: _buildMetricComparisonWindow(e1rmValues),
+    volume: _buildMetricComparisonWindow(volumeValues),
+    personalRecords: List.unmodifiable(records),
+  );
 }
 
 ProgressCenterIntelligence buildProgressCenterIntelligence({
@@ -226,8 +297,20 @@ ExerciseProgressInsight _buildExerciseInsight(
   );
 }
 
-double? _windowChange(List<double> values) {
-  if (values.length < 4) return null;
+double? _windowChange(List<double> values) =>
+    _buildMetricComparisonWindow(values).changePercent;
+
+ProgressMetricComparisonWindow _buildMetricComparisonWindow(
+  List<double> values,
+) {
+  if (values.length < 4) {
+    return const ProgressMetricComparisonWindow(
+      windowSize: 0,
+      previousAverage: null,
+      recentAverage: null,
+      changePercent: null,
+    );
+  }
   final windowSize = math.min(3, values.length ~/ 2);
   final recent = values.sublist(values.length - windowSize);
   final previous = values.sublist(
@@ -236,8 +319,14 @@ double? _windowChange(List<double> values) {
   );
   final recentAverage = _average(recent);
   final previousAverage = _average(previous);
-  if (previousAverage <= 0) return null;
-  return ((recentAverage - previousAverage) / previousAverage) * 100;
+  return ProgressMetricComparisonWindow(
+    windowSize: windowSize,
+    previousAverage: previousAverage,
+    recentAverage: recentAverage,
+    changePercent: previousAverage <= 0
+        ? null
+        : ((recentAverage - previousAverage) / previousAverage) * 100,
+  );
 }
 
 double _average(List<double> values) =>
