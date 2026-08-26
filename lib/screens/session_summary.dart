@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../ai_coach/ai_coach_handoff.dart';
 import '../app_data_store.dart';
 import '../models/exercise.dart';
+import '../models/schedule_version.dart';
 import '../models/workout.dart';
 import '../post_workout_debrief.dart';
 import '../post_workout_next_session_plan.dart';
@@ -286,7 +287,11 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         actions: selected,
       );
       if (result.applied > 0) {
-        await AppDataStore.saveSchedules(latestBundle.schedules);
+        await AppDataStore.saveSchedules(
+          latestBundle.schedules,
+          source: ScheduleVersionSource.system,
+          reason: 'Reviewed next-session progression plan',
+        );
       }
       if (!mounted) return;
       if (result.applied > 0) {

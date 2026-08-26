@@ -12,6 +12,7 @@ import '../ai_coach/chat_conversation.dart';
 import '../ai_coach/local_ai_coach_service.dart';
 import '../models/body_log.dart';
 import '../models/schedule.dart';
+import '../models/schedule_version.dart';
 import '../models/workout.dart';
 
 class AiCoachScreen extends StatefulWidget {
@@ -426,7 +427,11 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
       if (!mounted || selected == null || selected.isEmpty) return;
       final result = widget.planActionService.apply(widget.schedules, selected);
       if (result.applied > 0) {
-        await AppDataStore.saveSchedules(widget.schedules);
+        await AppDataStore.saveSchedules(
+          widget.schedules,
+          source: ScheduleVersionSource.aiCoach,
+          reason: 'AI Coach plan adjustment approved by user',
+        );
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

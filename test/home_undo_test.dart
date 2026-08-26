@@ -623,7 +623,7 @@ void main() {
       currentSession: session,
     );
 
-    expect(payload['version'], 5);
+    expect(payload['version'], 6);
     expect((payload['schedules'] as List).single['title'], 'Push');
     expect((payload['history'] as List).single['scheduleTitle'], 'Push');
     expect((payload['bodyLogs'] as List).single['bodyWeight'], 82);

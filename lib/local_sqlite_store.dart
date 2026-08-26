@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import 'models/body_log.dart';
 import 'models/exercise.dart';
 import 'models/schedule.dart';
+import 'models/schedule_version.dart';
 import 'models/workout.dart';
 
 class LocalSqliteStore {
@@ -23,11 +24,12 @@ class LocalSqliteStore {
     final database = await _factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
         onCreate: _createSchema,
+        onUpgrade: _upgradeSchema,
       ),
     );
     _database = database;
@@ -61,7 +63,9 @@ class LocalSqliteStore {
         training_weekdays_json TEXT NOT NULL,
         program_block TEXT NOT NULL,
         cycle_number INTEGER NOT NULL,
-        cycle_notes TEXT NOT NULL
+        cycle_notes TEXT NOT NULL,
+        current_version_id TEXT,
+        current_version_number INTEGER NOT NULL DEFAULT 0
       )
     ''');
     await db.execute('''
@@ -90,11 +94,24 @@ class LocalSqliteStore {
       )
     ''');
     await db.execute('''
+      CREATE TABLE schedule_versions (
+        id TEXT PRIMARY KEY,
+        schedule_id TEXT NOT NULL,
+        version_number INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        source TEXT NOT NULL,
+        parent_version_id TEXT,
+        reason TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
       CREATE TABLE workout_sessions (
         id TEXT PRIMARY KEY,
         session_kind TEXT NOT NULL,
         position INTEGER NOT NULL,
         schedule_id TEXT,
+        schedule_version_id TEXT,
         schedule_title TEXT NOT NULL,
         start_time TEXT NOT NULL,
         end_time TEXT NOT NULL
@@ -173,6 +190,9 @@ class LocalSqliteStore {
       'CREATE INDEX idx_schedule_exercises_schedule ON schedule_exercises(schedule_id, position)',
     );
     await db.execute(
+      'CREATE UNIQUE INDEX idx_schedule_versions_number ON schedule_versions(schedule_id, version_number)',
+    );
+    await db.execute(
       'CREATE INDEX idx_workout_sessions_kind_time ON workout_sessions(session_kind, start_time)',
     );
     await db.execute(
@@ -181,6 +201,39 @@ class LocalSqliteStore {
     await db.execute(
       'CREATE INDEX idx_exercise_sets_parent ON exercise_sets(workout_exercise_id, position)',
     );
+  }
+
+  Future<void> _upgradeSchema(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
+    if (oldVersion < 2) {
+      await db.execute(
+        'ALTER TABLE schedules ADD COLUMN current_version_id TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE schedules ADD COLUMN current_version_number INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute(
+        'ALTER TABLE workout_sessions ADD COLUMN schedule_version_id TEXT',
+      );
+      await db.execute('''
+        CREATE TABLE schedule_versions (
+          id TEXT PRIMARY KEY,
+          schedule_id TEXT NOT NULL,
+          version_number INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          source TEXT NOT NULL,
+          parent_version_id TEXT,
+          reason TEXT NOT NULL,
+          snapshot_json TEXT NOT NULL
+        )
+      ''');
+      await db.execute(
+        'CREATE UNIQUE INDEX idx_schedule_versions_number ON schedule_versions(schedule_id, version_number)',
+      );
+    }
   }
 
   Future<bool> get migrationComplete async {
@@ -219,8 +272,10 @@ class LocalSqliteStore {
     required List<BodyLog> bodyLogs,
     required List<Exercise> customExercises,
     required Set<String> favoriteExerciseIds,
+    List<ScheduleVersion> scheduleVersions = const <ScheduleVersion>[],
   }) async {
     await replaceSchedules(schedules);
+    await replaceScheduleVersions(scheduleVersions);
     await replaceHistory(history);
     await replaceBodyLogs(bodyLogs);
     await replaceCustomExercises(customExercises);
@@ -238,6 +293,49 @@ class LocalSqliteStore {
       for (var i = 0; i < schedules.length; i += 1) {
         await _insertSchedule(txn, schedules[i], i);
       }
+    });
+  }
+
+  Future<void> replaceScheduleState(
+    List<Schedule> schedules,
+    List<ScheduleVersion> versions,
+  ) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      await txn.delete('schedules');
+      for (var i = 0; i < schedules.length; i += 1) {
+        await _insertSchedule(txn, schedules[i], i);
+      }
+      await txn.delete('schedule_versions');
+      for (final version in versions) {
+        await _insertScheduleVersion(txn, version);
+      }
+    });
+  }
+
+  Future<void> replaceScheduleVersions(List<ScheduleVersion> versions) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      await txn.delete('schedule_versions');
+      for (final version in versions) {
+        await _insertScheduleVersion(txn, version);
+      }
+    });
+  }
+
+  Future<void> _insertScheduleVersion(
+    DatabaseExecutor db,
+    ScheduleVersion version,
+  ) async {
+    await db.insert('schedule_versions', {
+      'id': version.id,
+      'schedule_id': version.scheduleId,
+      'version_number': version.versionNumber,
+      'created_at': version.createdAt.toIso8601String(),
+      'source': version.source.name,
+      'parent_version_id': version.parentVersionId,
+      'reason': version.reason,
+      'snapshot_json': jsonEncode(version.snapshot),
     });
   }
 
@@ -260,6 +358,8 @@ class LocalSqliteStore {
       'program_block': schedule.programBlock,
       'cycle_number': schedule.cycleNumber,
       'cycle_notes': schedule.cycleNotes,
+      'current_version_id': schedule.currentVersionId,
+      'current_version_number': schedule.currentVersionNumber,
     });
     for (var i = 0; i < schedule.exercises.length; i += 1) {
       final exercise = schedule.exercises[i];
@@ -342,6 +442,7 @@ class LocalSqliteStore {
       'session_kind': kind,
       'position': position,
       'schedule_id': session.scheduleId,
+      'schedule_version_id': session.scheduleVersionId,
       'schedule_title': session.scheduleTitle,
       'start_time': session.startTime.toIso8601String(),
       'end_time': session.endTime.toIso8601String(),
@@ -445,6 +546,7 @@ class LocalSqliteStore {
     ({
       List<Schedule> schedules,
       List<WorkoutSession> history,
+      List<ScheduleVersion> scheduleVersions,
       WorkoutSession? currentSession,
       List<BodyLog> bodyLogs,
       List<Exercise> customExercises,
@@ -454,6 +556,7 @@ class LocalSqliteStore {
   loadAll() async {
     final schedules = await loadSchedules();
     final history = await loadHistory();
+    final scheduleVersions = await loadScheduleVersions();
     final current = await loadCurrentSession();
     final bodyLogs = await loadBodyLogs();
     final custom = await loadCustomExercises();
@@ -461,6 +564,7 @@ class LocalSqliteStore {
     return (
       schedules: schedules,
       history: history,
+      scheduleVersions: scheduleVersions,
       currentSession: current,
       bodyLogs: bodyLogs,
       customExercises: custom,
@@ -490,14 +594,14 @@ class LocalSqliteStore {
           mesocycleWeeks: row['mesocycle_weeks'] as int,
           deloadEveryWeeks: row['deload_every_weeks'] as int,
           goal: row['goal'] as String,
-          trainingWeekdays:
-              (jsonDecode(row['training_weekdays_json'] as String) as List)
-                  .whereType<num>()
-                  .map((e) => e.toInt())
-                  .toList(),
+          trainingWeekdays: (jsonDecode(
+            row['training_weekdays_json'] as String,
+          ) as List).whereType<num>().map((e) => e.toInt()).toList(),
           programBlock: row['program_block'] as String,
           cycleNumber: row['cycle_number'] as int,
           cycleNotes: row['cycle_notes'] as String,
+          currentVersionId: row['current_version_id'] as String?,
+          currentVersionNumber: row['current_version_number'] as int? ?? 0,
         ),
       );
     }
@@ -527,6 +631,34 @@ class LocalSqliteStore {
       progressionRepStep: row['progression_rep_step'] as int,
       progressionScheme: progressionSchemeFromJson(row['progression_scheme']),
     );
+  }
+
+  Future<List<ScheduleVersion>> loadScheduleVersions() async {
+    final db = await _db;
+    final rows = await db.query(
+      'schedule_versions',
+      orderBy: 'schedule_id ASC, version_number ASC, created_at ASC',
+    );
+    return rows.map((row) {
+      ScheduleVersionSource source;
+      try {
+        source = ScheduleVersionSource.values.byName(row['source'] as String);
+      } catch (_) {
+        source = ScheduleVersionSource.system;
+      }
+      return ScheduleVersion(
+        id: row['id'] as String,
+        scheduleId: row['schedule_id'] as String,
+        versionNumber: row['version_number'] as int,
+        createdAt: DateTime.parse(row['created_at'] as String),
+        source: source,
+        parentVersionId: row['parent_version_id'] as String?,
+        reason: row['reason'] as String,
+        snapshot: Map<String, dynamic>.from(
+          jsonDecode(row['snapshot_json'] as String) as Map,
+        ),
+      );
+    }).toList();
   }
 
   Future<List<WorkoutSession>> loadHistory() => _loadSessions('history');
@@ -566,6 +698,7 @@ class LocalSqliteStore {
         WorkoutSession(
           id: row['id'] as String,
           scheduleId: row['schedule_id'] as String?,
+          scheduleVersionId: row['schedule_version_id'] as String?,
           scheduleTitle: row['schedule_title'] as String,
           startTime: DateTime.parse(row['start_time'] as String),
           endTime: DateTime.parse(row['end_time'] as String),
@@ -603,11 +736,9 @@ class LocalSqliteStore {
       progressionRepStep: row['progression_rep_step'] as int,
       progressionScheme: progressionSchemeFromJson(row['progression_scheme']),
       sets: sets.map(_setFromRow).toList(),
-      previousWeights:
-          (jsonDecode(row['previous_weights_json'] as String) as List)
-              .whereType<num>()
-              .map((e) => e.toDouble())
-              .toList(),
+      previousWeights: (jsonDecode(
+        row['previous_weights_json'] as String,
+      ) as List).whereType<num>().map((e) => e.toDouble()).toList(),
       previousReps: (jsonDecode(row['previous_reps_json'] as String) as List)
           .whereType<num>()
           .map((e) => e.toInt())

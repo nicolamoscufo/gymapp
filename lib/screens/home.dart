@@ -14,10 +14,12 @@ import '../local_notifications.dart';
 import '../models/body_log.dart';
 import '../models/exercise.dart';
 import '../models/schedule.dart';
+import '../models/schedule_version.dart';
 import '../models/workout.dart';
 import '../number_input.dart';
 import '../top_set_backoff.dart';
 import '../workout_fatigue_analytics.dart';
+import '../schedule_version_history.dart';
 import 'schedule_detail.dart';
 import 'settings.dart';
 import 'progress_center.dart';
@@ -135,8 +137,11 @@ class _HomePageState extends State<HomePage> {
     _refreshWorkoutReminders();
   }
 
-  Future<void> _saveSchedules() async {
-    await AppDataStore.saveSchedules(schedules);
+  Future<void> _saveSchedules({
+    ScheduleVersionSource source = ScheduleVersionSource.user,
+    String reason = '',
+  }) async {
+    await AppDataStore.saveSchedules(schedules, source: source, reason: reason);
     await _refreshWorkoutReminders();
   }
 
@@ -285,9 +290,8 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showExerciseDetail(String exerciseName) {
@@ -500,9 +504,8 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Text(
                   'Strumenti rapidi',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 12),
                 Card(
@@ -634,9 +637,8 @@ class _HomePageState extends State<HomePage> {
 
   List<List<dynamic>> _decodeCsv(String rawText) {
     final normalizedText = _normalizeText(rawText);
-    List<List<dynamic>> rows = const CsvToListConverter(
-      eol: '\n',
-    ).convert(normalizedText);
+    List<List<dynamic>> rows = const CsvToListConverter(eol: '\n')
+        .convert(normalizedText);
 
     if (rows.isNotEmpty &&
         rows.first.length < 7 &&
@@ -1229,7 +1231,10 @@ class _HomePageState extends State<HomePage> {
 
       _sortSchedules();
       setState(() {});
-      await _saveSchedules();
+      await _saveSchedules(
+        source: ScheduleVersionSource.import,
+        reason: 'CSV schedule import',
+      );
       await _showInfo(
         'Importati $importedCount esercizi. Righe ignorate: $skippedInvalidCount. Duplicati saltati: $skippedDuplicateCount.',
       );
@@ -1393,6 +1398,8 @@ class _HomePageState extends State<HomePage> {
       final previousSchedules = _cloneSchedules(schedules);
       final previousHistory = _cloneHistory(history);
       final previousBodyLogs = _cloneBodyLogs(bodyLogs);
+      final previousScheduleVersions =
+          await AppDataStore.loadScheduleVersions();
       final previousCurrentSession = _savedSession == null
           ? null
           : WorkoutSession.fromJson(_savedSession!.toJson());
@@ -1401,6 +1408,7 @@ class _HomePageState extends State<HomePage> {
           await AppDataStore.loadFavoriteExerciseIds();
 
       List<Schedule> restoredSchedules = [];
+      List<ScheduleVersion> restoredScheduleVersions = [];
       List<WorkoutSession> restoredHistory = [];
       List<BodyLog> restoredBodyLogs = [];
       List<Exercise>? restoredCustomExercises;
@@ -1412,6 +1420,13 @@ class _HomePageState extends State<HomePage> {
         restoredSchedules = (backupMap['schedules'] as List? ?? [])
             .map((e) => Schedule.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
+        restoredScheduleVersions =
+            (backupMap['scheduleVersions'] as List? ?? [])
+                .whereType<Map>()
+                .map(
+                  (e) => ScheduleVersion.fromJson(Map<String, dynamic>.from(e)),
+                )
+                .toList();
         restoredHistory = (backupMap['history'] as List? ?? [])
             .map(
               (e) =>
@@ -1465,7 +1480,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context) => AlertDialog(
           title: const Text('Come importare?'),
           content: Text(
-            'File: ${restoredSchedules.length} schede, ${restoredHistory.length} allenamenti, ${restoredBodyLogs.length} misure corpo, ${restoredCustomExercises?.length ?? 0} esercizi custom, ${restoredFavoriteExerciseIds?.length ?? 0} preferiti esercizi.\n\nMerge dedup: +${mergePreview.addedSchedules} schede, ${mergePreview.mergedSchedules} schede unite, +${mergePreview.addedExercises} esercizi, ${mergePreview.skippedExercises} esercizi duplicati saltati, +${mergePreview.addedHistory} allenamenti, ${mergePreview.skippedHistory} allenamenti duplicati, +${mergePreview.addedBodyLogs} misure, ${mergePreview.skippedBodyLogs} misure duplicate.',
+            'File: ${restoredSchedules.length} schede, ${restoredScheduleVersions.length} versioni scheda, ${restoredHistory.length} allenamenti, ${restoredBodyLogs.length} misure corpo, ${restoredCustomExercises?.length ?? 0} esercizi custom, ${restoredFavoriteExerciseIds?.length ?? 0} preferiti esercizi.\n\nMerge dedup: +${mergePreview.addedSchedules} schede, ${mergePreview.mergedSchedules} schede unite, +${mergePreview.addedExercises} esercizi, ${mergePreview.skippedExercises} esercizi duplicati saltati, +${mergePreview.addedHistory} allenamenti, ${mergePreview.skippedHistory} allenamenti duplicati, +${mergePreview.addedBodyLogs} misure, ${mergePreview.skippedBodyLogs} misure duplicate.',
           ),
           actions: [
             TextButton(
@@ -1501,6 +1516,12 @@ class _HomePageState extends State<HomePage> {
       final appliedCurrentSession = importMode == _BackupImportMode.merge
           ? mergePreview.currentSession
           : restoredCurrentSession;
+      final appliedScheduleVersions = importMode == _BackupImportMode.merge
+          ? mergeScheduleVersionHistories(
+              current: previousScheduleVersions,
+              incoming: restoredScheduleVersions,
+            )
+          : restoredScheduleVersions;
       final appliedCustomExercises = restoredCustomExercises == null
           ? previousCustomExercises
           : importMode == _BackupImportMode.merge
@@ -1529,7 +1550,17 @@ class _HomePageState extends State<HomePage> {
         _sortSchedules();
       });
 
-      await _saveAllData();
+      await AppDataStore.saveAll(
+        schedules: schedules,
+        history: history,
+        bodyLogs: bodyLogs,
+        scheduleVersions: appliedScheduleVersions,
+        source: ScheduleVersionSource.import,
+        reason: importMode == _BackupImportMode.merge
+            ? 'Merged JSON backup'
+            : 'Restored JSON backup',
+      );
+      await _refreshWorkoutReminders();
       if (appliedCurrentSession == null) {
         await AppDataStore.clearCurrentSession();
       } else {
@@ -1559,7 +1590,15 @@ class _HomePageState extends State<HomePage> {
             _savedSession = previousCurrentSession;
             _sortSchedules();
           });
-          _saveAllData();
+          AppDataStore.saveAll(
+            schedules: schedules,
+            history: history,
+            bodyLogs: bodyLogs,
+            scheduleVersions: previousScheduleVersions,
+            source: ScheduleVersionSource.system,
+            reason: 'Undo backup restore',
+          );
+          _refreshWorkoutReminders();
           if (previousCurrentSession == null) {
             AppDataStore.clearCurrentSession();
           } else {
@@ -1625,7 +1664,15 @@ class _HomePageState extends State<HomePage> {
         _sortSchedules();
       });
 
-      await _saveAllData();
+      await AppDataStore.saveAll(
+        schedules: schedules,
+        history: history,
+        bodyLogs: bodyLogs,
+        scheduleVersions: backupBundle.scheduleVersions,
+        source: ScheduleVersionSource.import,
+        reason: 'Restored auto-backup',
+      );
+      await _refreshWorkoutReminders();
       if (_savedSession == null) {
         await AppDataStore.clearCurrentSession();
       } else {
@@ -3540,9 +3587,9 @@ class _HomePageState extends State<HomePage> {
     updated.arm = parseDecimalInput(armController.text);
     updated.thigh = parseDecimalInput(thighController.text);
     updated.sleepHours = parseIntInput(sleepController.text);
-    updated.readiness = parseIntInput(
-      readinessController.text,
-    )?.clamp(1, 10).toInt();
+    updated.readiness = parseIntInput(readinessController.text)
+        ?.clamp(1, 10)
+        .toInt();
     updated.notes = notesController.text.trim();
     updated.photoPath = photoPath;
     updated.photoName = photoName;

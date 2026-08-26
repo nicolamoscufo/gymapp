@@ -213,6 +213,7 @@ class WorkoutExercise {
 class WorkoutSession {
   final String id;
   String? scheduleId;
+  String? scheduleVersionId;
   String scheduleTitle;
   DateTime startTime;
   DateTime endTime;
@@ -221,6 +222,7 @@ class WorkoutSession {
   WorkoutSession({
     String? id,
     this.scheduleId,
+    this.scheduleVersionId,
     required this.scheduleTitle,
     required this.startTime,
     required this.endTime,
@@ -230,6 +232,7 @@ class WorkoutSession {
   Map<String, dynamic> toJson() => {
     'id': id,
     'scheduleId': scheduleId,
+    'scheduleVersionId': scheduleVersionId,
     'scheduleTitle': scheduleTitle,
     'startTime': startTime.toIso8601String(),
     'endTime': endTime.toIso8601String(),
@@ -239,6 +242,7 @@ class WorkoutSession {
   factory WorkoutSession.fromJson(Map<String, dynamic> json) => WorkoutSession(
     id: json['id'] as String?,
     scheduleId: json['scheduleId'] as String?,
+    scheduleVersionId: json['scheduleVersionId'] as String?,
     scheduleTitle: json['scheduleTitle'] as String,
     startTime: DateTime.parse(json['startTime'] as String),
     endTime: DateTime.parse(json['endTime'] as String),
