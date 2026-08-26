@@ -208,4 +208,74 @@ void main() {
       expect(set.isCompleted, isTrue);
     },
   );
+
+  testWidgets('one-hand UX promotes only the next pending set', (tester) async {
+    final first = ExerciseSet(weight: 50, reps: 8);
+    final second = ExerciseSet(weight: 50, reps: 8);
+    final exercise = _exercise('Bench', sets: [first, second]);
+    final session = _session([exercise]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActiveWorkoutScreen.editCompleted(
+          session: session,
+          defaultRestSeconds: 90,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(ValueKey('current-set-${first.id}')), findsOneWidget);
+    expect(find.byKey(ValueKey('current-set-${second.id}')), findsNothing);
+    expect(find.byKey(ValueKey('thumb-complete-${first.id}')), findsOneWidget);
+    expect(find.byKey(ValueKey('thumb-complete-${second.id}')), findsNothing);
+    expect(find.byKey(ValueKey('plates-${first.id}')), findsOneWidget);
+    expect(find.byKey(ValueKey('plates-${second.id}')), findsNothing);
+
+    final thumbComplete = find.byKey(ValueKey('thumb-complete-${first.id}'));
+    await tester.ensureVisible(thumbComplete);
+    await tester.tap(thumbComplete);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(ValueKey('current-set-${first.id}')), findsNothing);
+    expect(find.byKey(ValueKey('current-set-${second.id}')), findsOneWidget);
+    expect(find.byKey(ValueKey('thumb-complete-${second.id}')), findsOneWidget);
+    expect(find.byKey(ValueKey('plates-${first.id}')), findsNothing);
+    expect(find.byKey(ValueKey('plates-${second.id}')), findsOneWidget);
+  });
+
+  testWidgets(
+    'set details keeps type editing available outside quick controls',
+    (tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(1200, 1200);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final first = ExerciseSet(weight: 50, reps: 8, isCompleted: true);
+      final second = ExerciseSet(weight: 50, reps: 8);
+      final exercise = _exercise('Bench', sets: [first, second]);
+      final session = _session([exercise]);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ActiveWorkoutScreen.editCompleted(
+            session: session,
+            defaultRestSeconds: 90,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(ValueKey('plates-${first.id}')), findsNothing);
+      final details = find.byKey(ValueKey('set-details-${first.id}'));
+      await tester.ensureVisible(details);
+      await tester.tap(details);
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final typePicker = find.byKey(ValueKey('set-details-type-${first.id}'));
+      expect(typePicker, findsOneWidget);
+      expect(find.text('Tipo set'), findsOneWidget);
+    },
+  );
 }

@@ -1862,6 +1862,22 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
   }
 
+  int _currentSetIndexFor(WorkoutExercise exercise) {
+    for (var index = 0; index < exercise.sets.length; index++) {
+      if (!exercise.sets[index].isCompleted) return index;
+    }
+    return -1;
+  }
+
+  String? _setMetadataSummary(ExerciseSet set) {
+    final parts = <String>[];
+    if (set.type != SetType.normal) parts.add(set.type.label);
+    if (set.rpe != null) parts.add('RPE ${_formatWeight(set.rpe!)}');
+    if (set.rir != null) parts.add('RIR ${set.rir}');
+    if (set.notes.trim().isNotEmpty) parts.add('Nota');
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
   void _submitSetFromKeyboard(
     WorkoutExercise exercise,
     ExerciseSet set,
@@ -1882,7 +1898,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       text: set.rir?.toString() ?? '',
     );
     final notesController = TextEditingController(text: set.notes);
-    bool isWarmup = set.isWarmup;
+    var selectedSetType = set.type;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -1892,12 +1908,25 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
           content: AppDialogContent(
             maxWidth: 480,
             children: [
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Warm-up'),
-                value: isWarmup,
-                onChanged: (value) => setDialogState(() => isWarmup = value),
+              DropdownButtonFormField<SetType>(
+                key: ValueKey('set-details-type-${set.id}'),
+                initialValue: selectedSetType,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Tipo set'),
+                items: SetType.values
+                    .map(
+                      (type) => DropdownMenuItem<SetType>(
+                        value: type,
+                        child: Text(type.label),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setDialogState(() => selectedSetType = value);
+                },
               ),
+              appDialogFieldGap,
               AppFieldRow(
                 children: [
                   TextField(
@@ -1942,7 +1971,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
 
     setState(() {
-      set.isWarmup = isWarmup;
+      set.type = selectedSetType;
       final rpe = parseDecimalInput(rpeController.text);
       set.rpe = rpe?.clamp(1, 10).toDouble();
       final rir = parseIntInput(rirController.text);
@@ -2661,6 +2690,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                       const Divider(),
                       ...List.generate(exercise.sets.length, (setIndex) {
                         final exSet = exercise.sets[setIndex];
+                        final currentSetIndex = _currentSetIndexFor(exercise);
+                        final isCurrentSet = setIndex == currentSetIndex;
+                        final setMetadataSummary = _setMetadataSummary(exSet);
                         final setLabel =
                             exercise.technique ==
                                 IntensityTechnique.topsetBackoff
@@ -2714,6 +2746,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                   ? colorScheme.tertiaryContainer.withValues(
                                       alpha: isDark ? 0.38 : 0.62,
                                     )
+                                  : isCurrentSet
+                                  ? colorScheme.primaryContainer.withValues(
+                                      alpha: isDark ? 0.28 : 0.48,
+                                    )
                                   : Colors.transparent,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
@@ -2721,7 +2757,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                     ? colorScheme.tertiary.withValues(
                                         alpha: 0.35,
                                       )
+                                    : isCurrentSet
+                                    ? colorScheme.primary
                                     : Colors.transparent,
+                                width: isCurrentSet ? 1.6 : 1,
                               ),
                             ),
                             child: Column(
@@ -2731,12 +2770,48 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                   children: [
                                     SizedBox(
                                       width: 72,
-                                      child: Text(
-                                        displaySetLabel,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            displaySetLabel,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          if (isCurrentSet)
+                                            Container(
+                                              key: ValueKey(
+                                                'current-set-${exSet.id}',
+                                              ),
+                                              margin: const EdgeInsets.only(
+                                                top: 2,
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 1,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: colorScheme.primary,
+                                                borderRadius:
+                                                    BorderRadius.circular(99),
+                                              ),
+                                              child: Text(
+                                                'ORA',
+                                                style: theme
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      color:
+                                                          colorScheme.onPrimary,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                    ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                     ),
                                     Expanded(
@@ -2882,13 +2957,38 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                       ),
                                     ),
                                     IconButton(
-                                      tooltip: 'RPE, RIR, note',
+                                      key: ValueKey('set-details-${exSet.id}'),
+                                      tooltip: 'RPE, RIR, tipo e note',
                                       onPressed: () =>
                                           _showSetDetailsDialog(exSet),
                                       icon: const Icon(Icons.tune),
                                     ),
                                   ],
                                 ),
+                                if (isCurrentSet && !exSet.isCompleted)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      72,
+                                      6,
+                                      8,
+                                      0,
+                                    ),
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: FilledButton.icon(
+                                        key: ValueKey(
+                                          'thumb-complete-${exSet.id}',
+                                        ),
+                                        onPressed: () => _toggleSetCompleted(
+                                          exercise,
+                                          exSet,
+                                          setIndex,
+                                        ),
+                                        icon: const Icon(Icons.check_circle),
+                                        label: const Text('Completa set'),
+                                      ),
+                                    ),
+                                  ),
                                 if (previousSetLabel != null)
                                   Padding(
                                     padding: const EdgeInsets.only(
@@ -2988,90 +3088,114 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                           .toList(),
                                     ),
                                   ),
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                    left: 72,
-                                    top: 4,
-                                  ),
-                                  child: Wrap(
-                                    spacing: 6,
-                                    runSpacing: 4,
-                                    crossAxisAlignment:
-                                        WrapCrossAlignment.center,
-                                    children: [
-                                      PopupMenuButton<SetType>(
-                                        key: ValueKey('set-type-${exSet.id}'),
-                                        tooltip: 'Tipo di set',
-                                        onSelected: (type) {
-                                          setState(() => exSet.type = type);
-                                          _saveCurrentSession();
-                                        },
-                                        itemBuilder: (context) => SetType.values
-                                            .map(
-                                              (type) => PopupMenuItem<SetType>(
-                                                value: type,
-                                                child: Text(type.label),
+                                if (isCurrentSet)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 72,
+                                      top: 4,
+                                    ),
+                                    child: Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        PopupMenuButton<SetType>(
+                                          key: ValueKey('set-type-${exSet.id}'),
+                                          tooltip: 'Tipo di set',
+                                          onSelected: (type) {
+                                            setState(() => exSet.type = type);
+                                            _saveCurrentSession();
+                                          },
+                                          itemBuilder: (context) => SetType
+                                              .values
+                                              .map(
+                                                (type) =>
+                                                    PopupMenuItem<SetType>(
+                                                      value: type,
+                                                      child: Text(type.label),
+                                                    ),
+                                              )
+                                              .toList(),
+                                          child: Chip(
+                                            avatar: Text(
+                                              exSet.type.shortLabel,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w900,
                                               ),
-                                            )
-                                            .toList(),
-                                        child: Chip(
-                                          avatar: Text(
-                                            exSet.type.shortLabel,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
                                             ),
+                                            label: Text(exSet.type.label),
+                                            visualDensity:
+                                                VisualDensity.compact,
                                           ),
-                                          label: Text(exSet.type.label),
+                                        ),
+                                        ActionChip(
+                                          key: ValueKey('rpe-${exSet.id}'),
+                                          label: Text(
+                                            exSet.rpe == null
+                                                ? 'RPE —'
+                                                : 'RPE ${_formatWeight(exSet.rpe!)}',
+                                          ),
                                           visualDensity: VisualDensity.compact,
+                                          onPressed: () => _pickRpe(exSet),
                                         ),
-                                      ),
-                                      ActionChip(
-                                        key: ValueKey('rpe-${exSet.id}'),
-                                        label: Text(
-                                          exSet.rpe == null
-                                              ? 'RPE —'
-                                              : 'RPE ${_formatWeight(exSet.rpe!)}',
+                                        ActionChip(
+                                          key: ValueKey('rir-${exSet.id}'),
+                                          label: Text(
+                                            exSet.rir == null
+                                                ? 'RIR —'
+                                                : 'RIR ${exSet.rir}',
+                                          ),
+                                          visualDensity: VisualDensity.compact,
+                                          onPressed: () => _pickRir(exSet),
                                         ),
-                                        visualDensity: VisualDensity.compact,
-                                        onPressed: () => _pickRpe(exSet),
-                                      ),
-                                      ActionChip(
-                                        key: ValueKey('rir-${exSet.id}'),
-                                        label: Text(
-                                          exSet.rir == null
-                                              ? 'RIR —'
-                                              : 'RIR ${exSet.rir}',
-                                        ),
-                                        visualDensity: VisualDensity.compact,
-                                        onPressed: () => _pickRir(exSet),
-                                      ),
-                                      ActionChip(
-                                        key: ValueKey('plates-${exSet.id}'),
-                                        avatar: const Icon(
-                                          Icons.calculate,
-                                          size: 16,
-                                        ),
-                                        label: const Text('Piastre'),
-                                        tooltip: 'Plate calculator',
-                                        visualDensity: VisualDensity.compact,
-                                        onPressed: () =>
-                                            showWorkoutPlateCalculator(
-                                              context,
-                                              initialWeight: exSet.weight,
-                                            ),
-                                      ),
-                                      if (exSet.notes.trim().isNotEmpty)
-                                        Chip(
+                                        ActionChip(
+                                          key: ValueKey('plates-${exSet.id}'),
                                           avatar: const Icon(
-                                            Icons.notes,
+                                            Icons.calculate,
                                             size: 16,
                                           ),
-                                          label: Text(exSet.notes),
+                                          label: const Text('Piastre'),
+                                          tooltip: 'Plate calculator',
                                           visualDensity: VisualDensity.compact,
+                                          onPressed: () =>
+                                              showWorkoutPlateCalculator(
+                                                context,
+                                                initialWeight: exSet.weight,
+                                              ),
                                         ),
-                                    ],
+                                        if (exSet.notes.trim().isNotEmpty)
+                                          Chip(
+                                            avatar: const Icon(
+                                              Icons.notes,
+                                              size: 16,
+                                            ),
+                                            label: Text(exSet.notes),
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                          ),
+                                      ],
+                                    ),
                                   ),
-                                ),
+                                if (!isCurrentSet && setMetadataSummary != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 72,
+                                      top: 4,
+                                      right: 8,
+                                    ),
+                                    child: Text(
+                                      setMetadataSummary,
+                                      key: ValueKey('set-meta-${exSet.id}'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
