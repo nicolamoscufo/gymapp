@@ -1,10 +1,12 @@
 import '../models/body_log.dart';
 import '../models/schedule.dart';
+import '../models/schedule_version.dart';
 import '../models/workout.dart';
 import '../progress_analytics.dart';
 import '../workout_fatigue_analytics.dart';
 import '../workout_progression_analytics.dart';
 import 'ai_coach_memory.dart';
+import 'program_history_context.dart';
 import 'ai_coach_user_profile.dart';
 
 class TrainingContextBuilder {
@@ -17,6 +19,7 @@ class TrainingContextBuilder {
   Map<String, dynamic> latestWorkout({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -27,7 +30,9 @@ class TrainingContextBuilder {
     return _build(
       history: latest,
       analyticsHistory: sorted,
+      fullHistory: sorted,
       schedules: schedules,
+      scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
@@ -37,6 +42,7 @@ class TrainingContextBuilder {
   Map<String, dynamic> weekly({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -48,7 +54,9 @@ class TrainingContextBuilder {
     return _build(
       history: weeklyHistory,
       analyticsHistory: weeklyHistory,
+      fullHistory: history,
       schedules: schedules,
+      scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
@@ -58,6 +66,7 @@ class TrainingContextBuilder {
   Map<String, dynamic> recent({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -68,7 +77,9 @@ class TrainingContextBuilder {
     return _build(
       history: recentHistory,
       analyticsHistory: recentHistory,
+      fullHistory: history,
       schedules: schedules,
+      scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
@@ -78,12 +89,14 @@ class TrainingContextBuilder {
   Map<String, dynamic> notes({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
   }) => recent(
     history: history,
     schedules: schedules,
+    scheduleVersions: scheduleVersions,
     bodyLogs: bodyLogs,
     profile: profile,
     memory: memory,
@@ -92,7 +105,9 @@ class TrainingContextBuilder {
   Map<String, dynamic> _build({
     required List<WorkoutSession> history,
     required List<WorkoutSession> analyticsHistory,
+    required List<WorkoutSession> fullHistory,
     required List<Schedule> schedules,
+    required List<ScheduleVersion> scheduleVersions,
     required List<BodyLog> bodyLogs,
     required AiCoachUserProfile profile,
     required AiCoachMemory memory,
@@ -112,6 +127,11 @@ class TrainingContextBuilder {
       'user_profile': profile.toJson(),
       'memory': memory.toJson(),
       'active_plans': activePlans,
+      'program_history': buildProgramHistoryContext(
+        scheduleVersions: scheduleVersions,
+        history: fullHistory,
+        schedules: schedules,
+      ),
       'workouts': workouts,
       'body_logs': bodyLogs.map((entry) => entry.toJson()).toList(),
       'notes': notes,
@@ -149,6 +169,8 @@ class TrainingContextBuilder {
 
   Map<String, dynamic> _workoutJson(WorkoutSession session) => {
     'id': session.id,
+    'schedule_id': session.scheduleId,
+    'schedule_version_id': session.scheduleVersionId,
     'name': session.scheduleTitle,
     'start_time': session.startTime.toIso8601String(),
     'end_time': session.endTime.toIso8601String(),

@@ -46,6 +46,7 @@ class _AiCoachEntryScreenState extends State<AiCoachEntryScreen> {
         return AiCoachScreen(
           history: bundle.history,
           schedules: bundle.schedules,
+          scheduleVersions: bundle.scheduleVersions,
           bodyLogs: bundle.bodyLogs,
           launchContext: widget.launchContext,
         );

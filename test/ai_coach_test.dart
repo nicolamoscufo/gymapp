@@ -13,6 +13,7 @@ import 'package:gymapp/ai_coach/training_context_builder.dart';
 import 'package:gymapp/models/body_log.dart';
 import 'package:gymapp/models/exercise.dart';
 import 'package:gymapp/models/schedule.dart';
+import 'package:gymapp/models/schedule_version.dart';
 import 'package:gymapp/models/workout.dart';
 import 'package:gymapp/screens/ai_coach.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -263,6 +264,7 @@ class _FakeSuggestionService extends LocalAiCoachService {
   Future<SuggestedAdjustmentReport> suggestWorkoutAdjustments({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -320,6 +322,7 @@ class _FakePlanActionService extends LocalAiCoachService {
   Future<SuggestedAdjustmentReport> suggestWorkoutAdjustments({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),

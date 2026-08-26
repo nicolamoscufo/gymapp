@@ -18,6 +18,7 @@ import '../models/workout.dart';
 class AiCoachScreen extends StatefulWidget {
   final List<WorkoutSession> history;
   final List<Schedule> schedules;
+  final List<ScheduleVersion> scheduleVersions;
   final List<BodyLog> bodyLogs;
   final LocalAiCoachService service;
   final AiCoachModelInstaller modelInstaller;
@@ -28,6 +29,7 @@ class AiCoachScreen extends StatefulWidget {
     super.key,
     required this.history,
     required this.schedules,
+    this.scheduleVersions = const [],
     this.bodyLogs = const [],
     this.service = const LocalAiCoachService(),
     this.modelInstaller = const FlutterGemmaAiCoachModelInstaller(),
@@ -340,6 +342,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
       final response = await widget.service.generateChatResponse(
         history: widget.history,
         schedules: widget.schedules,
+        scheduleVersions: widget.scheduleVersions,
         bodyLogs: widget.bodyLogs,
         profile: _profile,
         memory: _memory,
@@ -397,6 +400,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
       final report = await widget.service.suggestWorkoutAdjustments(
         history: widget.history,
         schedules: widget.schedules,
+        scheduleVersions: widget.scheduleVersions,
         bodyLogs: widget.bodyLogs,
         profile: _profile,
         memory: _memory,
