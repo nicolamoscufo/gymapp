@@ -235,6 +235,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _saveCurrentSession();
   }
 
+  void _applyPreviousValuesForExercise(WorkoutExercise exercise) {
+    var changed = false;
+    setState(() {
+      changed = _setManager.applyPreviousValues(exercise);
+    });
+    if (!changed) return;
+    HapticFeedback.selectionClick();
+    _saveCurrentSession();
+  }
+
   Future<void> _pickRpe(ExerciseSet set) async {
     final value = await showModalBottomSheet<double>(
       context: context,
@@ -1478,8 +1488,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
                   if (sets < 1 || reps < 1 || weight < 0 || restSeconds < 0) {
                     setDialogState(() {
-                      validationMessage =
-                          'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi.';
+                      validationMessage = 'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi.';
                     });
                     return;
                   }
@@ -2414,12 +2423,32 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                       ),
                       if (exercise.previousWeights.isNotEmpty) ...[
                         const SizedBox(height: 6),
-                        Text(
-                          _formatPreviousWeights(exercise.previousWeights),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _formatPreviousWeights(
+                                  exercise.previousWeights,
+                                ),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ActionChip(
+                              key: ValueKey(
+                                'use-previous-values-${exercise.id}',
+                              ),
+                              avatar: const Icon(Icons.history, size: 16),
+                              label: const Text('Usa precedenti'),
+                              tooltip: 'Carica kg e reps dell’ultima sessione nei set non completati',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () =>
+                                  _applyPreviousValuesForExercise(exercise),
+                            ),
+                          ],
                         ),
                       ],
                       if (_progressionHintFor(exercise) != null) ...[
@@ -2509,10 +2538,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                             ),
                           ),
                           SizedBox(
-                            width: 96,
-                            child: TextFormField(
+                            width: 88,
+                            child: _StableSetTextField(
                               key: ValueKey('rest-${exercise.id}'),
-                              initialValue: _restController
+                              text: _restController
                                   .configuredSecondsFor(exercise)
                                   .toString(),
                               keyboardType: TextInputType.number,
@@ -2536,6 +2565,23 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                               onChanged: (value) =>
                                   _updateExerciseRestSeconds(exercise, value),
                             ),
+                          ),
+                          PopupMenuButton<int>(
+                            key: ValueKey('rest-preset-${exercise.id}'),
+                            tooltip: 'Preset recupero',
+                            icon: const Icon(Icons.tune),
+                            onSelected: (seconds) => _updateExerciseRestSeconds(
+                              exercise,
+                              seconds.toString(),
+                            ),
+                            itemBuilder: (context) => const [60, 90, 120, 180]
+                                .map(
+                                  (seconds) => PopupMenuItem<int>(
+                                    value: seconds,
+                                    child: Text('$seconds s'),
+                                  ),
+                                )
+                                .toList(),
                           ),
                           IconButton(
                             tooltip: activeRestSeconds == null

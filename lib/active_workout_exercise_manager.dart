@@ -222,6 +222,12 @@ class ActiveWorkoutExerciseManager {
     return members[(currentIndex + 1) % members.length];
   }
 
+  /// Returns the exercise the UI should reveal after completing a set.
+  ///
+  /// Drop-set continuations stay on the current exercise, supersets preserve
+  /// their round-robin navigation, and a normal exercise advances only after
+  /// every set is complete. Completed exercises after the current one are
+  /// skipped so the user lands on the next actionable card.
   WorkoutExercise? nextSupersetMemberAfterSet(
     WorkoutExercise exercise,
     int completedSetIndex,
@@ -229,7 +235,29 @@ class ActiveWorkoutExerciseManager {
     if (hasPendingDropContinuation(exercise, completedSetIndex)) {
       return null;
     }
-    return nextSupersetMember(exercise);
+
+    final supersetNext = nextSupersetMember(exercise);
+    if (supersetNext != null) {
+      return supersetNext;
+    }
+
+    if (exercise.sets.any((set) => !set.isCompleted)) {
+      return null;
+    }
+
+    final currentIndex = _indexOf(exercise);
+    if (currentIndex < 0) return null;
+    for (
+      var index = currentIndex + 1;
+      index < session.exercises.length;
+      index++
+    ) {
+      final candidate = session.exercises[index];
+      if (candidate.sets.any((set) => !set.isCompleted)) {
+        return candidate;
+      }
+    }
+    return null;
   }
 
   bool removeFromSuperset(WorkoutExercise exercise) {
