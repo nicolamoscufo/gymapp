@@ -1,9 +1,12 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../ai_coach/ai_action_protocol.dart';
 import '../ai_coach/ai_coach_handoff.dart';
 import '../ai_coach/ai_coach_memory.dart';
 import '../ai_coach/ai_plan_action_service.dart';
+import '../ai_coach/ai_program_conversation_coordinator.dart';
+import '../ai_coach/ai_program_draft_commit_service.dart';
 import '../app_data_store.dart';
 import '../ai_coach/ai_coach_model_manager.dart';
 import '../ai_coach/ai_coach_models.dart';
@@ -14,6 +17,8 @@ import '../models/body_log.dart';
 import '../models/schedule.dart';
 import '../models/schedule_version.dart';
 import '../models/workout.dart';
+import 'ai_program_draft_card.dart';
+import 'ai_program_draft_review.dart';
 
 class AiCoachScreen extends StatefulWidget {
   final List<WorkoutSession> history;
@@ -23,6 +28,8 @@ class AiCoachScreen extends StatefulWidget {
   final LocalAiCoachService service;
   final AiCoachModelInstaller modelInstaller;
   final AiPlanActionService planActionService;
+  final AiProgramConversationCoordinator programConversationCoordinator;
+  final AiProgramDraftCommitService programDraftCommitService;
   final AiCoachLaunchContext? launchContext;
 
   const AiCoachScreen({
@@ -34,6 +41,9 @@ class AiCoachScreen extends StatefulWidget {
     this.service = const LocalAiCoachService(),
     this.modelInstaller = const FlutterGemmaAiCoachModelInstaller(),
     this.planActionService = const AiPlanActionService(),
+    this.programConversationCoordinator =
+        const AiProgramConversationCoordinator(),
+    this.programDraftCommitService = const AiProgramDraftCommitService(),
     this.launchContext,
   });
 
@@ -48,7 +58,10 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
       const ChatConversationStore();
   final AiCoachProfileStore _profileStore = const AiCoachProfileStore();
   final AiCoachMemoryStore _memoryStore = const AiCoachMemoryStore();
+  final Set<String> _savingProgramDrafts = <String>{};
 
+  late final List<Schedule> _liveSchedules;
+  late final List<ScheduleVersion> _liveScheduleVersions;
   AiCoachUserProfile _profile = const AiCoachUserProfile();
   AiCoachMemory _memory = const AiCoachMemory();
   ChatConversation _conversation = ChatConversation(
@@ -73,6 +86,10 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   @override
   void initState() {
     super.initState();
+    _liveSchedules = List<Schedule>.from(widget.schedules);
+    _liveScheduleVersions = List<ScheduleVersion>.from(
+      widget.scheduleVersions,
+    );
     _focusContext = widget.launchContext?.focusContext;
     _refreshModelState();
     _loadProfileAndMemory();
@@ -127,7 +144,8 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
         _isModelInstalled = false;
         _isCheckingModel = false;
         _modelChecked = true;
-        _errorMessage = 'Unable to check the local model. Verify the platform and dependencies.';
+        _errorMessage =
+            'Unable to check the local model. Verify the platform and dependencies.';
       });
     }
   }
@@ -160,7 +178,8 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(
-        () => _errorMessage = 'Model download failed. Check your connection and free storage space.',
+        () => _errorMessage =
+            'Model download failed. Check your connection and free storage space.',
       );
     } finally {
       if (mounted) {
@@ -339,10 +358,41 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
     await _saveAndRefresh(conversation);
 
     try {
+      if (text.isNotEmpty) {
+        final programResult = await widget.programConversationCoordinator.handle(
+          userRequest: text,
+          history: widget.history,
+          schedules: _liveSchedules,
+          scheduleVersions: _liveScheduleVersions,
+          bodyLogs: widget.bodyLogs,
+          profile: _profile,
+          memory: _memory,
+        );
+        if (programResult.isProgramActionIntent) {
+          final assistantMessage = programResult.assistantMessage ??
+              ChatMessage(
+                role: 'assistant',
+                content:
+                    'Non sono riuscito a creare una bozza applicabile in sicurezza. Prova a specificare meglio giorni, obiettivo e vincoli della scheda.',
+              );
+          final finalConversation = conversation.copyWith(
+            messages: [...updatedMessages, assistantMessage],
+          );
+          if (!mounted) return;
+          setState(() {
+            _conversation = finalConversation;
+            _isRunning = false;
+          });
+          _scrollToBottom();
+          await _saveAndRefresh(finalConversation);
+          return;
+        }
+      }
+
       final response = await widget.service.generateChatResponse(
         history: widget.history,
-        schedules: widget.schedules,
-        scheduleVersions: widget.scheduleVersions,
+        schedules: _liveSchedules,
+        scheduleVersions: _liveScheduleVersions,
         bodyLogs: widget.bodyLogs,
         profile: _profile,
         memory: _memory,
@@ -369,12 +419,151 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
       });
       _scrollToBottom();
       await _saveAndRefresh(finalConversation);
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _isRunning = false;
         _errorMessage = 'Failed to get response. Please try again.';
       });
+    }
+  }
+
+  String _programDraftKey(ChatMessage message) =>
+      '${message.role}:${message.timestamp.toIso8601String()}';
+
+  bool _isProgramDraftSaved(ChatMessage message) =>
+      message.actionPayload?['ui_status'] == 'saved';
+
+  Future<void> _replaceConversationMessage(
+    ChatMessage original,
+    ChatMessage replacement,
+  ) async {
+    final messages = [..._conversation.messages];
+    final index = messages.indexWhere(
+      (message) =>
+          message.role == original.role &&
+          message.timestamp == original.timestamp,
+    );
+    if (index < 0) return;
+    messages[index] = replacement;
+    final updated = _conversation.copyWith(messages: messages);
+    if (mounted) setState(() => _conversation = updated);
+    await _saveAndRefresh(updated);
+  }
+
+  void _syncLiveProgram(AppDataBundle bundle) {
+    _liveSchedules
+      ..clear()
+      ..addAll(bundle.schedules);
+    _liveScheduleVersions
+      ..clear()
+      ..addAll(bundle.scheduleVersions);
+
+    try {
+      widget.schedules
+        ..clear()
+        ..addAll(bundle.schedules);
+    } on UnsupportedError {
+      // Some tests/callers intentionally provide immutable lists. The local
+      // context remains fresh even when the parent list cannot be mutated.
+    }
+    try {
+      widget.scheduleVersions
+        ..clear()
+        ..addAll(bundle.scheduleVersions);
+    } on UnsupportedError {
+      // See the schedules guard above.
+    }
+  }
+
+  Future<void> _editProgramDraft(
+    ChatMessage message,
+    AiProgramActionProposal proposal,
+  ) async {
+    if (_isProgramDraftSaved(message)) return;
+    final latest = await AppDataStore.loadBundle();
+    if (!mounted) return;
+    _syncLiveProgram(latest);
+    final reviewed = await Navigator.of(context).push<AiProgramActionProposal>(
+      MaterialPageRoute(
+        builder: (_) => AiProgramDraftReviewScreen(
+          proposal: proposal,
+          currentSchedules: latest.schedules,
+        ),
+      ),
+    );
+    if (!mounted || reviewed == null) return;
+    await _replaceConversationMessage(
+      message,
+      message.copyWith(
+        content: reviewed.summary,
+        actionPayload: reviewed.toJson(),
+      ),
+    );
+  }
+
+  Future<void> _saveProgramDraft(
+    ChatMessage message,
+    AiProgramActionProposal proposal,
+  ) async {
+    if (_isProgramDraftSaved(message)) return;
+    final key = _programDraftKey(message);
+    if (_savingProgramDrafts.contains(key)) return;
+    setState(() => _savingProgramDrafts.add(key));
+
+    try {
+      final result = await widget.programDraftCommitService.commit(proposal);
+      if (!mounted) return;
+      if (!result.saved) {
+        final stale = result.errors.any(
+          (error) =>
+              error.contains('stale_base_version') ||
+              error.contains('unknown_base_schedule'),
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              stale
+                  ? 'La scheda è cambiata dopo questa proposta. Modifica o rigenera la bozza prima di salvarla.'
+                  : 'La bozza non è più applicabile in sicurezza. Controllala e riprova.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final latest = await AppDataStore.loadBundle();
+      if (!mounted) return;
+      _syncLiveProgram(latest);
+      final savedPayload = <String, dynamic>{
+        ...proposal.toJson(),
+        'ui_status': 'saved',
+        'saved_at': DateTime.now().toIso8601String(),
+      };
+      await _replaceConversationMessage(
+        message,
+        message.copyWith(actionPayload: savedPayload),
+      );
+      if (!mounted) return;
+      final created = result.createdSchedules;
+      final modified = result.modifiedSchedules;
+      final parts = <String>[
+        if (created > 0) '$created nuove',
+        if (modified > 0) '$modified aggiornate',
+      ];
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            parts.isEmpty
+                ? 'Programmazione salvata.'
+                : 'Programmazione salvata: ${parts.join(', ')}.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _savingProgramDrafts.remove(key));
+      }
     }
   }
 
@@ -399,15 +588,15 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
     try {
       final report = await widget.service.suggestWorkoutAdjustments(
         history: widget.history,
-        schedules: widget.schedules,
-        scheduleVersions: widget.scheduleVersions,
+        schedules: _liveSchedules,
+        scheduleVersions: _liveScheduleVersions,
         bodyLogs: widget.bodyLogs,
         profile: _profile,
         memory: _memory,
       );
       final actions = widget.planActionService.validate(
         report,
-        widget.schedules,
+        _liveSchedules,
       );
       if (!mounted) return;
       if (actions.isEmpty) {
@@ -429,13 +618,15 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
         builder: (context) => _PlanActionsReviewSheet(actions: actions),
       );
       if (!mounted || selected == null || selected.isEmpty) return;
-      final result = widget.planActionService.apply(widget.schedules, selected);
+      final result = widget.planActionService.apply(_liveSchedules, selected);
       if (result.applied > 0) {
         await AppDataStore.saveSchedules(
-          widget.schedules,
+          _liveSchedules,
           source: ScheduleVersionSource.aiCoach,
           reason: 'AI Coach plan adjustment approved by user',
         );
+        final latest = await AppDataStore.loadBundle();
+        if (mounted) _syncLiveProgram(latest);
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -547,6 +738,10 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
                     scrollController: _scrollController,
                     theme: theme,
                     colorScheme: colorScheme,
+                    onEditProgramDraft: _editProgramDraft,
+                    onSaveProgramDraft: _saveProgramDraft,
+                    isProgramDraftSaving: (message) => _savingProgramDrafts
+                        .contains(_programDraftKey(message)),
                   ),
           ),
           if (_focusContext != null)
@@ -1142,6 +1337,11 @@ class _Suggestion {
 
 const _suggestions = [
   _Suggestion(
+    Icons.auto_awesome,
+    'Crea una scheda con il Coach',
+    'Creami una nuova scheda di allenamento in base ai miei dati, obiettivi e preferenze.',
+  ),
+  _Suggestion(
     Icons.summarize,
     'Riassumi ultimo allenamento',
     'Fammi un riassunto del mio ultimo allenamento. Cosa è andato bene?',
@@ -1179,6 +1379,9 @@ class _ChatMessagesView extends StatelessWidget {
   final ScrollController scrollController;
   final ThemeData theme;
   final ColorScheme colorScheme;
+  final void Function(ChatMessage, AiProgramActionProposal) onEditProgramDraft;
+  final void Function(ChatMessage, AiProgramActionProposal) onSaveProgramDraft;
+  final bool Function(ChatMessage) isProgramDraftSaving;
 
   const _ChatMessagesView({
     required this.messages,
@@ -1186,6 +1389,9 @@ class _ChatMessagesView extends StatelessWidget {
     required this.scrollController,
     required this.theme,
     required this.colorScheme,
+    required this.onEditProgramDraft,
+    required this.onSaveProgramDraft,
+    required this.isProgramDraftSaving,
   });
 
   @override
@@ -1196,10 +1402,21 @@ class _ChatMessagesView extends StatelessWidget {
       itemCount: messages.length + (isRunning ? 1 : 0),
       itemBuilder: (context, index) {
         if (index < messages.length) {
+          final message = messages[index];
+          final programDraft = programDraftFromMessage(message);
           return _ChatBubble(
-            message: messages[index],
+            message: message,
             theme: theme,
             colorScheme: colorScheme,
+            programDraft: programDraft,
+            isSavingProgramDraft: isProgramDraftSaving(message),
+            isSavedProgramDraft: message.actionPayload?['ui_status'] == 'saved',
+            onEditProgramDraft: programDraft == null
+                ? null
+                : () => onEditProgramDraft(message, programDraft),
+            onSaveProgramDraft: programDraft == null
+                ? null
+                : () => onSaveProgramDraft(message, programDraft),
           );
         }
         return const Padding(
@@ -1226,11 +1443,21 @@ class _ChatBubble extends StatelessWidget {
   final ChatMessage message;
   final ThemeData theme;
   final ColorScheme colorScheme;
+  final AiProgramActionProposal? programDraft;
+  final VoidCallback? onEditProgramDraft;
+  final VoidCallback? onSaveProgramDraft;
+  final bool isSavingProgramDraft;
+  final bool isSavedProgramDraft;
 
   const _ChatBubble({
     required this.message,
     required this.theme,
     required this.colorScheme,
+    this.programDraft,
+    this.onEditProgramDraft,
+    this.onSaveProgramDraft,
+    this.isSavingProgramDraft = false,
+    this.isSavedProgramDraft = false,
   });
 
   @override
@@ -1295,6 +1522,19 @@ class _ChatBubble extends StatelessWidget {
               child: Text(
                 message.content,
                 style: theme.textTheme.bodyMedium?.copyWith(color: textColor),
+              ),
+            ),
+          if (!isUser && programDraft != null)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.92,
+              ),
+              child: AiProgramDraftCard(
+                proposal: programDraft!,
+                onEdit: onEditProgramDraft ?? () {},
+                onSave: onSaveProgramDraft ?? () {},
+                isSaving: isSavingProgramDraft,
+                isSaved: isSavedProgramDraft,
               ),
             ),
         ],
@@ -1396,6 +1636,7 @@ class _ChatInputBar extends StatelessWidget {
           ),
           Expanded(
             child: TextField(
+              key: const ValueKey('ai-chat-input'),
               controller: controller,
               textInputAction: TextInputAction.send,
               minLines: 1,
@@ -1413,6 +1654,7 @@ class _ChatInputBar extends StatelessWidget {
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             child: IconButton(
+              key: const ValueKey('ai-chat-send'),
               icon: const Icon(Icons.send_rounded),
               tooltip: 'Send',
               onPressed: (hasText || hasImages) && !isRunning ? onSend : null,
