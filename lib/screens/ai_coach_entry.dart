@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../ai_coach/ai_coach_handoff.dart';
 import '../app_data_store.dart';
 import 'ai_coach.dart';
 
 class AiCoachEntryScreen extends StatefulWidget {
-  const AiCoachEntryScreen({super.key});
+  final AiCoachLaunchContext? launchContext;
+
+  const AiCoachEntryScreen({super.key, this.launchContext});
 
   @override
   State<AiCoachEntryScreen> createState() => _AiCoachEntryScreenState();
@@ -44,6 +47,7 @@ class _AiCoachEntryScreenState extends State<AiCoachEntryScreen> {
           history: bundle.history,
           schedules: bundle.schedules,
           bodyLogs: bundle.bodyLogs,
+          launchContext: widget.launchContext,
         );
       },
     );

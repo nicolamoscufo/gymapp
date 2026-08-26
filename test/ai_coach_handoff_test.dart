@@ -24,88 +24,94 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('post-workout handoff carries the exact session and debrief context', () {
-    final previous = _session(
-      id: 'previous',
-      start: DateTime(2026, 8, 19, 18),
-      weight: 80,
-      reps: 8,
-      rir: 2,
-      note: 'Controllo buono',
-    );
-    final current = _session(
-      id: 'current',
-      start: DateTime(2026, 8, 26, 18),
-      weight: 82.5,
-      reps: 9,
-      rir: 2,
-      rpe: 8,
-      note: 'Ultima rep lenta ma pulita',
-    );
+  test(
+    'post-workout handoff carries the exact session and debrief context',
+    () {
+      final previous = _session(
+        id: 'previous',
+        start: DateTime(2026, 8, 19, 18),
+        weight: 80,
+        reps: 8,
+        rir: 2,
+        note: 'Controllo buono',
+      );
+      final current = _session(
+        id: 'current',
+        start: DateTime(2026, 8, 26, 18),
+        weight: 82.5,
+        reps: 9,
+        rir: 2,
+        rpe: 8,
+        note: 'Ultima rep lenta ma pulita',
+      );
 
-    final launch = AiCoachLaunchContext.postWorkout(
-      session: current,
-      history: [previous],
-    );
+      final launch = AiCoachLaunchContext.postWorkout(
+        session: current,
+        history: [previous],
+      );
 
-    final focus = launch.focusContext;
-    expect(focus['type'], 'post_workout_debrief');
-    expect(focus['target_session_id'], 'current');
-    expect(focus['same_schedule_history_count'], 1);
+      final focus = launch.focusContext;
+      expect(focus['type'], 'post_workout_debrief');
+      expect(focus['target_session_id'], 'current');
+      expect(focus['same_schedule_history_count'], 1);
 
-    final target = Map<String, dynamic>.from(focus['target_session'] as Map);
-    final exercises = target['exercises'] as List;
-    final exercise = Map<String, dynamic>.from(exercises.single as Map);
-    final sets = exercise['sets'] as List;
-    final set = Map<String, dynamic>.from(sets.single as Map);
-    expect(set['weight'], 82.5);
-    expect(set['reps'], 9);
-    expect(set['rir'], 2);
-    expect(set['rpe'], 8);
-    expect(set['notes'], 'Ultima rep lenta ma pulita');
+      final target = Map<String, dynamic>.from(focus['target_session'] as Map);
+      final exercises = target['exercises'] as List;
+      final exercise = Map<String, dynamic>.from(exercises.single as Map);
+      final sets = exercise['sets'] as List;
+      final set = Map<String, dynamic>.from(sets.single as Map);
+      expect(set['weight'], 82.5);
+      expect(set['reps'], 9);
+      expect(set['rir'], 2);
+      expect(set['rpe'], 8);
+      expect(set['notes'], 'Ultima rep lenta ma pulita');
 
-    final debrief = Map<String, dynamic>.from(
-      focus['deterministic_debrief'] as Map,
-    );
-    expect(debrief['session_id'], 'current');
-    expect(debrief['previous_comparable_session_id'], 'previous');
-    expect(debrief['exercises'], isNotEmpty);
+      final debrief = Map<String, dynamic>.from(
+        focus['deterministic_debrief'] as Map,
+      );
+      expect(debrief['session_id'], 'current');
+      expect(debrief['previous_comparable_session_id'], 'previous');
+      expect(debrief['exercises'], isNotEmpty);
 
-    final contract = Map<String, dynamic>.from(
-      focus['context_contract'] as Map,
-    );
-    expect(contract['target_session_is_authoritative'], isTrue);
-    expect(contract['deterministic_metrics_are_authoritative'], isTrue);
-  });
+      final contract = Map<String, dynamic>.from(
+        focus['context_contract'] as Map,
+      );
+      expect(contract['target_session_is_authoritative'], isTrue);
+      expect(contract['deterministic_metrics_are_authoritative'], isTrue);
+    },
+  );
 
-  test('chat service injects focus context into the model system prompt', () async {
-    final engine = _CaptureEngine();
-    final service = LocalAiCoachService(engine: engine);
+  test(
+    'chat service injects focus context into the model system prompt',
+    () async {
+      final engine = _CaptureEngine();
+      final service = LocalAiCoachService(engine: engine);
 
-    await service.generateChatResponse(
-      history: [
-        _session(
-          id: 'current',
-          start: DateTime(2026, 8, 26, 18),
-          weight: 82.5,
-          reps: 9,
-          rir: 2,
-          note: 'Exact focus note',
-        ),
-      ],
-      schedules: const [],
-      messages: [ChatMessage(role: 'user', content: 'Analizza la seduta')],
-      focusContext: const {
-        'type': 'post_workout_debrief',
-        'target_session_id': 'current',
-        'authoritative_marker': 'EXACT_FOCUS_CONTEXT',
-      },
-    );
+      await service.generateChatResponse(
+        history: [
+          _session(
+            id: 'current',
+            start: DateTime(2026, 8, 26, 18),
+            weight: 82.5,
+            reps: 9,
+            rir: 2,
+            note: 'Exact focus note',
+          ),
+        ],
+        schedules: const [],
+        messages: [ChatMessage(role: 'user', content: 'Analizza la seduta')],
+        focusContext: const {
+          'type': 'post_workout_debrief',
+          'target_session_id': 'current',
+          'authoritative_marker': 'EXACT_FOCUS_CONTEXT',
+        },
+      );
 
-    expect(engine.lastSystemPrompt, contains('focus_context'));
-    expect(engine.lastSystemPrompt, contains('EXACT_FOCUS_CONTEXT'));
-    expect(engine.lastSystemPrompt, contains('authoritative scope'));
-  });
+      expect(engine.lastSystemPrompt, contains('focus_context'));
+      expect(engine.lastSystemPrompt, contains('EXACT_FOCUS_CONTEXT'));
+      expect(engine.lastSystemPrompt, contains('authoritative scope'));
+    },
+  );
 
   testWidgets('launch handoff auto-starts a focused coach conversation', (
     tester,
@@ -144,7 +150,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('ai-focus-context-banner')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ai-focus-context-banner')),
+      findsOneWidget,
+    );
     expect(find.text('Analizza questa seduta completa.'), findsOneWidget);
     expect(find.text('Coach focus ok'), findsOneWidget);
     expect(service.lastFocus?['target_session_id'], 'current');
@@ -182,8 +191,10 @@ void main() {
     expect(button, findsOneWidget);
     expect(find.text('Chiedi al Coach'), findsOneWidget);
 
-    await tester.tap(button);
+    final coachButton = tester.widget<FilledButton>(button);
+    coachButton.onPressed!.call();
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
     expect(find.byType(AiCoachEntryScreen), findsOneWidget);
   });
 }

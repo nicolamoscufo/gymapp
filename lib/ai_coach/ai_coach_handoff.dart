@@ -29,15 +29,14 @@ class AiCoachLaunchContext {
     return AiCoachLaunchContext(
       source: 'post_workout_debrief',
       conversationTitle: 'Debrief · ${session.scheduleTitle}',
-      userPrompt:
-          'Analizza questa seduta appena conclusa. Spiegami cosa è migliorato o peggiorato, interpreta volume, densità, e1RM, RIR/RPE e note, verifica le raccomandazioni deterministiche e dammi le 3 priorità più importanti per la prossima seduta. Se un dato non è sufficiente, dillo chiaramente.',
+      userPrompt: 'Analizza questa seduta appena conclusa. Spiegami cosa è migliorato o peggiorato, interpreta volume, densità, e1RM, RIR/RPE e note, verifica le raccomandazioni deterministiche e dammi le 3 priorità più importanti per la prossima seduta. Se un dato non è sufficiente, dillo chiaramente.',
       focusContext: {
         'type': 'post_workout_debrief',
         'target_session_id': session.id,
         'target_session': session.toJson(),
         'deterministic_debrief': resolvedDebrief.toContextJson(),
-        'previous_comparable_session':
-            resolvedDebrief.previousComparableSession?.toJson(),
+        'previous_comparable_session': resolvedDebrief.previousComparableSession
+            ?.toJson(),
         'same_schedule_history_count': sameScheduleHistory.length,
         'same_schedule_history_window': historyWindow
             .map((entry) => entry.toJson())

@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../ai_coach/ai_coach_handoff.dart';
 import '../ai_coach/ai_coach_memory.dart';
 import '../ai_coach/ai_plan_action_service.dart';
 import '../app_data_store.dart';
@@ -20,6 +21,7 @@ class AiCoachScreen extends StatefulWidget {
   final LocalAiCoachService service;
   final AiCoachModelInstaller modelInstaller;
   final AiPlanActionService planActionService;
+  final AiCoachLaunchContext? launchContext;
 
   const AiCoachScreen({
     super.key,
@@ -29,6 +31,7 @@ class AiCoachScreen extends StatefulWidget {
     this.service = const LocalAiCoachService(),
     this.modelInstaller = const FlutterGemmaAiCoachModelInstaller(),
     this.planActionService = const AiPlanActionService(),
+    this.launchContext,
   });
 
   @override
@@ -58,10 +61,16 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   bool _isDownloadingModel = false;
   int? _downloadProgress;
   String? _errorMessage;
+  Map<String, dynamic>? _focusContext;
+  bool _profileLoaded = false;
+  bool _conversationsLoaded = false;
+  bool _modelChecked = false;
+  bool _launchStarted = false;
 
   @override
   void initState() {
     super.initState();
+    _focusContext = widget.launchContext?.focusContext;
     _refreshModelState();
     _loadProfileAndMemory();
     _loadConversations();
@@ -81,7 +90,9 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
     setState(() {
       _profile = profile;
       _memory = memory;
+      _profileLoaded = true;
     });
+    _maybeStartLaunchHandoff();
   }
 
   Future<void> _loadConversations() async {
@@ -92,7 +103,9 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
       if (all.isNotEmpty) {
         _conversation = all.first;
       }
+      _conversationsLoaded = true;
     });
+    _maybeStartLaunchHandoff();
   }
 
   Future<void> _refreshModelState() async {
@@ -102,14 +115,16 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
       setState(() {
         _isModelInstalled = isInstalled;
         _isCheckingModel = false;
+        _modelChecked = true;
       });
+      _maybeStartLaunchHandoff();
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _isModelInstalled = false;
         _isCheckingModel = false;
-        _errorMessage =
-            'Unable to check the local model. Verify the platform and dependencies.';
+        _modelChecked = true;
+        _errorMessage = 'Unable to check the local model. Verify the platform and dependencies.';
       });
     }
   }
@@ -133,15 +148,16 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
       setState(() {
         _isModelInstalled = true;
         _downloadProgress = 100;
+        _modelChecked = true;
       });
+      _maybeStartLaunchHandoff();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${widget.modelInstaller.modelName} is ready.')),
       );
     } catch (_) {
       if (!mounted) return;
       setState(
-        () => _errorMessage =
-            'Model download failed. Check your connection and free storage space.',
+        () => _errorMessage = 'Model download failed. Check your connection and free storage space.',
       );
     } finally {
       if (mounted) {
@@ -151,6 +167,8 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   }
 
   Future<void> _startNewConversation() async {
+    _launchStarted = true;
+    _focusContext = null;
     final conversation = ChatConversation(
       id: generateConversationId(),
       title: 'Nuova chat',
@@ -164,6 +182,8 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   }
 
   Future<void> _switchConversation(ChatConversation conversation) async {
+    _launchStarted = true;
+    _focusContext = null;
     setState(() {
       _conversation = conversation;
       _pendingImages = [];
@@ -209,6 +229,43 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
         curve: Curves.easeOut,
       );
     }
+  }
+
+  Future<void> _maybeStartLaunchHandoff() async {
+    final launch = widget.launchContext;
+    if (launch == null ||
+        _launchStarted ||
+        !_profileLoaded ||
+        !_conversationsLoaded ||
+        !_modelChecked ||
+        _isRunning) {
+      return;
+    }
+
+    if (!_isModelInstalled) {
+      if (_textController.text.isEmpty) {
+        _textController.text = launch.userPrompt;
+        if (mounted) setState(() {});
+      }
+      return;
+    }
+
+    _launchStarted = true;
+    final conversation = ChatConversation(
+      id: generateConversationId(),
+      title: launch.conversationTitle,
+    );
+    if (!mounted) return;
+    setState(() {
+      _conversation = conversation;
+      _focusContext = launch.focusContext;
+      _pendingImages = [];
+      _errorMessage = null;
+      _textController.text = launch.userPrompt;
+    });
+    await _saveAndRefresh(conversation);
+    if (!mounted) return;
+    await _sendMessage();
   }
 
   Future<void> _pickImages() async {
@@ -291,6 +348,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
                   .map((bytes) => AiCoachImageInput(label: '', bytes: bytes))
                   .toList()
             : [],
+        focusContext: _focusContext,
       );
 
       final assistantMessage = ChatMessage(
@@ -482,6 +540,31 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
                     colorScheme: colorScheme,
                   ),
           ),
+          if (_focusContext != null)
+            Container(
+              key: const ValueKey('ai-focus-context-banner'),
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.insights, size: 18, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Contesto Smart Debrief attivo: seduta, storico e analytics sono disponibili al Coach.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_pendingImages.isNotEmpty)
             _PendingImagesBar(
               images: _pendingImages,
