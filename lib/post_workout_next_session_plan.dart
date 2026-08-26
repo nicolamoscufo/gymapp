@@ -31,9 +31,9 @@ class NextSessionPlanFieldChange {
       final text = weight == weight.roundToDouble()
           ? weight.toStringAsFixed(0)
           : weight
-              .toStringAsFixed(2)
-              .replaceFirst(RegExp(r'0+$'), '')
-              .replaceFirst(RegExp(r'\.$'), '');
+                .toStringAsFixed(2)
+                .replaceFirst(RegExp(r'0+$'), '')
+                .replaceFirst(RegExp(r'\.$'), '');
       return '$text kg';
     }
     return value.toString();
@@ -59,8 +59,7 @@ class NextSessionPlanAction {
 
   String get id => '$scheduleId|$exerciseId|${decision.action.name}';
 
-  bool get defaultSelected =>
-      decision.confidence != ProgressionConfidence.low;
+  bool get defaultSelected => decision.confidence != ProgressionConfidence.low;
 
   String get actionLabel => progressionActionLabel(decision);
 
@@ -128,7 +127,10 @@ NextSessionPlan? buildNextSessionPlan({
       continue;
     }
 
-    final originalExercise = _resolveExercise(completedExercise, storedSchedule);
+    final originalExercise = _resolveExercise(
+      completedExercise,
+      storedSchedule,
+    );
     if (originalExercise == null) continue;
     final simulatedExercise = simulatedSchedule.exercises
         .where((exercise) => exercise.id == originalExercise.id)
@@ -228,10 +230,7 @@ NextSessionPlanApplyResult applyNextSessionPlan({
   return NextSessionPlanApplyResult(applied: applied, skipped: skipped);
 }
 
-Schedule? _resolveSchedule(
-  WorkoutSession session,
-  List<Schedule> schedules,
-) {
+Schedule? _resolveSchedule(WorkoutSession session, List<Schedule> schedules) {
   final scheduleId = session.scheduleId;
   if (scheduleId != null && scheduleId.isNotEmpty) {
     final matches = schedules.where((schedule) => schedule.id == scheduleId);

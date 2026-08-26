@@ -15,38 +15,41 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('builds an exact load progression diff from the deterministic engine', () {
-    final schedule = _schedule(weight: 80, reps: 8);
-    final previous = _session(
-      id: 'previous',
-      reps: 9,
-      weight: 80,
-      end: DateTime(2026, 8, 19, 19),
-    );
-    final current = _session(
-      id: 'current',
-      reps: 10,
-      weight: 80,
-      end: DateTime(2026, 8, 26, 19),
-    );
+  test(
+    'builds an exact load progression diff from the deterministic engine',
+    () {
+      final schedule = _schedule(weight: 80, reps: 8);
+      final previous = _session(
+        id: 'previous',
+        reps: 9,
+        weight: 80,
+        end: DateTime(2026, 8, 19, 19),
+      );
+      final current = _session(
+        id: 'current',
+        reps: 10,
+        weight: 80,
+        end: DateTime(2026, 8, 26, 19),
+      );
 
-    final plan = buildNextSessionPlan(
-      session: current,
-      history: [previous],
-      schedules: [schedule],
-    );
+      final plan = buildNextSessionPlan(
+        session: current,
+        history: [previous],
+        schedules: [schedule],
+      );
 
-    expect(plan, isNotNull);
-    expect(plan!.actions, hasLength(1));
-    final action = plan.actions.single;
-    expect(action.exerciseName, 'Panca');
-    expect(action.actionLabel, contains('Aumenta carico'));
-    expect(action.defaultSelected, isTrue);
-    expect(action.changes, hasLength(1));
-    expect(action.changes.single.field, 'weight');
-    expect(action.changes.single.currentValue, 80.0);
-    expect(action.changes.single.suggestedValue, 82.5);
-  });
+      expect(plan, isNotNull);
+      expect(plan!.actions, hasLength(1));
+      final action = plan.actions.single;
+      expect(action.exerciseName, 'Panca');
+      expect(action.actionLabel, contains('Aumenta carico'));
+      expect(action.defaultSelected, isTrue);
+      expect(action.changes, hasLength(1));
+      expect(action.changes.single.field, 'weight');
+      expect(action.changes.single.currentValue, 80.0);
+      expect(action.changes.single.suggestedValue, 82.5);
+    },
+  );
 
   test('builds a rep progression diff without changing the load', () {
     final schedule = _schedule(weight: 80, reps: 8);
@@ -115,9 +118,7 @@ void main() {
       session: current,
       history: [previous],
       schedules: [schedule],
-    )!
-        .actions
-        .single;
+    )!.actions.single;
 
     schedule.exercises.single.weight = 81;
     final result = applyNextSessionPlan(
@@ -130,55 +131,56 @@ void main() {
     expect(schedule.exercises.single.weight, 81);
   });
 
-  testWidgets('summary reviews and applies the next-session plan on confirmation', (
-    tester,
-  ) async {
-    final schedule = _schedule(weight: 80, reps: 8);
-    await AppDataStore.saveSchedules([schedule]);
-    final previous = _session(
-      id: 'previous',
-      reps: 9,
-      weight: 80,
-      end: DateTime(2026, 8, 19, 19),
-    );
-    final current = _session(
-      id: 'current',
-      reps: 10,
-      weight: 80,
-      end: DateTime(2026, 8, 26, 19),
-    );
+  testWidgets(
+    'summary reviews and applies the next-session plan on confirmation',
+    (tester) async {
+      final schedule = _schedule(weight: 80, reps: 8);
+      await AppDataStore.saveSchedules([schedule]);
+      final previous = _session(
+        id: 'previous',
+        reps: 9,
+        weight: 80,
+        end: DateTime(2026, 8, 19, 19),
+      );
+      final current = _session(
+        id: 'current',
+        reps: 10,
+        weight: 80,
+        end: DateTime(2026, 8, 26, 19),
+      );
 
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(900, 1400);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(900, 1400);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: SessionSummaryScreen(
-          session: current,
-          previousHistory: [previous],
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionSummaryScreen(
+            session: current,
+            previousHistory: [previous],
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 120));
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
 
-    await tester.tap(find.byKey(const ValueKey('next-session-plan')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 450));
+      await tester.tap(find.byKey(const ValueKey('next-session-plan')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
 
-    expect(find.text('Piano prossima seduta'), findsWidgets);
-    expect(find.textContaining('80 kg → 82.5 kg'), findsOneWidget);
+      expect(find.text('Piano prossima seduta'), findsWidgets);
+      expect(find.textContaining('80 kg → 82.5 kg'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('apply-next-session-plan')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.byKey(const ValueKey('apply-next-session-plan')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
-    final saved = (await AppDataStore.loadBundle()).schedules.single;
-    expect(saved.exercises.single.weight, 82.5);
-    expect(find.text('Piano applicato'), findsOneWidget);
-  });
+      final saved = (await AppDataStore.loadBundle()).schedules.single;
+      expect(saved.exercises.single.weight, 82.5);
+      expect(find.text('Piano applicato'), findsOneWidget);
+    },
+  );
 }
 
 Schedule _schedule({required double weight, required int reps}) {

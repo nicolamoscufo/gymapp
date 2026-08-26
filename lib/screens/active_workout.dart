@@ -1276,40 +1276,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     await AppDataStore.saveSchedules(bundle.schedules);
   }
 
-  Future<void> _applyProgressionToSchedule() async {
-    final bundle = await AppDataStore.loadBundle();
-    final storedSchedule = _scheduleSync.storedScheduleForSession(
-      bundle.schedules,
-      liveSchedule: widget.schedule,
-    );
-    if (storedSchedule == null) return;
-
-    _scheduleSync.applyProgressionToSchedule(
-      storedSchedule: storedSchedule,
-      history: bundle.history,
-      skipSourceExerciseIds: _exerciseIdsAddedToScheduleThisFinish,
-    );
-    await AppDataStore.saveSchedules(bundle.schedules);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _prBannerTimer?.cancel();
-    _prBannerTimer = null;
-    _handoffPulseTimer?.cancel();
-    _handoffPulseTimer = null;
-    _handoffClearTimer?.cancel();
-    _handoffClearTimer = null;
-    _restController.dispose();
-    _durationTimer?.cancel();
-    _workoutScrollController.dispose();
-    if (!widget.editCompletedSession) {
-      WakelockPlus.disable();
-    }
-    super.dispose();
-  }
-
   Future<void> _finishWorkout() async {
     if (widget.editCompletedSession) {
       await _saveEditedCompletedSession();
@@ -1336,7 +1302,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final previousHistory = List<WorkoutSession>.from(history);
     history.add(session);
     await AppDataStore.saveHistory(history);
-    await _applyProgressionToSchedule();
     await AppDataStore.clearCurrentSession();
 
     if (mounted) {
@@ -1346,6 +1311,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
           builder: (context) => SessionSummaryScreen(
             session: session,
             previousHistory: previousHistory,
+            skipProgressionExerciseIds: Set<String>.unmodifiable(
+              _exerciseIdsAddedToScheduleThisFinish,
+            ),
           ),
         ),
       );
