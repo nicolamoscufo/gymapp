@@ -116,11 +116,7 @@ class AiProgramDraftCommitService {
           continue;
         }
 
-        final resolved = await exerciseCatalogRetriever.resolveExercise(
-          name: exercise.name,
-          equipment: exercise.equipment,
-          muscleGroup: exercise.muscleGroup,
-        );
+        final resolved = await _resolveCatalogExercise(exercise);
         if (resolved == null) {
           exercise.catalogId = identityUnchanged ? previous?.catalogId : null;
           continue;
@@ -137,13 +133,55 @@ class AiProgramDraftCommitService {
     }
   }
 
-  bool _sameExerciseIdentity(Exercise a, Exercise b) {
-    return a.name.trim().toLowerCase() == b.name.trim().toLowerCase() &&
-        a.muscleGroup == b.muscleGroup &&
-        a.equipment.trim().toLowerCase() == b.equipment.trim().toLowerCase() &&
-        a.movementPattern.trim().toLowerCase() ==
-            b.movementPattern.trim().toLowerCase();
+  Future<ExerciseCatalogEntry?> _resolveCatalogExercise(Exercise exercise) async {
+    final name = _normalize(exercise.name);
+    final context = await exerciseCatalogRetriever.retrieveForQuestion(
+      query: exercise.name,
+      limit: 20,
+    );
+    var exact = context.matches
+        .map((match) => match.entry)
+        .where((entry) => _normalize(entry.name) == name)
+        .toList();
+
+    if (exact.length == 1) return exact.single;
+    if (exact.length > 1) {
+      final equipment = _normalize(exercise.equipment);
+      if (equipment.isNotEmpty) {
+        final byEquipment = exact
+            .where(
+              (entry) =>
+                  _normalize(entry.equipment).contains(equipment) ||
+                  equipment.contains(_normalize(entry.equipment)),
+            )
+            .toList();
+        if (byEquipment.isNotEmpty) exact = byEquipment;
+      }
+      if (exercise.muscleGroup != MuscleGroup.unassigned) {
+        final byGroup = exact
+            .where((entry) => entry.muscleGroup == exercise.muscleGroup)
+            .toList();
+        if (byGroup.isNotEmpty) exact = byGroup;
+      }
+      return exact.length == 1 ? exact.single : null;
+    }
+
+    return exerciseCatalogRetriever.resolveExercise(
+      name: exercise.name,
+      equipment: exercise.equipment,
+      muscleGroup: exercise.muscleGroup,
+    );
   }
+
+  bool _sameExerciseIdentity(Exercise a, Exercise b) {
+    return _normalize(a.name) == _normalize(b.name) &&
+        a.muscleGroup == b.muscleGroup &&
+        _normalize(a.equipment) == _normalize(b.equipment) &&
+        _normalize(a.movementPattern) == _normalize(b.movementPattern);
+  }
+
+  String _normalize(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
   Future<bool> _wasDraftInstanceApplied(String instanceId) async {
     final prefs = await SharedPreferences.getInstance();
