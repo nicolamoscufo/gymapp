@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gymapp/ai_coach/ai_action_protocol.dart';
 import 'package:gymapp/ai_coach/ai_program_draft_commit_service.dart';
+import 'package:gymapp/ai_coach/ai_program_draft_instance.dart';
 import 'package:gymapp/app_data_store.dart';
 import 'package:gymapp/models/exercise.dart';
 import 'package:gymapp/models/schedule.dart';
@@ -38,8 +39,11 @@ void main() {
     );
   });
 
-  test('same approved new-program draft cannot be applied twice', () async {
-    final proposal = _newProgramProposal();
+  test('same persisted draft card cannot be applied twice', () async {
+    final proposal = InstancedAiProgramActionProposal.fromProposal(
+      _newProgramProposal(),
+      'draft-card-1',
+    );
     const service = AiProgramDraftCommitService();
 
     final first = await service.commit(proposal);
@@ -52,6 +56,29 @@ void main() {
     final bundle = await AppDataStore.loadBundle();
     expect(bundle.schedules, hasLength(2));
     expect(bundle.scheduleVersions, hasLength(2));
+  });
+
+  test('identical content from a different draft card is allowed', () async {
+    final firstProposal = InstancedAiProgramActionProposal.fromProposal(
+      _newProgramProposal(),
+      'draft-card-1',
+    );
+    final secondProposal = InstancedAiProgramActionProposal.fromProposal(
+      _newProgramProposal(),
+      'draft-card-2',
+    );
+    const service = AiProgramDraftCommitService();
+
+    final first = await service.commit(firstProposal);
+    final second = await service.commit(secondProposal);
+
+    expect(first.saved, isTrue);
+    expect(second.saved, isTrue);
+    expect(second.createdSchedules, 2);
+
+    final bundle = await AppDataStore.loadBundle();
+    expect(bundle.schedules, hasLength(4));
+    expect(bundle.scheduleVersions, hasLength(4));
   });
 
   test('stale modify draft is rejected after persisted schedule changes', () async {
