@@ -25,7 +25,7 @@ void main() {
     await service.generateChatResponse(
       history: const [],
       schedules: const [],
-      messages: const [
+      messages: [
         ChatMessage(
           role: 'user',
           content: 'Come eseguo il cable standing fly per il petto?',
@@ -51,7 +51,7 @@ void main() {
     await service.generateChatResponse(
       history: const [],
       schedules: const [],
-      messages: const [
+      messages: [
         ChatMessage(role: 'user', content: 'Come sto andando questa settimana?'),
       ],
     );
