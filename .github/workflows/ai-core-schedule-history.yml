@@ -20,6 +20,8 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Fix temporary patch quoting
+        run: python3 .github/scripts/fix_backup_patch_quotes.py
       - name: Apply backup and migration coverage
         run: python3 .github/scripts/add_schedule_history_backup_restore.py
       - name: Format
