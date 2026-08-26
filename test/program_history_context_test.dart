@@ -12,160 +12,171 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('program history preserves baseline, diffs, provenance and exact outcomes', () {
-    final schedule = _schedule();
-    final v1 = ScheduleVersion.capture(
-      schedule: schedule,
-      versionNumber: 1,
-      createdAt: DateTime(2026, 5, 1),
-      source: ScheduleVersionSource.user,
-      reason: 'Initial plan',
-    );
+  test(
+    'program history preserves baseline, diffs, provenance and exact outcomes',
+    () {
+      final schedule = _schedule();
+      final v1 = ScheduleVersion.capture(
+        schedule: schedule,
+        versionNumber: 1,
+        createdAt: DateTime(2026, 5, 1),
+        source: ScheduleVersionSource.user,
+        reason: 'Initial plan',
+      );
 
-    schedule.exercises.single
-      ..weight = 82.5
-      ..reps = 9;
-    final v2 = ScheduleVersion.capture(
-      schedule: schedule,
-      versionNumber: 2,
-      createdAt: DateTime(2026, 6, 1),
-      source: ScheduleVersionSource.aiCoach,
-      parentVersionId: v1.id,
-      reason: 'Approved progression',
-    );
+      schedule.exercises.single
+        ..weight = 82.5
+        ..reps = 9;
+      final v2 = ScheduleVersion.capture(
+        schedule: schedule,
+        versionNumber: 2,
+        createdAt: DateTime(2026, 6, 1),
+        source: ScheduleVersionSource.aiCoach,
+        parentVersionId: v1.id,
+        reason: 'Approved progression',
+      );
 
-    schedule.exercises.add(
-      Exercise(
-        id: 'fly',
-        name: 'Croci',
-        reps: 12,
-        set: 3,
-        notes: '',
-        weight: 20,
-        technique: IntensityTechnique.none,
-      ),
-    );
-    final v3 = ScheduleVersion.capture(
-      schedule: schedule,
-      versionNumber: 3,
-      createdAt: DateTime(2026, 7, 1),
-      source: ScheduleVersionSource.user,
-      parentVersionId: v2.id,
-      reason: 'Added accessory',
-    );
-    schedule
-      ..currentVersionId = v3.id
-      ..currentVersionNumber = 3;
+      schedule.exercises.add(
+        Exercise(
+          id: 'fly',
+          name: 'Croci',
+          reps: 12,
+          set: 3,
+          notes: '',
+          weight: 20,
+          technique: IntensityTechnique.none,
+        ),
+      );
+      final v3 = ScheduleVersion.capture(
+        schedule: schedule,
+        versionNumber: 3,
+        createdAt: DateTime(2026, 7, 1),
+        source: ScheduleVersionSource.user,
+        parentVersionId: v2.id,
+        reason: 'Added accessory',
+      );
+      schedule
+        ..currentVersionId = v3.id
+        ..currentVersionNumber = 3;
 
-    final deleted = Schedule(
-      id: 'old-plan',
-      title: 'Old Upper',
-      week: 1,
-      createdAt: DateTime(2026, 3, 1),
-      exercises: const [],
-    );
-    final oldVersion = ScheduleVersion.capture(
-      schedule: deleted,
-      versionNumber: 1,
-      createdAt: DateTime(2026, 3, 1),
-      source: ScheduleVersionSource.import,
-      reason: 'Imported old plan',
-    );
+      final deleted = Schedule(
+        id: 'old-plan',
+        title: 'Old Upper',
+        week: 1,
+        createdAt: DateTime(2026, 3, 1),
+        exercises: const [],
+      );
+      final oldVersion = ScheduleVersion.capture(
+        schedule: deleted,
+        versionNumber: 1,
+        createdAt: DateTime(2026, 3, 1),
+        source: ScheduleVersionSource.import,
+        reason: 'Imported old plan',
+      );
 
-    final history = [
-      _session('s1', DateTime(2026, 5, 10), versionId: v1.id, weight: 80),
-      _session('s2', DateTime(2026, 6, 10), versionId: v2.id, weight: 82.5),
-      _session('legacy', DateTime(2026, 4, 10), versionId: null, weight: 77.5),
-    ];
+      final history = [
+        _session('s1', DateTime(2026, 5, 10), versionId: v1.id, weight: 80),
+        _session('s2', DateTime(2026, 6, 10), versionId: v2.id, weight: 82.5),
+        _session(
+          'legacy',
+          DateTime(2026, 4, 10),
+          versionId: null,
+          weight: 77.5,
+        ),
+      ];
 
-    final context = buildProgramHistoryContext(
-      scheduleVersions: [v1, v2, v3, oldVersion],
-      history: history,
-      schedules: [schedule],
-    );
+      final context = buildProgramHistoryContext(
+        scheduleVersions: [v1, v2, v3, oldVersion],
+        history: history,
+        schedules: [schedule],
+      );
 
-    final coverage = Map<String, dynamic>.from(context['coverage'] as Map);
-    expect(coverage['version_count'], 4);
-    expect(coverage['exactly_linked_workouts'], 2);
-    expect(coverage['unresolved_legacy_workouts'], 1);
-    expect(coverage['exact_link_coverage'], closeTo(2 / 3, 0.0001));
+      final coverage = Map<String, dynamic>.from(context['coverage'] as Map);
+      expect(coverage['version_count'], 4);
+      expect(coverage['exactly_linked_workouts'], 2);
+      expect(coverage['unresolved_legacy_workouts'], 1);
+      expect(coverage['exact_link_coverage'], closeTo(2 / 3, 0.0001));
 
-    final programs = (context['programs'] as List)
-        .map((entry) => Map<String, dynamic>.from(entry as Map))
-        .toList();
-    expect(programs, hasLength(2));
-    final push = programs.singleWhere((entry) => entry['schedule_id'] == 'push');
-    final versions = (push['versions'] as List)
-        .map((entry) => Map<String, dynamic>.from(entry as Map))
-        .toList();
-    expect(versions, hasLength(3));
-    expect(versions.first, contains('baseline'));
-    expect(versions[1]['source'], 'aiCoach');
-    expect(versions[1]['reason'], 'Approved progression');
+      final programs = (context['programs'] as List)
+          .map((entry) => Map<String, dynamic>.from(entry as Map))
+          .toList();
+      expect(programs, hasLength(2));
+      final push = programs.singleWhere(
+        (entry) => entry['schedule_id'] == 'push',
+      );
+      final versions = (push['versions'] as List)
+          .map((entry) => Map<String, dynamic>.from(entry as Map))
+          .toList();
+      expect(versions, hasLength(3));
+      expect(versions.first, contains('baseline'));
+      expect(versions[1]['source'], 'aiCoach');
+      expect(versions[1]['reason'], 'Approved progression');
 
-    final v2Diff = Map<String, dynamic>.from(
-      versions[1]['changes_from_previous'] as Map,
-    );
-    final exerciseChanges = (v2Diff['exercises'] as List)
-        .map((entry) => Map<String, dynamic>.from(entry as Map))
-        .toList();
-    final benchChange = exerciseChanges.singleWhere(
-      (entry) => entry['exercise_id'] == 'bench',
-    );
-    final fields = (benchChange['fields'] as List)
-        .map((entry) => Map<String, dynamic>.from(entry as Map))
-        .toList();
-    expect(
-      fields.any(
-        (entry) => entry['field'] == 'weight' && entry['to'] == 82.5,
-      ),
-      isTrue,
-    );
-    expect(
-      fields.any((entry) => entry['field'] == 'reps' && entry['to'] == 9),
-      isTrue,
-    );
+      final v2Diff = Map<String, dynamic>.from(
+        versions[1]['changes_from_previous'] as Map,
+      );
+      final exerciseChanges = (v2Diff['exercises'] as List)
+          .map((entry) => Map<String, dynamic>.from(entry as Map))
+          .toList();
+      final benchChange = exerciseChanges.singleWhere(
+        (entry) => entry['exercise_id'] == 'bench',
+      );
+      final fields = (benchChange['fields'] as List)
+          .map((entry) => Map<String, dynamic>.from(entry as Map))
+          .toList();
+      expect(
+        fields.any(
+          (entry) => entry['field'] == 'weight' && entry['to'] == 82.5,
+        ),
+        isTrue,
+      );
+      expect(
+        fields.any((entry) => entry['field'] == 'reps' && entry['to'] == 9),
+        isTrue,
+      );
 
-    final v3Diff = Map<String, dynamic>.from(
-      versions[2]['changes_from_previous'] as Map,
-    );
-    expect(
-      (v3Diff['exercises'] as List).any(
-        (entry) =>
-            (entry as Map)['type'] == 'added' && entry['exercise_id'] == 'fly',
-      ),
-      isTrue,
-    );
+      final v3Diff = Map<String, dynamic>.from(
+        versions[2]['changes_from_previous'] as Map,
+      );
+      expect(
+        (v3Diff['exercises'] as List).any(
+          (entry) =>
+              (entry as Map)['type'] == 'added' &&
+              entry['exercise_id'] == 'fly',
+        ),
+        isTrue,
+      );
 
-    final v1Performance = Map<String, dynamic>.from(
-      versions[0]['performance'] as Map,
-    );
-    final v2Performance = Map<String, dynamic>.from(
-      versions[1]['performance'] as Map,
-    );
-    final v3Performance = Map<String, dynamic>.from(
-      versions[2]['performance'] as Map,
-    );
-    expect(v1Performance['session_count'], 1);
-    expect(v2Performance['session_count'], 1);
-    expect(v3Performance['session_count'], 0);
-    expect(v1Performance['total_volume'], 80 * 8);
-    expect(v2Performance['total_volume'], 82.5 * 8);
+      final v1Performance = Map<String, dynamic>.from(
+        versions[0]['performance'] as Map,
+      );
+      final v2Performance = Map<String, dynamic>.from(
+        versions[1]['performance'] as Map,
+      );
+      final v3Performance = Map<String, dynamic>.from(
+        versions[2]['performance'] as Map,
+      );
+      expect(v1Performance['session_count'], 1);
+      expect(v2Performance['session_count'], 1);
+      expect(v3Performance['session_count'], 0);
+      expect(v1Performance['total_volume'], 80 * 8);
+      expect(v2Performance['total_volume'], 82.5 * 8);
 
-    final unresolved = Map<String, dynamic>.from(
-      context['unresolved_legacy'] as Map,
-    );
-    expect(unresolved['count'], 1);
-    expect(
-      (unresolved['by_schedule'] as List).single,
-      containsPair('sessions', 1),
-    );
+      final unresolved = Map<String, dynamic>.from(
+        context['unresolved_legacy'] as Map,
+      );
+      expect(unresolved['count'], 1);
+      expect(
+        (unresolved['by_schedule'] as List).single,
+        containsPair('sessions', 1),
+      );
 
-    final oldProgram = programs.singleWhere(
-      (entry) => entry['schedule_id'] == 'old-plan',
-    );
-    expect(oldProgram['is_present_in_current_plans'], isFalse);
-  });
+      final oldProgram = programs.singleWhere(
+        (entry) => entry['schedule_id'] == 'old-plan',
+      );
+      expect(oldProgram['is_present_in_current_plans'], isFalse);
+    },
+  );
 
   test('recent detail stays bounded while program history spans all exact sessions', () {
     final schedule = _schedule();
@@ -252,12 +263,7 @@ WorkoutSession _session(
       muscleGroup: MuscleGroup.chest,
       technique: IntensityTechnique.none,
       sets: [
-        ExerciseSet(
-          id: 'set-$id',
-          weight: weight,
-          reps: 8,
-          isCompleted: true,
-        ),
+        ExerciseSet(id: 'set-$id', weight: weight, reps: 8, isCompleted: true),
       ],
     ),
   ],

@@ -40,17 +40,18 @@ Map<String, dynamic> buildProgramHistoryContext({
   final programs = <Map<String, dynamic>>[];
 
   for (final scheduleId in scheduleIds) {
-    final versions = versionsBySchedule[scheduleId]!
-      ..sort(_compareVersions);
+    final versions = versionsBySchedule[scheduleId]!..sort(_compareVersions);
     final current = currentById[scheduleId];
     final latest = versions.last;
-    final title = _stringValue(latest.snapshot['title']) ?? current?.title ?? '';
+    final title =
+        _stringValue(latest.snapshot['title']) ?? current?.title ?? '';
     final versionEntries = <Map<String, dynamic>>[];
 
     for (var index = 0; index < versions.length; index += 1) {
       final version = versions[index];
       final previous = index == 0 ? null : versions[index - 1];
-      final linkedSessions = sessionsByVersion[version.id] ?? const <WorkoutSession>[];
+      final linkedSessions =
+          sessionsByVersion[version.id] ?? const <WorkoutSession>[];
       versionEntries.add({
         'version_id': version.id,
         'version_number': version.versionNumber,
@@ -90,8 +91,7 @@ Map<String, dynamic> buildProgramHistoryContext({
       'do_not_infer_legacy_version_links': true,
       'version_performance_uses_exact_links_only': true,
       'timeline_is_deterministic': true,
-      'representation':
-          'first version is a baseline; later versions are diffs from the previous stored version',
+      'representation': 'first version is a baseline; later versions are diffs from the previous stored version',
     },
     'coverage': {
       'program_count': programs.length,
@@ -152,8 +152,10 @@ Map<String, dynamic> _snapshotDiff(
 
   final previousExercises = _exerciseMap(previous['exercises']);
   final currentExercises = _exerciseMap(current['exercises']);
-  final ids = <String>{...previousExercises.keys, ...currentExercises.keys}.toList()
-    ..sort();
+  final ids = <String>{
+    ...previousExercises.keys,
+    ...currentExercises.keys,
+  }.toList()..sort();
   final exerciseChanges = <Map<String, dynamic>>[];
 
   for (final id in ids) {
@@ -237,7 +239,8 @@ Map<String, dynamic> _performanceSummary(List<WorkoutSession> sessions) {
     };
   }
 
-  final sorted = [...sessions]..sort((a, b) => a.startTime.compareTo(b.startTime));
+  final sorted = [...sessions]
+    ..sort((a, b) => a.startTime.compareTo(b.startTime));
   var completedWorkSets = 0;
   var totalVolume = 0.0;
   final outcomes = <String, _ExerciseOutcomeAccumulator>{};
@@ -300,7 +303,8 @@ Map<String, dynamic> _unresolvedSummary(List<WorkoutSession> sessions) {
       'by_schedule': <Map<String, dynamic>>[],
     };
   }
-  final sorted = [...sessions]..sort((a, b) => a.startTime.compareTo(b.startTime));
+  final sorted = [...sessions]
+    ..sort((a, b) => a.startTime.compareTo(b.startTime));
   final counts = <String, int>{};
   for (final session in sorted) {
     final key = session.scheduleTitle.trim().isEmpty

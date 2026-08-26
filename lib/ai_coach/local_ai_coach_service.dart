@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../models/body_log.dart';
 import '../models/schedule.dart';
+import '../models/schedule_version.dart';
 import '../models/workout.dart';
 import 'ai_coach_memory.dart';
 import 'ai_coach_models.dart';
@@ -16,6 +17,9 @@ You are FitFlow AI Coach, an on-device personal training assistant. Your role is
 
 Guidelines:
 - Use the provided training context to give personalized advice.
+- Treat program_history as a deterministic longitudinal record: exact schedule_version_id links are authoritative.
+- Never assign a workout with a null schedule_version_id to a historical version by guess, title similarity, date proximity, or exercise similarity.
+- When comparing program changes with later performance, distinguish exact linked evidence from unresolved legacy history and state uncertainty when coverage is incomplete.
 - Be supportive but honest - celebrate wins and give constructive feedback.
 - Never invent workout data, loads, reps, symptoms, or medical diagnoses.
 - When discussing exercises or technique, suggest consulting a professional for pain or injuries.
@@ -43,6 +47,7 @@ class LocalAiCoachService {
   Future<WorkoutRecap> generateWorkoutRecap({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -55,6 +60,7 @@ class LocalAiCoachService {
     final context = contextBuilder.latestWorkout(
       history: history,
       schedules: schedules,
+      scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
@@ -69,6 +75,7 @@ class LocalAiCoachService {
   Future<WeeklyTrainingReport> generateWeeklyReport({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -81,6 +88,7 @@ class LocalAiCoachService {
     final context = contextBuilder.weekly(
       history: history,
       schedules: schedules,
+      scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
@@ -95,6 +103,7 @@ class LocalAiCoachService {
   Future<WeakPointAnalysis> analyzeWeakPoints({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -107,6 +116,7 @@ class LocalAiCoachService {
     final context = contextBuilder.recent(
       history: history,
       schedules: schedules,
+      scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
@@ -121,6 +131,7 @@ class LocalAiCoachService {
   Future<NotesSummary> summarizeTrainingNotes({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -140,6 +151,7 @@ class LocalAiCoachService {
     final context = contextBuilder.notes(
       history: history,
       schedules: schedules,
+      scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
@@ -154,6 +166,7 @@ class LocalAiCoachService {
   Future<SuggestedAdjustmentReport> suggestWorkoutAdjustments({
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -166,6 +179,7 @@ class LocalAiCoachService {
     final context = contextBuilder.recent(
       history: history,
       schedules: schedules,
+      scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
@@ -197,6 +211,7 @@ class LocalAiCoachService {
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
     required List<AiCoachImageInput> images,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -209,6 +224,7 @@ class LocalAiCoachService {
     final context = contextBuilder.recent(
       history: history,
       schedules: schedules,
+      scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
@@ -228,6 +244,7 @@ class LocalAiCoachService {
     required List<WorkoutSession> history,
     required List<Schedule> schedules,
     required List<ChatMessage> messages,
+    List<ScheduleVersion> scheduleVersions = const [],
     List<BodyLog> bodyLogs = const [],
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
@@ -237,6 +254,7 @@ class LocalAiCoachService {
     final context = contextBuilder.recent(
       history: history,
       schedules: schedules,
+      scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
       memory: memory,
@@ -254,6 +272,7 @@ $contextJson
 
 Answer naturally as a supportive but honest coach. Use the context to inform your answers.
 If focus_context exists, it is the authoritative scope for the current discussion: use the exact target session and deterministic debrief values first, then enrich the explanation with the broader training context. Do not contradict deterministic metrics or recommendations without explicitly explaining the evidence and uncertainty.
+Use program_history for longitudinal questions. Baselines plus ordered diffs reconstruct program evolution; version performance contains only workouts with exact version links. Never infer a missing legacy link.
 Never invent workout data, loads, reps, or medical information.
 Keep responses concise and practical.
 Answer in Italian unless the user writes in another language.''';
