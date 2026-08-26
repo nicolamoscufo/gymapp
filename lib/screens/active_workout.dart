@@ -94,6 +94,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   final Map<String, GlobalKey> _exerciseCardKeys = {};
   final Map<String, GlobalKey> _setRowKeys = {};
   final ScrollController _workoutScrollController = ScrollController();
+  String? _focusedExerciseId;
   String? _handoffSetId;
   bool _handoffPulseEmphasis = false;
   Timer? _handoffPulseTimer;
@@ -128,6 +129,123 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   GlobalKey _setRowKey(String setId) {
     return _setRowKeys.putIfAbsent(setId, GlobalKey.new);
+  }
+
+  String? _effectiveFocusedExerciseId() {
+    if (widget.editCompletedSession) return null;
+    final explicitId = _focusedExerciseId;
+    if (explicitId != null &&
+        session.exercises.any((exercise) => exercise.id == explicitId)) {
+      return explicitId;
+    }
+    for (final exercise in session.exercises) {
+      if (exercise.sets.any((set) => !set.isCompleted)) return exercise.id;
+    }
+    return session.exercises.isEmpty ? null : session.exercises.last.id;
+  }
+
+  bool _isExerciseComplete(WorkoutExercise exercise) =>
+      exercise.sets.isNotEmpty && exercise.sets.every((set) => set.isCompleted);
+
+  int _completedSetCount(WorkoutExercise exercise) =>
+      exercise.sets.where((set) => set.isCompleted).length;
+
+  void _focusExercise(String exerciseId, {bool scroll = true}) {
+    if (widget.editCompletedSession) {
+      if (scroll) _scrollToExercise(exerciseId);
+      return;
+    }
+    if (_focusedExerciseId != exerciseId) {
+      setState(() => _focusedExerciseId = exerciseId);
+    }
+    if (scroll) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToExercise(exerciseId);
+      });
+    }
+  }
+
+  Widget _compactExerciseCard({
+    required WorkoutExercise exercise,
+    required Color accent,
+    required ThemeData theme,
+    required ColorScheme colorScheme,
+  }) {
+    final completed = _completedSetCount(exercise);
+    final total = exercise.sets.length;
+    final isComplete = _isExerciseComplete(exercise);
+    final nextIndex = _currentSetIndexFor(exercise);
+    final nextSet = nextIndex >= 0 ? exercise.sets[nextIndex] : null;
+    final status = isComplete
+        ? 'Completato · $completed/$total set'
+        : nextSet == null
+        ? '$completed/$total set'
+        : '$completed/$total set · prossimo ${_formatWeight(nextSet.weight)} kg × ${nextSet.reps}';
+
+    return Card(
+      key: ValueKey('compact-exercise-${exercise.id}'),
+      margin: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      child: InkWell(
+        key: ValueKey('expand-exercise-${exercise.id}'),
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _focusExercise(exercise.id),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 8,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: isComplete ? colorScheme.tertiary : accent,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            exercise.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        if (isComplete)
+                          Icon(
+                            Icons.check_circle,
+                            size: 18,
+                            color: colorScheme.tertiary,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      status,
+                      key: ValueKey('compact-progress-${exercise.id}'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.expand_more, color: colorScheme.primary),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _scrollToSet(String exerciseId, String setId) async {
@@ -206,15 +324,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   void _scrollToExercise(String exerciseId) {
     final context = _exerciseCardKeys[exerciseId]?.currentContext;
-    if (context == null) {
-      return;
-    }
+    if (context == null) return;
     Scrollable.ensureVisible(
       context,
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
       alignment: 0.08,
     );
+  }
+
+  void _selectExerciseFromJumpBar(String exerciseId) {
+    _focusExercise(exerciseId);
   }
 
   String _formatDuration(int totalSeconds) {
@@ -836,6 +956,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _handoffClearTimer?.cancel();
     var pulseTransitions = 0;
     setState(() {
+      _focusedExerciseId = exercise.id;
       _handoffSetId = set.id;
       _handoffPulseEmphasis = true;
     });
@@ -1981,6 +2102,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       if (_shouldStartRestAfterSet(exercise, setIndex)) {
         _startRestForExercise(exercise);
       }
+      final focusTarget = _exerciseManager.nextSupersetMemberAfterSet(
+        exercise,
+        setIndex,
+      );
+      if (focusTarget != null && mounted) {
+        setState(() => _focusedExerciseId = focusTarget.id);
+      }
       _advanceSupersetNavigation(exercise, setIndex);
       if (prEvent != null) {
         _showPersonalRecordCelebration(prEvent);
@@ -2299,6 +2427,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
               .clamp(0.0, 1.0)
               .toDouble();
     final workoutReadiness = _workoutReadiness();
+    final focusedExerciseId = _effectiveFocusedExerciseId();
 
     return PopScope(
       canPop: false,
@@ -2495,7 +2624,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
             if (session.exercises.length > 1 && itemIndex == 0) {
               return _ExerciseJumpBar(
                 exercises: session.exercises,
-                onSelected: _scrollToExercise,
+                onSelected: _selectExerciseFromJumpBar,
               );
             }
 
@@ -2517,6 +2646,19 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                   exerciseName: exercise.name,
                   excludeSessionId: session.id,
                 );
+            final isFocusedExercise =
+                widget.editCompletedSession || focusedExerciseId == exercise.id;
+            if (!isFocusedExercise) {
+              return KeyedSubtree(
+                key: _exerciseCardKey(exercise.id),
+                child: _compactExerciseCard(
+                  exercise: exercise,
+                  accent: accent,
+                  theme: theme,
+                  colorScheme: colorScheme,
+                ),
+              );
+            }
 
             return Card(
               key: _exerciseCardKey(exercise.id),

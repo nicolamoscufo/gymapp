@@ -456,4 +456,92 @@ void main() {
     expect(find.byKey(ValueKey('current-set-${a2.id}')), findsOneWidget);
     expect(find.byKey(ValueKey('handoff-set-${b2.id}')), findsNothing);
   });
+
+  testWidgets('focus mode compacts non-active exercises and promotes on tap', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(1000, 1400);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final firstSet = ExerciseSet(weight: 70, reps: 8);
+    final secondSet = ExerciseSet(weight: 30, reps: 10);
+    final first = _exercise('Bench', sets: [firstSet])..restSeconds = 0;
+    final second = _exercise('Row', sets: [secondSet])..restSeconds = 0;
+    final session = _session([first, second]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActiveWorkoutScreen.resume(
+          resumedSession: session,
+          defaultRestSeconds: 90,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(ValueKey('compact-exercise-${first.id}')), findsNothing);
+    expect(
+      find.byKey(ValueKey('compact-exercise-${second.id}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('thumb-complete-${firstSet.id}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey('thumb-complete-${secondSet.id}')),
+      findsNothing,
+    );
+
+    await tester.tap(find.byKey(ValueKey('expand-exercise-${second.id}')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(ValueKey('compact-exercise-${first.id}')),
+      findsOneWidget,
+    );
+    expect(find.byKey(ValueKey('compact-exercise-${second.id}')), findsNothing);
+    expect(
+      find.byKey(ValueKey('thumb-complete-${secondSet.id}')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('focus mode follows smart exercise completion', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(1000, 1400);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final firstSet = ExerciseSet(weight: 70, reps: 8);
+    final secondSet = ExerciseSet(weight: 30, reps: 10);
+    final first = _exercise('Bench', sets: [firstSet])..restSeconds = 0;
+    final second = _exercise('Row', sets: [secondSet])..restSeconds = 0;
+    final session = _session([first, second]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActiveWorkoutScreen.resume(
+          resumedSession: session,
+          defaultRestSeconds: 90,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(ValueKey('thumb-complete-${firstSet.id}')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(ValueKey('compact-exercise-${first.id}')),
+      findsOneWidget,
+    );
+    expect(find.byKey(ValueKey('compact-exercise-${second.id}')), findsNothing);
+    expect(
+      find.byKey(ValueKey('thumb-complete-${secondSet.id}')),
+      findsOneWidget,
+    );
+  });
 }
