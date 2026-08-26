@@ -120,6 +120,7 @@ ProgressionScheme progressionSchemeFromJson(Object? value) {
 
 class Exercise {
   final String id;
+  String? catalogId;
   String name;
   int reps;
   int set;
@@ -141,6 +142,7 @@ class Exercise {
 
   Exercise({
     String? id,
+    this.catalogId,
     required this.name,
     required this.reps,
     required this.set,
@@ -173,6 +175,7 @@ class Exercise {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'catalogId': catalogId,
     'name': name,
     'reps': reps,
     'set': set,
@@ -207,6 +210,7 @@ class Exercise {
 
     return Exercise(
       id: json['id'] as String?,
+      catalogId: json['catalogId'] as String?,
       name: json['name'],
       reps: json['reps'],
       set: json['set'],
