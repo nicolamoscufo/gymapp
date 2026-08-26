@@ -93,6 +93,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   int _elapsedSeconds = 0;
   final Map<String, GlobalKey> _exerciseCardKeys = {};
   final Set<String> _exerciseIdsAddedToScheduleThisFinish = {};
+  int _prBannerGeneration = 0;
+  Timer? _prBannerTimer;
   final ActiveWorkoutSessionController _sessionPersistence =
       ActiveWorkoutSessionController();
   late final ActiveWorkoutRestController _restController =
@@ -1017,6 +1019,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _prBannerTimer?.cancel();
+    _prBannerTimer = null;
     _restController.dispose();
     _durationTimer?.cancel();
     if (!widget.editCompletedSession) {
@@ -1738,6 +1742,69 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     );
   }
 
+  void _showPersonalRecordCelebration(ActiveWorkoutPrEvent event) {
+    if (!mounted) return;
+
+    final generation = ++_prBannerGeneration;
+    final messenger = ScaffoldMessenger.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    _prBannerTimer?.cancel();
+    _prBannerTimer = null;
+    messenger.removeCurrentMaterialBanner();
+    HapticFeedback.mediumImpact();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        key: const ValueKey('live-pr-banner'),
+        backgroundColor: colorScheme.tertiaryContainer,
+        leading: Icon(Icons.emoji_events, color: colorScheme.tertiary),
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              event.headline,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 2),
+            Text(event.exerciseName),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: event.kinds
+                  .map(
+                    (kind) => Chip(
+                      key: ValueKey('live-pr-${kind.name}'),
+                      label: Text(kind.displayLabel),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('dismiss-live-pr'),
+            onPressed: () {
+              _prBannerGeneration++;
+              _prBannerTimer?.cancel();
+              _prBannerTimer = null;
+              messenger.hideCurrentMaterialBanner();
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+
+    _prBannerTimer = Timer(const Duration(seconds: 4), () {
+      _prBannerTimer = null;
+      if (!mounted || generation != _prBannerGeneration) return;
+      _prBannerGeneration++;
+      ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+    });
+  }
+
   void _toggleSetCompleted(
     WorkoutExercise exercise,
     ExerciseSet set,
@@ -1748,15 +1815,25 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
       willComplete = _setManager.toggleSetCompleted(set);
     });
     _saveCurrentSession();
+    final prEvent = willComplete
+        ? _workoutInsights.personalRecordEventFor(exercise, set, setIndex)
+        : null;
     if (willComplete && !widget.editCompletedSession) {
       if (_shouldStartRestAfterSet(exercise, setIndex)) {
         _startRestForExercise(exercise);
       }
       _advanceSupersetNavigation(exercise, setIndex);
+      if (prEvent != null) {
+        _showPersonalRecordCelebration(prEvent);
+      }
     }
 
     final delta = _setVolumeDelta(exercise, set, setIndex);
-    if (willComplete && delta != null && delta > 0 && mounted) {
+    if (willComplete &&
+        prEvent == null &&
+        delta != null &&
+        delta > 0 &&
+        mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(

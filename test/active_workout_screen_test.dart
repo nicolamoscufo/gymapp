@@ -178,4 +178,77 @@ void main() {
 
     expect(find.textContaining('Recupero 01:'), findsOneWidget);
   });
+  testWidgets(
+    'live PR banner celebrates structured records without duplicate volume snackbar',
+    (tester) async {
+      final historicalExercise = WorkoutExercise(
+        id: 'historical_bench',
+        name: 'Panca',
+        notes: '',
+        technique: IntensityTechnique.none,
+        sets: [
+          ExerciseSet(
+            id: 'historical_set',
+            weight: 80,
+            reps: 5,
+            isCompleted: true,
+          ),
+        ],
+      );
+      final historical = WorkoutSession(
+        id: 'historical_session',
+        scheduleTitle: 'Push',
+        startTime: DateTime(2026, 8, 20, 10),
+        endTime: DateTime(2026, 8, 20, 11),
+        exercises: [historicalExercise],
+      );
+      final current = WorkoutSession(
+        id: 'current_session',
+        scheduleTitle: 'Push',
+        startTime: DateTime(2026, 8, 26, 10),
+        endTime: DateTime(2026, 8, 26, 10),
+        exercises: [
+          WorkoutExercise(
+            id: 'current_bench',
+            name: 'Panca',
+            notes: '',
+            technique: IntensityTechnique.none,
+            restSeconds: 90,
+            sets: [ExerciseSet(id: 'current_pr_set', weight: 82.5, reps: 6)],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ActiveWorkoutScreen.resume(
+            resumedSession: current,
+            history: [historical],
+            defaultRestSeconds: 90,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final complete = find.byKey(const ValueKey('complete-current_pr_set'));
+      await tester.ensureVisible(complete);
+      await tester.tap(complete);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byKey(const ValueKey('live-pr-banner')), findsOneWidget);
+      expect(find.text('5 nuovi record personali!'), findsOneWidget);
+      expect(find.text('Panca'), findsWidgets);
+      expect(find.byKey(const ValueKey('live-pr-weight')), findsOneWidget);
+      expect(find.byKey(const ValueKey('live-pr-reps')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('live-pr-estimatedOneRepMax')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('volume set migliorato'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    },
+  );
 }
