@@ -7,6 +7,7 @@ class AiProgramDraftCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onSave;
   final bool isSaving;
+  final bool isSaved;
 
   const AiProgramDraftCard({
     super.key,
@@ -14,6 +15,7 @@ class AiProgramDraftCard extends StatelessWidget {
     required this.onEdit,
     required this.onSave,
     this.isSaving = false,
+    this.isSaved = false,
   });
 
   @override
@@ -35,14 +37,18 @@ class AiProgramDraftCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.auto_awesome, color: colorScheme.primary, size: 20),
+                Icon(
+                  isSaved ? Icons.check_circle : Icons.auto_awesome,
+                  color: isSaved ? colorScheme.primary : colorScheme.primary,
+                  size: 20,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        actionLabel,
+                        isSaved ? '$actionLabel · Salvata' : actionLabel,
                         style: theme.textTheme.labelLarge?.copyWith(
                           color: colorScheme.primary,
                           fontWeight: FontWeight.w800,
@@ -79,7 +85,7 @@ class AiProgramDraftCard extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton.icon(
                     key: const ValueKey('edit-ai-program-draft'),
-                    onPressed: isSaving ? null : onEdit,
+                    onPressed: isSaving || isSaved ? null : onEdit,
                     icon: const Icon(Icons.edit_outlined),
                     label: const Text('Modifica'),
                   ),
@@ -88,14 +94,20 @@ class AiProgramDraftCard extends StatelessWidget {
                 Expanded(
                   child: FilledButton.icon(
                     key: const ValueKey('save-ai-program-draft'),
-                    onPressed: isSaving ? null : onSave,
+                    onPressed: isSaving || isSaved ? null : onSave,
                     icon: isSaving
                         ? const SizedBox.square(
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.save_outlined),
-                    label: Text(isSaving ? 'Salvataggio…' : 'Salva'),
+                        : Icon(
+                            isSaved
+                                ? Icons.check_circle_outline
+                                : Icons.save_outlined,
+                          ),
+                    label: Text(
+                      isSaved ? 'Salvato' : isSaving ? 'Salvataggio…' : 'Salva',
+                    ),
                   ),
                 ),
               ],
@@ -104,14 +116,18 @@ class AiProgramDraftCard extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  Icons.verified_user_outlined,
+                  isSaved
+                      ? Icons.history_toggle_off_outlined
+                      : Icons.verified_user_outlined,
                   size: 14,
                   color: colorScheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: 5),
                 Expanded(
                   child: Text(
-                    'È una bozza: nessun dato viene modificato senza Salva.',
+                    isSaved
+                        ? 'Questa proposta è già stata applicata e registrata nello storico versioni.'
+                        : 'È una bozza: nessun dato viene modificato senza Salva.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
