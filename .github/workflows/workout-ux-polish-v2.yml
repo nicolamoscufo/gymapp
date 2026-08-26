@@ -31,22 +31,12 @@ jobs:
           path = Path('lib/screens/active_workout.dart')
           text = path.read_text()
 
-          previous_method = """  void _applyPreviousSetValues(WorkoutExercise exercise, int setIndex) {
-            if (setIndex >= exercise.previousWeights.length ||
-                setIndex >= exercise.previousReps.length ||
-                setIndex >= exercise.sets.length) {
-              return;
-            }
-            setState(() {
-              exercise.sets[setIndex].weight = exercise.previousWeights[setIndex];
-              exercise.sets[setIndex].reps = exercise.previousReps[setIndex];
-            });
-            HapticFeedback.selectionClick();
-            _saveCurrentSession();
-          }
-          """
-          previous_method_replacement = previous_method + """
-          void _applyPreviousValuesForExercise(WorkoutExercise exercise) {
+          # Insert the one-tap previous-values helper immediately before RPE UI.
+          method_marker = "  Future<void> _pickRpe(ExerciseSet set) async {"
+          if "void _applyPreviousValuesForExercise" not in text:
+              if text.count(method_marker) != 1:
+                  raise SystemExit('previous-values insertion marker not found exactly once')
+              helper = """  void _applyPreviousValuesForExercise(WorkoutExercise exercise) {
             var changed = false;
             setState(() {
               changed = _setManager.applyPreviousValues(exercise);
@@ -55,23 +45,19 @@ jobs:
             HapticFeedback.selectionClick();
             _saveCurrentSession();
           }
-          """
-          if text.count(previous_method) != 1:
-              raise SystemExit('previous-values method anchor not found exactly once')
-          text = text.replace(previous_method, previous_method_replacement)
 
-          previous_ui = """                      if (exercise.previousWeights.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          _formatPreviousWeights(exercise.previousWeights),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
           """
-          previous_ui_replacement = """                      if (exercise.previousWeights.isNotEmpty) ...[
+              text = text.replace(method_marker, helper + method_marker)
+
+          # Replace the passive previous-performance line with an actionable row.
+          previous_start_marker = "                      if (exercise.previousWeights.isNotEmpty) ...["
+          previous_end_marker = "                      if (_progressionHintFor(exercise) != null) ...["
+          if "'use-previous-values-${exercise.id}'" not in text:
+              previous_start = text.find(previous_start_marker)
+              previous_end = text.find(previous_end_marker, previous_start)
+              if previous_start < 0 or previous_end < 0:
+                  raise SystemExit('previous-values UI markers not found')
+              previous_ui_replacement = """                      if (exercise.previousWeights.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         Row(
                           children: [
@@ -101,41 +87,27 @@ jobs:
                         ),
                       ],
           """
-          if text.count(previous_ui) != 1:
-              raise SystemExit('previous-values UI anchor not found exactly once')
-          text = text.replace(previous_ui, previous_ui_replacement)
+              text = (
+                  text[:previous_start]
+                  + previous_ui_replacement
+                  + text[previous_end:]
+              )
 
-          timer_field = """                          SizedBox(
+          # Replace the raw rest TextFormField with a stable field plus quick presets.
+          timer_start_marker = """                          SizedBox(
                             width: 96,
                             child: TextFormField(
                               key: ValueKey('rest-${exercise.id}'),
-                              initialValue: _restController
-                                  .configuredSecondsFor(exercise)
-                                  .toString(),
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              decoration: InputDecoration(
-                                labelText: 'sec',
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 10,
-                                ),
-                                border: compactInputBorder,
-                                enabledBorder: compactInputBorder,
-                                focusedBorder: compactInputBorder.copyWith(
-                                  borderSide: BorderSide(
-                                    color: colorScheme.primary,
-                                    width: 1.5,
-                                  ),
-                                ),
-                              ),
-                              onChanged: (value) =>
-                                  _updateExerciseRestSeconds(exercise, value),
-                            ),
-                          ),
           """
-          timer_field_replacement = """                          SizedBox(
+          timer_end_marker = """                          IconButton(
+                            tooltip: activeRestSeconds == null
+          """
+          if "'rest-preset-${exercise.id}'" not in text:
+              timer_start = text.find(timer_start_marker)
+              timer_end = text.find(timer_end_marker, timer_start)
+              if timer_start < 0 or timer_end < 0:
+                  raise SystemExit('timer UI markers not found')
+              timer_replacement = """                          SizedBox(
                             width: 88,
                             child: _StableSetTextField(
                               key: ValueKey('rest-${exercise.id}'),
@@ -183,9 +155,7 @@ jobs:
                                 .toList(),
                           ),
           """
-          if text.count(timer_field) != 1:
-              raise SystemExit('timer field anchor not found exactly once')
-          text = text.replace(timer_field, timer_field_replacement)
+              text = text[:timer_start] + timer_replacement + text[timer_end:]
 
           path.write_text(text)
           PY
