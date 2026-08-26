@@ -1,0 +1,44 @@
+name: Program Change Effectiveness
+
+on:
+  push:
+    branches:
+      - feature/ai-coach-program-change-effectiveness
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/ai-coach-program-change-effectiveness
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Apply effectiveness context patch
+        run: python3 .github/scripts/add_program_change_effectiveness_context.py
+      - name: Format
+        run: dart format lib/ai_coach/program_change_effectiveness.dart lib/ai_coach/training_context_builder.dart lib/ai_coach/local_ai_coach_service.dart test/program_change_effectiveness_test.dart
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Run focused tests
+        run: flutter test test/program_change_effectiveness_test.dart test/program_history_context_test.dart test/ai_coach_test.dart test/ai_coach_handoff_test.dart test/progress_ai_context_test.dart
+      - name: Analyze
+        run: flutter analyze
+      - name: Commit generated source changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/ai_coach/program_change_effectiveness.dart lib/ai_coach/training_context_builder.dart lib/ai_coach/local_ai_coach_service.dart test/program_change_effectiveness_test.dart
+          git commit -m "Integrate program change effectiveness with AI Coach"
+          git push origin HEAD:feature/ai-coach-program-change-effectiveness
