@@ -7,10 +7,10 @@ text = path.read_text()
 # state transition rather than the caller-owned ExerciseSet instance.
 text = text.replace('    expect(first.isCompleted, isTrue);\n', '', 1)
 
-# Give the details-row control enough room in the widget-test viewport.
+# Give the details-row control enough logical room in the widget-test viewport.
 marker = "  testWidgets('set details keeps type editing available outside quick controls', (\n    tester,\n  ) async {\n"
-replacement = marker + "    tester.view.physicalSize = const Size(1200, 1200);\n    addTearDown(tester.view.resetPhysicalSize);\n\n"
-if marker in text and 'tester.view.physicalSize = const Size(1200, 1200);' not in text:
+replacement = marker + "    tester.view.devicePixelRatio = 1.0;\n    tester.view.physicalSize = const Size(1200, 1200);\n    addTearDown(tester.view.resetDevicePixelRatio);\n    addTearDown(tester.view.resetPhysicalSize);\n\n"
+if marker in text and 'tester.view.devicePixelRatio = 1.0;' not in text:
     text = text.replace(marker, replacement, 1)
 
 old_tail = '''    await tester.tap(details);
