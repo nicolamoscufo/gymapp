@@ -76,6 +76,62 @@ ScheduleVersionReconciliation reconcileScheduleVersions({
   );
 }
 
+/// Combines two historical program timelines without losing stable version IDs.
+///
+/// Exact version IDs already present locally win over an imported duplicate.
+/// For every schedule the surviving versions are ordered chronologically and
+/// re-numbered into one deterministic chain. IDs are intentionally preserved:
+/// completed workouts may already point at them through `scheduleVersionId`.
+List<ScheduleVersion> mergeScheduleVersionHistories({
+  required List<ScheduleVersion> current,
+  required List<ScheduleVersion> incoming,
+}) {
+  final byId = <String, ScheduleVersion>{};
+  for (final version in current) {
+    byId[version.id] = version;
+  }
+  for (final version in incoming) {
+    byId.putIfAbsent(version.id, () => version);
+  }
+
+  final grouped = <String, List<ScheduleVersion>>{};
+  for (final version in byId.values) {
+    grouped.putIfAbsent(version.scheduleId, () => []).add(version);
+  }
+
+  final merged = <ScheduleVersion>[];
+  final scheduleIds = grouped.keys.toList()..sort();
+  for (final scheduleId in scheduleIds) {
+    final versions = grouped[scheduleId]!
+      ..sort((a, b) {
+        final byDate = a.createdAt.compareTo(b.createdAt);
+        if (byDate != 0) return byDate;
+        final byNumber = a.versionNumber.compareTo(b.versionNumber);
+        if (byNumber != 0) return byNumber;
+        return a.id.compareTo(b.id);
+      });
+
+    String? parentVersionId;
+    for (var index = 0; index < versions.length; index += 1) {
+      final version = versions[index];
+      final normalized = ScheduleVersion(
+        id: version.id,
+        scheduleId: scheduleId,
+        versionNumber: index + 1,
+        createdAt: version.createdAt,
+        source: version.source,
+        parentVersionId: parentVersionId,
+        reason: version.reason,
+        snapshot: version.snapshot,
+      );
+      merged.add(normalized);
+      parentVersionId = normalized.id;
+    }
+  }
+
+  return List.unmodifiable(merged);
+}
+
 ScheduleVersion? latestScheduleVersion(
   Iterable<ScheduleVersion> versions,
   String scheduleId,
