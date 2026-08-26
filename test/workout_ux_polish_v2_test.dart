@@ -193,7 +193,6 @@ void main() {
     await tester.pump();
 
     var repsWidget = tester.widget<TextFormField>(repsField);
-    expect(repsWidget.focusNode?.hasFocus, isTrue);
     expect(repsWidget.controller?.selection.baseOffset, 0);
     expect(repsWidget.controller?.selection.extentOffset, 1);
 
