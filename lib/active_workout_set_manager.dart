@@ -50,10 +50,7 @@ class ActiveWorkoutSetManager {
     );
   }
 
-  double? recommendedBackoffWeightFor(
-    WorkoutExercise exercise,
-    int setIndex,
-  ) {
+  double? recommendedBackoffWeightFor(WorkoutExercise exercise, int setIndex) {
     final reduction = backoffReductionFor(exercise, setIndex);
     if (reduction == null) return null;
 
@@ -66,10 +63,7 @@ class ActiveWorkoutSetManager {
     );
   }
 
-  bool applyRecommendedBackoffWeight(
-    WorkoutExercise exercise,
-    int setIndex,
-  ) {
+  bool applyRecommendedBackoffWeight(WorkoutExercise exercise, int setIndex) {
     if (setIndex < 0 || setIndex >= exercise.sets.length) return false;
     final weight = recommendedBackoffWeightFor(exercise, setIndex);
     if (weight == null) return false;
@@ -138,9 +132,9 @@ class ActiveWorkoutSetManager {
     if (workSet == null) return const <ExerciseSet>[];
 
     return buildAdaptiveWarmupPlan(
-      workWeight: workSet.weight,
-      workReps: workSet.reps,
-    )
+          workWeight: workSet.weight,
+          workReps: workSet.reps,
+        )
         .map(
           (suggestion) => ExerciseSet(
             weight: suggestion.weight,
@@ -176,10 +170,7 @@ class ActiveWorkoutSetManager {
     );
   }
 
-  bool restoreRemovedSet(
-    WorkoutExercise exercise,
-    RemovedExerciseSet removal,
-  ) {
+  bool restoreRemovedSet(WorkoutExercise exercise, RemovedExerciseSet removal) {
     if (exercise.id != removal.exerciseId ||
         exercise.sets.contains(removal.set)) {
       return false;

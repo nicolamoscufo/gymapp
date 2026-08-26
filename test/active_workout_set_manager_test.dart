@@ -133,29 +133,32 @@ void main() {
     expect(warmups.map((set) => set.weight).toList(), [40, 60, 75, 87.5]);
   });
 
-  test('insert warmup replaces incomplete warmups but keeps completed ones', () {
-    final completedWarmup = ExerciseSet(
-      weight: 20,
-      reps: 8,
-      isWarmup: true,
-      isCompleted: true,
-    );
-    final staleWarmup = ExerciseSet(weight: 30, reps: 5, isWarmup: true);
-    final work = ExerciseSet(weight: 60, reps: 8);
-    final exercise = _exercise(
-      'Bench',
-      sets: [completedWarmup, staleWarmup, work],
-    );
-    final manager = ActiveWorkoutSetManager(session: _session([exercise]));
+  test(
+    'insert warmup replaces incomplete warmups but keeps completed ones',
+    () {
+      final completedWarmup = ExerciseSet(
+        weight: 20,
+        reps: 8,
+        isWarmup: true,
+        isCompleted: true,
+      );
+      final staleWarmup = ExerciseSet(weight: 30, reps: 5, isWarmup: true);
+      final work = ExerciseSet(weight: 60, reps: 8);
+      final exercise = _exercise(
+        'Bench',
+        sets: [completedWarmup, staleWarmup, work],
+      );
+      final manager = ActiveWorkoutSetManager(session: _session([exercise]));
 
-    final inserted = manager.insertWarmupPlan(exercise);
+      final inserted = manager.insertWarmupPlan(exercise);
 
-    expect(inserted, isNotEmpty);
-    expect(exercise.sets.contains(completedWarmup), isTrue);
-    expect(exercise.sets.contains(staleWarmup), isFalse);
-    expect(exercise.sets.contains(work), isTrue);
-    expect(exercise.sets.take(inserted.length).toList(), inserted);
-  });
+      expect(inserted, isNotEmpty);
+      expect(exercise.sets.contains(completedWarmup), isTrue);
+      expect(exercise.sets.contains(staleWarmup), isFalse);
+      expect(exercise.sets.contains(work), isTrue);
+      expect(exercise.sets.take(inserted.length).toList(), inserted);
+    },
+  );
 
   test('toggle set completion reports direction of the interaction', () {
     final set = ExerciseSet(weight: 50, reps: 10);

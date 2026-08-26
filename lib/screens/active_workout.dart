@@ -11,6 +11,7 @@ import '../active_workout_rest_controller.dart';
 import '../active_workout_schedule_sync.dart';
 import '../active_workout_session_builder.dart';
 import '../active_workout_session_controller.dart';
+import '../active_workout_set_manager.dart';
 import '../app_data_store.dart';
 import '../dialog_form.dart';
 import '../exercise_catalog.dart';
@@ -146,38 +147,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     return weights.map((weight) => '${_formatWeight(weight)} kg').join(', ');
   }
 
-  double? _backoffReductionFor(WorkoutExercise exercise, int setIndex) {
-    if (exercise.technique != IntensityTechnique.topsetBackoff ||
-        setIndex == 0 ||
-        exercise.sets.isEmpty) {
-      return null;
-    }
-
-    return top_set_backoff.backoffReductionPercentFor(
-      reductionPercent: exercise.backoffReductionPercent,
-    );
-  }
-
-  double? _recommendedBackoffWeightFor(WorkoutExercise exercise, int setIndex) {
-    final reduction = _backoffReductionFor(exercise, setIndex);
-    if (reduction == null) {
-      return null;
-    }
-
-    final topSetWeight = exercise.sets.first.weight;
-    if (topSetWeight <= 0) {
-      return null;
-    }
-
-    return top_set_backoff.recommendedBackoffWeight(
-      topSetWeight,
-      reductionPercent: reduction,
-    );
-  }
-
   String? _backoffHintFor(WorkoutExercise exercise, int setIndex) {
-    final reduction = _backoffReductionFor(exercise, setIndex);
-    final backoffWeight = _recommendedBackoffWeightFor(exercise, setIndex);
+    final reduction = _setManager.backoffReductionFor(exercise, setIndex);
+    final backoffWeight = _setManager.recommendedBackoffWeightFor(
+      exercise,
+      setIndex,
+    );
     if (reduction == null || backoffWeight == null) {
       return null;
     }
@@ -219,6 +194,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     session: session,
     sessionBuilder: _sessionBuilder,
   );
+
+  ActiveWorkoutSetManager get _setManager =>
+      ActiveWorkoutSetManager(session: session);
 
   double _setVolume(ExerciseSet set) => _workoutInsights.setVolume(set);
 
@@ -339,7 +317,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
     if (exercise.technique == IntensityTechnique.topsetBackoff &&
         setIndex == 0) {
-      final backoffWeight = _recommendedBackoffWeightFor(
+      final backoffWeight = _setManager.recommendedBackoffWeightFor(
         exercise,
         setIndex + 1,
       );
@@ -1524,62 +1502,18 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   void _addSet(WorkoutExercise exercise, {bool isWarmup = false}) {
-    setState(() {
-      if (exercise.sets.isNotEmpty) {
-        final last = exercise.sets.last;
-        exercise.sets.add(
-          ExerciseSet(weight: last.weight, reps: last.reps, isWarmup: isWarmup),
-        );
-      } else {
-        exercise.sets.add(ExerciseSet(weight: 0, reps: 10, isWarmup: isWarmup));
-      }
-    });
+    setState(() => _setManager.addSet(exercise, isWarmup: isWarmup));
     _saveCurrentSession();
   }
 
   void _copySet(WorkoutExercise exercise, int setIndex) {
-    if (setIndex < 0 || setIndex >= exercise.sets.length) {
-      return;
-    }
-    final source = exercise.sets[setIndex];
-    setState(() {
-      exercise.sets.insert(
-        setIndex + 1,
-        ExerciseSet(
-          weight: source.weight,
-          reps: source.reps,
-          type: source.type,
-          rpe: source.rpe,
-          rir: source.rir,
-          notes: source.notes,
-        ),
-      );
-    });
+    ExerciseSet? copy;
+    setState(() => copy = _setManager.copySet(exercise, setIndex));
+    if (copy == null) return;
     _saveCurrentSession();
   }
 
-  List<String> _sessionValidationProblems() {
-    final problems = <String>[];
-    for (final exercise in session.exercises) {
-      for (var index = 0; index < exercise.sets.length; index++) {
-        final set = exercise.sets[index];
-        final label = '${exercise.name} set ${index + 1}';
-        if (set.weight < 0 || set.weight > 1000) {
-          problems.add('$label: kg fuori range 0-1000.');
-        }
-        if (set.reps <= 0 || set.reps > 200) {
-          problems.add('$label: reps fuori range 1-200.');
-        }
-        if (set.rpe != null && (set.rpe! < 1 || set.rpe! > 10)) {
-          problems.add('$label: RPE fuori range 1-10.');
-        }
-        if (set.rir != null && (set.rir! < 0 || set.rir! > 10)) {
-          problems.add('$label: RIR fuori range 0-10.');
-        }
-      }
-    }
-    return problems;
-  }
+  List<String> _sessionValidationProblems() => _setManager.validationProblems();
 
   Future<void> _showValidationProblems(List<String> problems) async {
     await showDialog<void>(
@@ -1604,19 +1538,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   void _applyRecommendedBackoffWeight(WorkoutExercise exercise, int setIndex) {
-    if (setIndex < 0 || setIndex >= exercise.sets.length) {
-      return;
-    }
-
-    final recommendedWeight = _recommendedBackoffWeightFor(exercise, setIndex);
-    if (recommendedWeight == null) {
-      return;
-    }
-
-    final set = exercise.sets[setIndex];
+    var applied = false;
     setState(() {
-      set.weight = recommendedWeight;
+      applied = _setManager.applyRecommendedBackoffWeight(exercise, setIndex);
     });
+    if (!applied) return;
     _saveCurrentSession();
   }
 
@@ -1746,38 +1672,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     );
   }
 
-  List<ExerciseSet> _warmupSetsFor(WorkoutExercise exercise) {
-    ExerciseSet? workSet;
-    for (final set in exercise.sets) {
-      if (!set.isWarmup) {
-        workSet = set;
-        break;
-      }
-    }
-    if (workSet == null) {
-      return const <ExerciseSet>[];
-    }
-
-    return buildAdaptiveWarmupPlan(
-          workWeight: workSet.weight,
-          workReps: workSet.reps,
-        )
-        .map(
-          (suggestion) => ExerciseSet(
-            weight: suggestion.weight,
-            reps: suggestion.reps,
-            isWarmup: true,
-          ),
-        )
-        .toList();
-  }
+  List<ExerciseSet> _warmupSetsFor(WorkoutExercise exercise) =>
+      _setManager.warmupSetsFor(exercise);
 
   void _insertWarmupPlan(WorkoutExercise exercise) {
-    final warmups = _warmupSetsFor(exercise);
-    setState(() {
-      exercise.sets.removeWhere((set) => set.isWarmup && !set.isCompleted);
-      exercise.sets.insertAll(0, warmups);
-    });
+    setState(() => _setManager.insertWarmupPlan(exercise));
     _saveCurrentSession();
   }
 
@@ -1828,9 +1727,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     ExerciseSet set,
     int setIndex,
   ) {
-    final willComplete = !set.isCompleted;
+    var willComplete = false;
     setState(() {
-      set.isCompleted = !set.isCompleted;
+      willComplete = _setManager.toggleSetCompleted(set);
     });
     _saveCurrentSession();
     if (willComplete && !widget.editCompletedSession) {
@@ -1958,56 +1857,29 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   }
 
   void _removeSet(WorkoutExercise exercise, int index) {
-    if (index < 0 || index >= exercise.sets.length) return;
-
-    final deletedSet = exercise.sets[index];
+    RemovedExerciseSet? removal;
     setState(() {
-      exercise.sets.removeAt(index);
+      removal = _setManager.removeSet(exercise, index);
     });
-
+    if (removal == null) return;
     _saveCurrentSession();
 
     _showUndoSnackBar(
       message: 'Set eliminato.',
       onUndo: () {
-        if (!mounted || exercise.sets.contains(deletedSet)) return;
-
+        if (!mounted) return;
+        var restored = false;
         setState(() {
-          final restoreIndex = index > exercise.sets.length
-              ? exercise.sets.length
-              : index;
-          exercise.sets.insert(restoreIndex, deletedSet);
+          restored = _setManager.restoreRemovedSet(exercise, removal!);
         });
-        _saveCurrentSession();
+        if (restored) {
+          _saveCurrentSession();
+        }
       },
     );
   }
 
-  ({int completedSets, int totalSets, double volume, int exercises})
-  get _workoutStats {
-    int completed = 0;
-    int total = 0;
-    double vol = 0;
-
-    for (final exercise in session.exercises) {
-      for (final set in exercise.sets) {
-        total++;
-        if (set.isCompleted) {
-          completed++;
-          if (!set.isWarmup) {
-            vol += set.weight * set.reps;
-          }
-        }
-      }
-    }
-
-    return (
-      completedSets: completed,
-      totalSets: total,
-      volume: vol,
-      exercises: session.exercises.length,
-    );
-  }
+  ActiveWorkoutStats get _workoutStats => _setManager.workoutStats;
 
   Widget _summaryRow(String label, String value) {
     return Padding(
