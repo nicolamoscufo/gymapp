@@ -169,14 +169,18 @@ void main() {
     await tester.pump();
 
     expect(find.text('Prossimo: drop set, senza recupero.'), findsOneWidget);
-    expect(find.textContaining('Recupero 01:'), findsNothing);
+    expect(find.byKey(const ValueKey('rest-mode-drop_exercise')), findsNothing);
 
     final dropComplete = find.byKey(const ValueKey('complete-drop_set'));
     await tester.ensureVisible(dropComplete);
     await tester.tap(dropComplete);
     await tester.pump();
 
-    expect(find.textContaining('Recupero 01:'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('rest-mode-drop_exercise')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('rest-workout-complete')), findsOneWidget);
   });
   testWidgets(
     'live PR banner celebrates structured records without duplicate volume snackbar',
