@@ -24,6 +24,8 @@ jobs:
         run: python3 .github/scripts/fix_schedule_history_patch.py
       - name: Apply schedule history core
         run: python3 .github/scripts/add_schedule_history_core.py
+      - name: Fix test fixture
+        run: python3 .github/scripts/fix_schedule_history_test.py
       - name: Format
         run: dart format lib/models/schedule.dart lib/models/schedule_version.dart lib/models/workout.dart lib/schedule_version_history.dart lib/active_workout_session_builder.dart lib/local_sqlite_store.dart lib/app_data_store.dart lib/screens/ai_coach.dart lib/screens/session_summary.dart test/schedule_version_history_test.dart test/local_sqlite_store_test.dart
       - name: Install dependencies
