@@ -8,6 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../active_workout_exercise_manager.dart';
 import '../active_workout_insights.dart';
 import '../active_workout_rest_controller.dart';
+import '../active_workout_schedule_sync.dart';
 import '../active_workout_session_builder.dart';
 import '../active_workout_session_controller.dart';
 import '../app_data_store.dart';
@@ -213,6 +214,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         session: session,
         sessionBuilder: _sessionBuilder,
       );
+
+  ActiveWorkoutScheduleSync get _scheduleSync => ActiveWorkoutScheduleSync(
+    session: session,
+    sessionBuilder: _sessionBuilder,
+  );
 
   double _setVolume(ExerciseSet set) => _workoutInsights.setVolume(set);
 
@@ -718,8 +724,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     }
   }
 
-  double _deloadWeight(double weight) => _sessionBuilder.deloadWeight(weight);
-
   Exercise _exerciseFromCatalogEntry(ExerciseCatalogEntry entry) {
     return Exercise(
       name: entry.name,
@@ -741,10 +745,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   Exercise _copyExerciseTemplate(Exercise exercise) {
     return Exercise.fromJson(exercise.toJson());
-  }
-
-  Exercise _exerciseFromWorkoutExercise(WorkoutExercise exercise) {
-    return _sessionBuilder.exerciseFromWorkoutExercise(exercise);
   }
 
   void _notifyRestControllerChanged() {
@@ -960,57 +960,12 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     await _sessionPersistence.clear();
   }
 
-  Schedule? _storedScheduleForSession(List<Schedule> schedules) {
-    final scheduleId = session.scheduleId ?? widget.schedule?.id;
-    if (scheduleId != null) {
-      for (final schedule in schedules) {
-        if (schedule.id == scheduleId) {
-          return schedule;
-        }
-      }
-    }
-
-    final scheduleTitle = widget.schedule?.title ?? session.scheduleTitle;
-    for (final schedule in schedules) {
-      if (schedule.title == scheduleTitle) {
-        return schedule;
-      }
-    }
-    return null;
-  }
-
-  bool _workoutExerciseExistsInSchedule(
-    WorkoutExercise workoutExercise,
-    Schedule schedule,
-  ) {
-    for (final exercise in schedule.exercises) {
-      final sameId =
-          workoutExercise.sourceExerciseId != null &&
-          exercise.id == workoutExercise.sourceExerciseId;
-      final sameName =
-          exercise.name.trim().toLowerCase() ==
-          workoutExercise.name.trim().toLowerCase();
-      if (sameId || sameName) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  List<WorkoutExercise> _newExercisesForSchedule(Schedule schedule) {
-    return session.exercises
-        .where(
-          (exercise) => !_workoutExerciseExistsInSchedule(exercise, schedule),
-        )
-        .toList();
-  }
-
   Future<bool> _confirmSaveAddedExercises(Schedule? schedule) async {
     if (schedule == null || !mounted) {
       return false;
     }
 
-    final newExercises = _newExercisesForSchedule(schedule);
+    final newExercises = _scheduleSync.newExercisesForSchedule(schedule);
     if (newExercises.isEmpty) {
       return false;
     }
@@ -1045,101 +1000,35 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
   Future<void> _saveAddedExercisesToSchedule() async {
     final bundle = await AppDataStore.loadBundle();
-    final storedSchedule = _storedScheduleForSession(bundle.schedules);
-    if (storedSchedule == null) {
-      return;
-    }
+    final storedSchedule = _scheduleSync.storedScheduleForSession(
+      bundle.schedules,
+      liveSchedule: widget.schedule,
+    );
+    if (storedSchedule == null) return;
 
-    final newExercises = _newExercisesForSchedule(storedSchedule);
-    if (newExercises.isEmpty) {
-      return;
-    }
-
-    for (final workoutExercise in newExercises) {
-      final scheduleExercise = _exerciseFromWorkoutExercise(workoutExercise);
-      storedSchedule.exercises.add(scheduleExercise);
-      workoutExercise.sourceExerciseId = scheduleExercise.id;
-      _exerciseIdsAddedToScheduleThisFinish.add(scheduleExercise.id);
-    }
-
-    final liveSchedule = widget.schedule;
-    if (liveSchedule != null &&
-        (liveSchedule.id == storedSchedule.id ||
-            liveSchedule.title == storedSchedule.title)) {
-      liveSchedule.exercises
-        ..clear()
-        ..addAll(
-          storedSchedule.exercises.map(
-            (exercise) => Exercise.fromJson(exercise.toJson()),
-          ),
-        );
-    }
-
+    final addedIds = _scheduleSync.addNewExercisesToSchedule(storedSchedule);
+    if (addedIds.isEmpty) return;
+    _exerciseIdsAddedToScheduleThisFinish.addAll(addedIds);
+    _scheduleSync.syncLiveSchedule(
+      storedSchedule: storedSchedule,
+      liveSchedule: widget.schedule,
+    );
     await AppDataStore.saveSchedules(bundle.schedules);
   }
 
   Future<void> _applyProgressionToSchedule() async {
     final bundle = await AppDataStore.loadBundle();
-    final storedSchedule = _storedScheduleForSession(bundle.schedules);
-    if (storedSchedule == null) {
-      return;
-    }
+    final storedSchedule = _scheduleSync.storedScheduleForSession(
+      bundle.schedules,
+      liveSchedule: widget.schedule,
+    );
+    if (storedSchedule == null) return;
 
-    for (final completedExercise in session.exercises) {
-      if (_exerciseIdsAddedToScheduleThisFinish.contains(
-        completedExercise.sourceExerciseId,
-      )) {
-        continue;
-      }
-
-      Exercise? targetExercise;
-      for (final exercise in storedSchedule.exercises) {
-        final sameId =
-            completedExercise.sourceExerciseId != null &&
-            exercise.id == completedExercise.sourceExerciseId;
-        final sameName =
-            exercise.name.trim().toLowerCase() ==
-            completedExercise.name.trim().toLowerCase();
-        if (sameId || sameName) {
-          targetExercise = exercise;
-          break;
-        }
-      }
-      if (targetExercise == null) {
-        continue;
-      }
-
-      final decision = buildProgressionDecision(
-        exercise: completedExercise,
-        history: bundle.history,
-        excludeSessionId: session.id,
-      );
-
-      switch (decision.action) {
-        case ProgressionAction.manual:
-        case ProgressionAction.maintain:
-          break;
-        case ProgressionAction.increaseLoad:
-          targetExercise.weight += targetExercise.progressionKgStep;
-          if (targetExercise.progressionScheme ==
-                  ProgressionScheme.doubleProgression &&
-              targetExercise.targetMinReps != null) {
-            targetExercise.reps = targetExercise.targetMinReps!;
-          }
-        case ProgressionAction.increaseReps:
-          final nextReps =
-              targetExercise.reps + targetExercise.progressionRepStep;
-          targetExercise.reps = targetExercise.targetMaxReps == null
-              ? nextReps
-              : math.min(targetExercise.targetMaxReps!, nextReps);
-        case ProgressionAction.deload:
-          targetExercise.weight = _deloadWeight(targetExercise.weight);
-          if (targetExercise.targetMinReps != null) {
-            targetExercise.reps = targetExercise.targetMinReps!;
-          }
-      }
-    }
-
+    _scheduleSync.applyProgressionToSchedule(
+      storedSchedule: storedSchedule,
+      history: bundle.history,
+      skipSourceExerciseIds: _exerciseIdsAddedToScheduleThisFinish,
+    );
     await AppDataStore.saveSchedules(bundle.schedules);
   }
 
@@ -1167,7 +1056,10 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
     final bundle = await AppDataStore.loadBundle();
     final saveAddedExercises = await _confirmSaveAddedExercises(
-      _storedScheduleForSession(bundle.schedules),
+      _scheduleSync.storedScheduleForSession(
+        bundle.schedules,
+        liveSchedule: widget.schedule,
+      ),
     );
     if (saveAddedExercises) {
       await _saveAddedExercisesToSchedule();
