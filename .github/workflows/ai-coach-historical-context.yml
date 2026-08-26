@@ -22,6 +22,8 @@ jobs:
           cache: true
       - name: Fix historical context patch anchors
         run: python3 .github/scripts/fix_ai_coach_historical_context_patch.py
+      - name: Fix AI Coach service patch anchors
+        run: python3 .github/scripts/fix_ai_coach_service_patch.py
       - name: Apply historical Coach context
         run: python3 .github/scripts/add_ai_coach_historical_context.py
       - name: Format
