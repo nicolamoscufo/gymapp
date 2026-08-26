@@ -119,7 +119,7 @@ class AiProgramDraftCommitService {
 
         final resolved = await _resolveCatalogExercise(exercise);
         if (resolved == null) {
-          exercise.catalogId = identityUnchanged ? previous?.catalogId : null;
+          exercise.catalogId = identityUnchanged ? previous.catalogId : null;
           continue;
         }
 
