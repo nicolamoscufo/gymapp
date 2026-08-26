@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gymapp/app_data_store.dart';
@@ -134,9 +133,6 @@ void main() {
   testWidgets('summary reviews and applies the next-session plan on confirmation', (
     tester,
   ) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-
     final schedule = _schedule(weight: 80, reps: 8);
     await AppDataStore.saveSchedules([schedule]);
     final previous = _session(
