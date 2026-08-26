@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../ai_coach/ai_coach_handoff.dart';
 import '../models/exercise.dart';
 import '../models/workout.dart';
 import '../post_workout_debrief.dart';
 import '../workout_progression_analytics.dart';
+import 'ai_coach_entry.dart';
 
 class SessionSummaryScreen extends StatefulWidget {
   final WorkoutSession session;
@@ -231,6 +233,20 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
     }
   }
 
+  Future<void> _openCoachDebrief(PostWorkoutDebrief debrief) async {
+    final launchContext = AiCoachLaunchContext.postWorkout(
+      session: widget.session,
+      history: widget.previousHistory,
+      debrief: debrief,
+    );
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AiCoachEntryScreen(launchContext: launchContext),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final duration = widget.session.endTime.difference(
@@ -287,21 +303,36 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Chiudi'),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  key: const ValueKey('ask-coach-debrief'),
+                  onPressed: () => _openCoachDebrief(debrief),
+                  icon: const Icon(Icons.smart_toy_outlined),
+                  label: const Text('Chiedi al Coach'),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _isSharing ? null : _shareSummary,
-                  icon: const Icon(Icons.ios_share),
-                  label: const Text('Condividi'),
-                ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Chiudi'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _isSharing ? null : _shareSummary,
+                      icon: const Icon(Icons.ios_share),
+                      label: const Text('Condividi'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

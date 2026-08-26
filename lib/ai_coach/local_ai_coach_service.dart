@@ -232,6 +232,7 @@ class LocalAiCoachService {
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
     List<AiCoachImageInput> newImages = const [],
+    Map<String, dynamic>? focusContext,
   }) async {
     final context = contextBuilder.recent(
       history: history,
@@ -240,6 +241,9 @@ class LocalAiCoachService {
       profile: profile,
       memory: memory,
     );
+    if (focusContext != null && focusContext.isNotEmpty) {
+      context['focus_context'] = focusContext;
+    }
 
     final contextJson = jsonEncode(context);
     final systemPrompt =
@@ -249,6 +253,7 @@ Training context (JSON):
 $contextJson
 
 Answer naturally as a supportive but honest coach. Use the context to inform your answers.
+If focus_context exists, it is the authoritative scope for the current discussion: use the exact target session and deterministic debrief values first, then enrich the explanation with the broader training context. Do not contradict deterministic metrics or recommendations without explicitly explaining the evidence and uncertainty.
 Never invent workout data, loads, reps, or medical information.
 Keep responses concise and practical.
 Answer in Italian unless the user writes in another language.''';

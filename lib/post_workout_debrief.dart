@@ -13,6 +13,13 @@ class ExerciseDebrief {
   });
 
   String get nextStep => progressionActionLabel(progression);
+
+  Map<String, dynamic> toContextJson() => {
+    'exercise_id': exerciseId,
+    'exercise_name': exerciseName,
+    'next_step': nextStep,
+    'progression': progression.toJson(),
+  };
 }
 
 class PostWorkoutDebrief {
@@ -52,6 +59,21 @@ class PostWorkoutDebrief {
   int get deloadCount => exercises
       .where((entry) => entry.progression.action == ProgressionAction.deload)
       .length;
+
+  Map<String, dynamic> toContextJson() => {
+    'session_id': session.id,
+    'previous_comparable_session_id': previousComparableSession?.id,
+    'total_volume': totalVolume,
+    'volume_change_percent': volumeChangePercent,
+    'completed_work_sets': completedWorkSets,
+    'completed_work_set_delta': completedWorkSetDelta,
+    'density_kg_per_minute': densityKgPerMinute,
+    'density_change_percent': densityChangePercent,
+    'ready_to_progress_count': readyToProgressCount,
+    'maintain_count': maintainCount,
+    'deload_count': deloadCount,
+    'exercises': exercises.map((entry) => entry.toContextJson()).toList(),
+  };
 }
 
 PostWorkoutDebrief buildPostWorkoutDebrief({
