@@ -7,6 +7,7 @@ import '../models/exercise.dart';
 import '../models/workout.dart';
 import '../progress_analytics.dart';
 import '../progress_intelligence.dart';
+import 'exercise_detail.dart';
 import 'stats.dart';
 
 class ProgressCenterScreen extends StatelessWidget {
@@ -47,8 +48,16 @@ class ProgressCenterScreen extends StatelessWidget {
             child: TabBarView(
               children: [
                 StatsScreen(history: history, now: now),
-                _ProgressFocusTab(intelligence: intelligence),
-                _ExerciseProgressTab(analytics: analytics),
+                _ProgressFocusTab(
+                  intelligence: intelligence,
+                  history: history,
+                  now: now,
+                ),
+                _ExerciseProgressTab(
+                  analytics: analytics,
+                  history: history,
+                  now: now,
+                ),
                 _MuscleProgressTab(analytics: analytics),
                 _RecordsProgressTab(analytics: analytics),
               ],
@@ -62,8 +71,14 @@ class ProgressCenterScreen extends StatelessWidget {
 
 class _ProgressFocusTab extends StatelessWidget {
   final ProgressCenterIntelligence intelligence;
+  final List<WorkoutSession> history;
+  final DateTime? now;
 
-  const _ProgressFocusTab({required this.intelligence});
+  const _ProgressFocusTab({
+    required this.intelligence,
+    required this.history,
+    required this.now,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -149,7 +164,13 @@ class _ProgressFocusTab extends StatelessWidget {
             ),
           )
         else
-          ...attention.map((entry) => _ExerciseInsightTile(insight: entry)),
+          ...attention.map(
+            (entry) => _ExerciseInsightTile(
+              insight: entry,
+              onTap: () =>
+                  _openExerciseDrilldown(context, entry.name, history, now),
+            ),
+          ),
         const SizedBox(height: 20),
         Text(
           'Momentum esercizi',
@@ -172,7 +193,11 @@ class _ProgressFocusTab extends StatelessWidget {
           )
         else
           ...intelligence.exercises.map(
-            (entry) => _ExerciseInsightTile(insight: entry),
+            (entry) => _ExerciseInsightTile(
+              insight: entry,
+              onTap: () =>
+                  _openExerciseDrilldown(context, entry.name, history, now),
+            ),
           ),
         const SizedBox(height: 20),
         Text(
@@ -206,8 +231,9 @@ class _ProgressFocusTab extends StatelessWidget {
 
 class _ExerciseInsightTile extends StatelessWidget {
   final ExerciseProgressInsight insight;
+  final VoidCallback? onTap;
 
-  const _ExerciseInsightTile({required this.insight});
+  const _ExerciseInsightTile({required this.insight, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -238,7 +264,17 @@ class _ExerciseInsightTile extends StatelessWidget {
             recency,
           ].join(' · '),
         ),
-        trailing: _MomentumBadge(momentum: insight.momentum),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _MomentumBadge(momentum: insight.momentum),
+            if (onTap != null) ...[
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right),
+            ],
+          ],
+        ),
+        onTap: onTap,
       ),
     );
   }
@@ -323,10 +359,33 @@ IconData _momentumIcon(ProgressMomentum momentum) => switch (momentum) {
 String _signedPercent(double value) =>
     '${value > 0 ? '+' : ''}${value.toStringAsFixed(1)}%';
 
+void _openExerciseDrilldown(
+  BuildContext context,
+  String exerciseName,
+  List<WorkoutSession> history,
+  DateTime? now,
+) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => ExerciseDetailScreen(
+        exerciseName: exerciseName,
+        history: history,
+        now: now,
+      ),
+    ),
+  );
+}
+
 class _ExerciseProgressTab extends StatefulWidget {
   final ProgressAnalytics analytics;
+  final List<WorkoutSession> history;
+  final DateTime? now;
 
-  const _ExerciseProgressTab({required this.analytics});
+  const _ExerciseProgressTab({
+    required this.analytics,
+    required this.history,
+    required this.now,
+  });
 
   @override
   State<_ExerciseProgressTab> createState() => _ExerciseProgressTabState();
@@ -334,14 +393,13 @@ class _ExerciseProgressTab extends StatefulWidget {
 
 class _ExerciseProgressTabState extends State<_ExerciseProgressTab> {
   String _query = '';
-  String? _selectedName;
 
   @override
   Widget build(BuildContext context) {
     final exercises = widget.analytics.exercises.where((entry) {
       return entry.name.toLowerCase().contains(_query.trim().toLowerCase());
     }).toList();
-    final selected = _selectedExercise(exercises);
+    final selected = exercises.isEmpty ? null : exercises.first;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -370,7 +428,15 @@ class _ExerciseProgressTabState extends State<_ExerciseProgressTab> {
         ),
         if (selected != null) ...[
           const SizedBox(height: 16),
-          _ExerciseDetailCard(summary: selected),
+          _ExerciseDetailCard(
+            summary: selected,
+            onOpen: () => _openExerciseDrilldown(
+              context,
+              selected.name,
+              widget.history,
+              widget.now,
+            ),
+          ),
         ],
         const SizedBox(height: 16),
         Text(
@@ -389,8 +455,8 @@ class _ExerciseProgressTabState extends State<_ExerciseProgressTab> {
         else
           ...exercises.map(
             (entry) => Card(
+              key: ValueKey('progress-exercise-open-${entry.name}'),
               child: ListTile(
-                selected: selected?.name == entry.name,
                 leading: CircleAvatar(
                   child: Text(entry.muscleGroup.label.characters.first),
                 ),
@@ -401,10 +467,20 @@ class _ExerciseProgressTabState extends State<_ExerciseProgressTab> {
                 subtitle: Text(
                   '${entry.muscleGroup.label} · ${entry.sessionCount} sessioni · ${entry.completedSets} set',
                 ),
-                trailing: _TrendBadge(
-                  percent: entry.estimatedOneRepMaxTrendPercent,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _TrendBadge(percent: entry.estimatedOneRepMaxTrendPercent),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right),
+                  ],
                 ),
-                onTap: () => setState(() => _selectedName = entry.name),
+                onTap: () => _openExerciseDrilldown(
+                  context,
+                  entry.name,
+                  widget.history,
+                  widget.now,
+                ),
               ),
             ),
           ),
@@ -412,25 +488,13 @@ class _ExerciseProgressTabState extends State<_ExerciseProgressTab> {
       ],
     );
   }
-
-  ExerciseProgressSummary? _selectedExercise(
-    List<ExerciseProgressSummary> filtered,
-  ) {
-    if (filtered.isEmpty) return null;
-    final selectedName = _selectedName;
-    if (selectedName != null) {
-      for (final entry in filtered) {
-        if (entry.name == selectedName) return entry;
-      }
-    }
-    return filtered.first;
-  }
 }
 
 class _ExerciseDetailCard extends StatelessWidget {
   final ExerciseProgressSummary summary;
+  final VoidCallback onOpen;
 
-  const _ExerciseDetailCard({required this.summary});
+  const _ExerciseDetailCard({required this.summary, required this.onOpen});
 
   @override
   Widget build(BuildContext context) {
@@ -493,7 +557,17 @@ class _ExerciseDetailCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                key: ValueKey('exercise-open-drilldown-${summary.name}'),
+                onPressed: onOpen,
+                icon: const Icon(Icons.analytics_outlined),
+                label: const Text('Analisi completa'),
+              ),
+            ),
+            const SizedBox(height: 8),
             Text(
               'e1RM nel tempo',
               style: Theme.of(context).textTheme.titleSmall

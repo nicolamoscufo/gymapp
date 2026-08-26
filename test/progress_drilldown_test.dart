@@ -38,7 +38,9 @@ void main() {
     expect(drilldown.volume.changePercent, greaterThan(2));
     expect(drilldown.personalRecords, isNotEmpty);
     expect(
-      drilldown.personalRecords.every((record) => record.exerciseName == 'Panca'),
+      drilldown.personalRecords.every(
+        (record) => record.exerciseName == 'Panca',
+      ),
       isTrue,
     );
   });
@@ -62,7 +64,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('exercise-progress-drilldown')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('exercise-progress-drilldown')),
+      findsOneWidget,
+    );
     expect(find.text('Analisi del trend'), findsOneWidget);
     expect(find.text('In crescita'), findsOneWidget);
     expect(find.text('e1RM blocchi'), findsOneWidget);
