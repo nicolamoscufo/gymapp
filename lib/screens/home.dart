@@ -4054,7 +4054,7 @@ class _HomePageState extends State<HomePage> {
             index: _progressIndex,
             children: [
               _buildHistoryTab(),
-              ProgressCenterScreen(history: history),
+              ProgressCenterScreen(history: history, schedules: schedules),
               _buildBodyTab(),
             ],
           ),
