@@ -165,16 +165,19 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
 
     await tester.tap(find.byKey(const ValueKey('next-session-plan')));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 450));
 
     expect(find.text('Piano prossima seduta'), findsWidgets);
     expect(find.textContaining('80 kg → 82.5 kg'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('apply-next-session-plan')));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     final saved = (await AppDataStore.loadBundle()).schedules.single;
     expect(saved.exercises.single.weight, 82.5);
