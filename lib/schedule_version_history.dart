@@ -28,14 +28,13 @@ ScheduleVersionReconciliation reconcileScheduleVersions({
   var pointersChanged = false;
 
   for (final schedule in schedules) {
-    final scheduleVersions = versions
-        .where((version) => version.scheduleId == schedule.id)
-        .toList()
-      ..sort((a, b) {
-        final byNumber = a.versionNumber.compareTo(b.versionNumber);
-        if (byNumber != 0) return byNumber;
-        return a.createdAt.compareTo(b.createdAt);
-      });
+    final scheduleVersions =
+        versions.where((version) => version.scheduleId == schedule.id).toList()
+          ..sort((a, b) {
+            final byNumber = a.versionNumber.compareTo(b.versionNumber);
+            if (byNumber != 0) return byNumber;
+            return a.createdAt.compareTo(b.createdAt);
+          });
 
     final latest = scheduleVersions.isEmpty ? null : scheduleVersions.last;
     ScheduleVersion effective;

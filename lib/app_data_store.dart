@@ -7,10 +7,13 @@ import 'local_sqlite_store.dart';
 import 'models/body_log.dart';
 import 'models/exercise.dart';
 import 'models/schedule.dart';
+import 'models/schedule_version.dart';
 import 'models/workout.dart';
+import 'schedule_version_history.dart';
 
 class AppDataKeys {
   static const schedules = 'schedules';
+  static const scheduleVersions = 'schedule_versions';
   static const history = 'history';
   static const currentSession = 'current_session';
   static const bodyLogs = 'body_logs';
@@ -25,6 +28,7 @@ class AppDataKeys {
 class AppDataBundle {
   final List<Schedule> schedules;
   final List<WorkoutSession> history;
+  final List<ScheduleVersion> scheduleVersions;
   final WorkoutSession? currentSession;
   final List<BodyLog> bodyLogs;
   final List<Exercise> customExercises;
@@ -34,6 +38,7 @@ class AppDataBundle {
   const AppDataBundle({
     required this.schedules,
     required this.history,
+    this.scheduleVersions = const <ScheduleVersion>[],
     required this.currentSession,
     required this.bodyLogs,
     this.customExercises = const [],
@@ -132,6 +137,10 @@ class AppDataStore {
     final bundle = AppDataBundle(
       schedules: checkedList(AppDataKeys.schedules, Schedule.fromJson),
       history: checkedList(AppDataKeys.history, WorkoutSession.fromJson),
+      scheduleVersions: checkedList(
+        AppDataKeys.scheduleVersions,
+        ScheduleVersion.fromJson,
+      ),
       currentSession: current,
       bodyLogs: checkedList(AppDataKeys.bodyLogs, BodyLog.fromJson),
       customExercises: checkedList(
@@ -154,6 +163,13 @@ class AppDataStore {
         schedules: (backupMap['schedules'] as List? ?? [])
             .whereType<Map>()
             .map((entry) => Schedule.fromJson(Map<String, dynamic>.from(entry)))
+            .toList(),
+        scheduleVersions: (backupMap['scheduleVersions'] as List? ?? [])
+            .whereType<Map>()
+            .map(
+              (entry) =>
+                  ScheduleVersion.fromJson(Map<String, dynamic>.from(entry)),
+            )
             .toList(),
         history: (backupMap['history'] as List? ?? [])
             .whereType<Map>()
@@ -189,10 +205,15 @@ class AppDataStore {
     SharedPreferences prefs,
   ) async {
     final payload = {
-      'version': 5,
+      'version': 6,
       'auto': true,
       'exportedAt': DateTime.now().toIso8601String(),
       'schedules': _decodeJsonOr(prefs, AppDataKeys.schedules, []),
+      'scheduleVersions': _decodeJsonOr(
+        prefs,
+        AppDataKeys.scheduleVersions,
+        [],
+      ),
       'history': _decodeJsonOr(prefs, AppDataKeys.history, []),
       'bodyLogs': _decodeJsonOr(prefs, AppDataKeys.bodyLogs, []),
       'currentSession': prefs.getString(AppDataKeys.currentSession) == null
@@ -225,11 +246,14 @@ class AppDataStore {
     }
     final snapshot = await _sqliteStore.loadAll();
     final payload = {
-      'version': 5,
+      'version': 6,
       'auto': true,
       'storage': 'sqlite',
       'exportedAt': DateTime.now().toIso8601String(),
       'schedules': snapshot.schedules.map((e) => e.toJson()).toList(),
+      'scheduleVersions': snapshot.scheduleVersions
+          .map((e) => e.toJson())
+          .toList(),
       'history': snapshot.history.map((e) => e.toJson()).toList(),
       'bodyLogs': snapshot.bodyLogs.map((e) => e.toJson()).toList(),
       'currentSession': snapshot.currentSession?.toJson(),
@@ -257,6 +281,7 @@ class AppDataStore {
     await store.migrateLegacyData(
       schedules: legacy.schedules,
       history: legacy.history,
+      scheduleVersions: legacy.scheduleVersions,
       currentSession: legacy.currentSession,
       bodyLogs: legacy.bodyLogs,
       customExercises: legacy.customExercises,
@@ -269,39 +294,127 @@ class AppDataStore {
       try {
         await _ensureSqliteMigration();
         final data = await _sqliteStore.loadAll();
-        return AppDataBundle(
+        final bundle = AppDataBundle(
           schedules: data.schedules,
           history: data.history,
+          scheduleVersions: data.scheduleVersions,
           currentSession: data.currentSession,
           bodyLogs: data.bodyLogs,
           customExercises: data.customExercises,
           favoriteExerciseIds: data.favoriteExerciseIds,
           recoveredFromCorruption: false,
         );
+        return await _backfillScheduleHistory(bundle, persistSqlite: true);
       } catch (_) {
         final prefs = await SharedPreferences.getInstance();
-        return _bundleFromAutoBackup(prefs) ?? _loadLegacyBundle(prefs);
+        final fallback =
+            _bundleFromAutoBackup(prefs) ?? _loadLegacyBundle(prefs);
+        return _backfillScheduleHistory(fallback, persistSqlite: false);
       }
     }
-    return _loadLegacyBundle(await SharedPreferences.getInstance());
+    final prefs = await SharedPreferences.getInstance();
+    return _backfillScheduleHistory(
+      _loadLegacyBundle(prefs),
+      persistSqlite: false,
+    );
+  }
+
+  static Future<AppDataBundle> _backfillScheduleHistory(
+    AppDataBundle bundle, {
+    required bool persistSqlite,
+  }) async {
+    final reconciliation = reconcileScheduleVersions(
+      schedules: bundle.schedules,
+      existingVersions: bundle.scheduleVersions,
+      source: ScheduleVersionSource.migration,
+      reason: 'Initial historical snapshot',
+    );
+    if (!reconciliation.changed) return bundle;
+
+    if (persistSqlite) {
+      await _sqliteStore.replaceScheduleState(
+        bundle.schedules,
+        reconciliation.versions,
+      );
+      await _writeSqliteAutoBackup(force: true);
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        AppDataKeys.schedules,
+        jsonEncode(bundle.schedules.map((e) => e.toJson()).toList()),
+      );
+      await prefs.setString(
+        AppDataKeys.scheduleVersions,
+        jsonEncode(reconciliation.versions.map((e) => e.toJson()).toList()),
+      );
+      await _writeLegacyAutoBackupSnapshot(prefs);
+    }
+
+    return AppDataBundle(
+      schedules: bundle.schedules,
+      history: bundle.history,
+      scheduleVersions: reconciliation.versions,
+      currentSession: bundle.currentSession,
+      bodyLogs: bundle.bodyLogs,
+      customExercises: bundle.customExercises,
+      favoriteExerciseIds: bundle.favoriteExerciseIds,
+      recoveredFromCorruption: bundle.recoveredFromCorruption,
+    );
+  }
+
+  static List<ScheduleVersion> _legacyScheduleVersions(
+    SharedPreferences prefs,
+  ) {
+    return _safeLegacyList(
+      prefs,
+      AppDataKeys.scheduleVersions,
+      ScheduleVersion.fromJson,
+    );
+  }
+
+  static Future<List<ScheduleVersion>> loadScheduleVersions() async {
+    return (await loadBundle()).scheduleVersions;
   }
 
   static Future<List<WorkoutSession>> loadHistory() async =>
       (await loadBundle()).history;
 
-  static Future<void> saveSchedules(List<Schedule> schedules) async {
+  static Future<void> saveSchedules(
+    List<Schedule> schedules, {
+    ScheduleVersionSource source = ScheduleVersionSource.user,
+    String reason = '',
+  }) async {
     if (_sqliteSupported) {
       try {
         await _ensureSqliteMigration();
-        await _sqliteStore.replaceSchedules(schedules);
+        final reconciliation = reconcileScheduleVersions(
+          schedules: schedules,
+          existingVersions: await _sqliteStore.loadScheduleVersions(),
+          source: source,
+          reason: reason,
+        );
+        await _sqliteStore.replaceScheduleState(
+          schedules,
+          reconciliation.versions,
+        );
         await _writeSqliteAutoBackup(force: true);
         return;
       } catch (_) {}
     }
     final prefs = await SharedPreferences.getInstance();
+    final reconciliation = reconcileScheduleVersions(
+      schedules: schedules,
+      existingVersions: _legacyScheduleVersions(prefs),
+      source: source,
+      reason: reason,
+    );
     await prefs.setString(
       AppDataKeys.schedules,
       jsonEncode(schedules.map((e) => e.toJson()).toList()),
+    );
+    await prefs.setString(
+      AppDataKeys.scheduleVersions,
+      jsonEncode(reconciliation.versions.map((e) => e.toJson()).toList()),
     );
     await _writeLegacyAutoBackupSnapshot(prefs);
   }
@@ -489,10 +602,12 @@ class AppDataStore {
     final favoriteExerciseIds = (await loadFavoriteExerciseIds()).toList()
       ..sort();
     final customExercises = await loadCustomExercises();
+    final scheduleVersions = await loadScheduleVersions();
     return {
-      'version': 5,
+      'version': 6,
       'exportedAt': DateTime.now().toIso8601String(),
       'schedules': schedules.map((e) => e.toJson()).toList(),
+      'scheduleVersions': scheduleVersions.map((e) => e.toJson()).toList(),
       'history': history.map((e) => e.toJson()).toList(),
       'bodyLogs': bodyLogs.map((e) => e.toJson()).toList(),
       'currentSession': currentSession?.toJson(),
@@ -505,11 +620,25 @@ class AppDataStore {
     required List<Schedule> schedules,
     required List<WorkoutSession> history,
     required List<BodyLog> bodyLogs,
+    List<ScheduleVersion>? scheduleVersions,
+    ScheduleVersionSource source = ScheduleVersionSource.user,
+    String reason = '',
   }) async {
     if (_sqliteSupported) {
       try {
         await _ensureSqliteMigration();
-        await _sqliteStore.replaceSchedules(schedules);
+        final existing =
+            scheduleVersions ?? await _sqliteStore.loadScheduleVersions();
+        final reconciliation = reconcileScheduleVersions(
+          schedules: schedules,
+          existingVersions: existing,
+          source: source,
+          reason: reason,
+        );
+        await _sqliteStore.replaceScheduleState(
+          schedules,
+          reconciliation.versions,
+        );
         await _sqliteStore.replaceHistory(history);
         await _sqliteStore.replaceBodyLogs(bodyLogs);
         await _writeSqliteAutoBackup(force: true);
@@ -517,9 +646,19 @@ class AppDataStore {
       } catch (_) {}
     }
     final prefs = await SharedPreferences.getInstance();
+    final reconciliation = reconcileScheduleVersions(
+      schedules: schedules,
+      existingVersions: scheduleVersions ?? _legacyScheduleVersions(prefs),
+      source: source,
+      reason: reason,
+    );
     await prefs.setString(
       AppDataKeys.schedules,
       jsonEncode(schedules.map((e) => e.toJson()).toList()),
+    );
+    await prefs.setString(
+      AppDataKeys.scheduleVersions,
+      jsonEncode(reconciliation.versions.map((e) => e.toJson()).toList()),
     );
     await prefs.setString(
       AppDataKeys.history,

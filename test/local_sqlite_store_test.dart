@@ -3,6 +3,7 @@ import 'package:gymapp/local_sqlite_store.dart';
 import 'package:gymapp/models/body_log.dart';
 import 'package:gymapp/models/exercise.dart';
 import 'package:gymapp/models/schedule.dart';
+import 'package:gymapp/models/schedule_version.dart';
 import 'package:gymapp/models/workout.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -38,9 +39,18 @@ void main() {
         exercises: [planExercise],
         trainingWeekdays: [1, 4],
       );
+      final version = ScheduleVersion.capture(
+        schedule: schedule,
+        versionNumber: 1,
+        createdAt: DateTime(2026, 8, 1),
+        source: ScheduleVersionSource.migration,
+      );
+      schedule.currentVersionId = version.id;
+      schedule.currentVersionNumber = 1;
       final session = WorkoutSession(
         id: 'session-1',
         scheduleId: 'push',
+        scheduleVersionId: version.id,
         scheduleTitle: 'Push',
         startTime: DateTime(2026, 8, 25, 18),
         endTime: DateTime(2026, 8, 25, 19),
@@ -82,11 +92,15 @@ void main() {
         bodyLogs: [body],
         customExercises: [planExercise],
         favoriteExerciseIds: {'bench-plan'},
+        scheduleVersions: [version],
       );
 
       final data = await store.loadAll();
       expect(await store.migrationComplete, isTrue);
       expect(data.schedules.single.id, 'push');
+      expect(data.schedules.single.currentVersionId, version.id);
+      expect(data.scheduleVersions.single.id, version.id);
+      expect(data.history.single.scheduleVersionId, version.id);
       expect(data.schedules.single.exercises.single.restSeconds, 180);
       expect(data.history.single.exercises.single.sets.single.rir, 2);
       expect(data.currentSession?.id, 'current-session');

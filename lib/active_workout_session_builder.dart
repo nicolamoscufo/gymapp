@@ -269,6 +269,7 @@ class ActiveWorkoutSessionBuilder {
     final previousSession = latestSessionForSchedule(schedule);
     final session = WorkoutSession(
       scheduleId: schedule.id,
+      scheduleVersionId: schedule.currentVersionId,
       scheduleTitle: schedule.title,
       startTime: currentTime,
       endTime: currentTime,

@@ -58,7 +58,8 @@ class ScheduleVersion {
 
   bool matchesSchedule(Schedule schedule) {
     if (schedule.id != scheduleId) return false;
-    return jsonEncode(snapshot) == jsonEncode(canonicalScheduleSnapshot(schedule));
+    return jsonEncode(snapshot) ==
+        jsonEncode(canonicalScheduleSnapshot(schedule));
   }
 
   Schedule restoreSchedule() => Schedule.fromJson(_deepCopyMap(snapshot));
@@ -89,7 +90,8 @@ class ScheduleVersion {
       scheduleId: json['scheduleId'] as String,
       versionNumber: (json['versionNumber'] as num?)?.toInt() ?? 1,
       createdAt:
-          DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime(1970),
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime(1970),
       source: source,
       parentVersionId: json['parentVersionId'] as String?,
       reason: json['reason'] as String? ?? '',

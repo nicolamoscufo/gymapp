@@ -15,6 +15,8 @@ class Schedule {
   String programBlock;
   int cycleNumber;
   String cycleNotes;
+  String? currentVersionId;
+  int currentVersionNumber;
 
   Schedule({
     String? id,
@@ -30,13 +32,15 @@ class Schedule {
     this.programBlock = '',
     this.cycleNumber = 1,
     this.cycleNotes = '',
+    this.currentVersionId,
+    this.currentVersionNumber = 0,
   }) : trainingWeekdays = trainingWeekdays ?? [],
        id = id ?? newModelId('schedule');
 
   int currentWeek({DateTime? now}) {
-    final elapsedDays = _startOfWeek(
-      now ?? DateTime.now(),
-    ).difference(_startOfWeek(createdAt)).inDays;
+    final elapsedDays = _startOfWeek(now ?? DateTime.now())
+        .difference(_startOfWeek(createdAt))
+        .inDays;
     final elapsedWeeks = elapsedDays < 0 ? 0 : elapsedDays ~/ 7;
     final calculatedWeek = week + elapsedWeeks;
     return calculatedWeek < 1 ? 1 : calculatedWeek;
@@ -78,6 +82,8 @@ class Schedule {
     'programBlock': programBlock,
     'cycleNumber': cycleNumber,
     'cycleNotes': cycleNotes,
+    'currentVersionId': currentVersionId,
+    'currentVersionNumber': currentVersionNumber,
   };
 
   factory Schedule.fromJson(Map<String, dynamic> json) => Schedule(
@@ -102,6 +108,8 @@ class Schedule {
     programBlock: json['programBlock'] as String? ?? '',
     cycleNumber: json['cycleNumber'] as int? ?? 1,
     cycleNotes: json['cycleNotes'] as String? ?? '',
+    currentVersionId: json['currentVersionId'] as String?,
+    currentVersionNumber: (json['currentVersionNumber'] as num?)?.toInt() ?? 0,
   );
 }
 
