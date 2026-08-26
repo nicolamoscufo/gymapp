@@ -20,20 +20,14 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Fix patch quoting
-        run: python3 .github/scripts/fix_schedule_history_patch.py
-      - name: Apply schedule history core
-        run: python3 .github/scripts/add_schedule_history_core.py
-      - name: Fix test fixture
-        run: python3 .github/scripts/fix_schedule_history_test.py
-      - name: Fix analyzer lint
-        run: python3 .github/scripts/fix_schedule_history_lint.py
+      - name: Apply backup and migration coverage
+        run: python3 .github/scripts/add_schedule_history_backup_restore.py
       - name: Format
-        run: dart format lib/models/schedule.dart lib/models/schedule_version.dart lib/models/workout.dart lib/schedule_version_history.dart lib/active_workout_session_builder.dart lib/local_sqlite_store.dart lib/app_data_store.dart lib/screens/ai_coach.dart lib/screens/session_summary.dart test/schedule_version_history_test.dart test/local_sqlite_store_test.dart
+        run: dart format lib/schedule_version_history.dart lib/screens/home.dart test/schedule_version_history_test.dart test/local_sqlite_store_test.dart
       - name: Install dependencies
         run: flutter pub get
       - name: Run focused tests
-        run: flutter test test/schedule_version_history_test.dart test/local_sqlite_store_test.dart test/active_workout_session_builder_test.dart test/ai_plan_action_service_test.dart test/post_workout_next_session_plan_test.dart
+        run: flutter test test/schedule_version_history_test.dart test/local_sqlite_store_test.dart test/home_undo_test.dart test/active_workout_session_builder_test.dart test/ai_plan_action_service_test.dart test/post_workout_next_session_plan_test.dart
       - name: Analyze
         run: flutter analyze
       - name: Commit generated source changes
@@ -45,6 +39,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/models/schedule.dart lib/models/schedule_version.dart lib/models/workout.dart lib/schedule_version_history.dart lib/active_workout_session_builder.dart lib/local_sqlite_store.dart lib/app_data_store.dart lib/screens/ai_coach.dart lib/screens/session_summary.dart test/schedule_version_history_test.dart test/local_sqlite_store_test.dart
-          git commit -m "Add historical schedule snapshots"
+          git add lib/schedule_version_history.dart lib/screens/home.dart test/schedule_version_history_test.dart test/local_sqlite_store_test.dart
+          git commit -m "Preserve schedule history across backup restore"
           git push origin HEAD:feature/ai-core-schedule-history
