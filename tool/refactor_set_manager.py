@@ -18,11 +18,6 @@ replace_once(
     "import '../active_workout_session_controller.dart';\nimport '../active_workout_set_manager.dart';\n",
     'set manager import',
 )
-replace_once(
-    "import '../top_set_backoff.dart' as top_set_backoff;\n",
-    "",
-    'obsolete top set backoff import',
-)
 
 replace_once(
     '''  ActiveWorkoutScheduleSync get _scheduleSync => ActiveWorkoutScheduleSync(
@@ -216,7 +211,6 @@ text = text[:match.start()] + remove_stats_replacement + text[match.end():]
 for forbidden in (
     '_backoffReductionFor(',
     '_recommendedBackoffWeightFor(',
-    'top_set_backoff.',
     'buildAdaptiveWarmupPlan(',
 ):
     if forbidden in text:
