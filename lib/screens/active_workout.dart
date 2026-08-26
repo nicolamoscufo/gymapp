@@ -1878,6 +1878,60 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     return parts.isEmpty ? null : parts.join(' · ');
   }
 
+  ({WorkoutExercise exercise, ExerciseSet set, int setIndex})?
+  _nextSetAfterRest(WorkoutExercise restExercise) {
+    final supersetMembers = _exerciseManager.supersetMembers(restExercise);
+    if (supersetMembers.length >= 2) {
+      final memberIndex = supersetMembers.indexWhere(
+        (member) => member.id == restExercise.id,
+      );
+      if (memberIndex >= 0) {
+        for (var offset = 1; offset <= supersetMembers.length; offset++) {
+          final candidate =
+              supersetMembers[(memberIndex + offset) % supersetMembers.length];
+          final setIndex = _currentSetIndexFor(candidate);
+          if (setIndex >= 0) {
+            return (
+              exercise: candidate,
+              set: candidate.sets[setIndex],
+              setIndex: setIndex,
+            );
+          }
+        }
+      }
+    }
+
+    final currentSetIndex = _currentSetIndexFor(restExercise);
+    if (currentSetIndex >= 0) {
+      return (
+        exercise: restExercise,
+        set: restExercise.sets[currentSetIndex],
+        setIndex: currentSetIndex,
+      );
+    }
+
+    final exerciseIndex = session.exercises.indexWhere(
+      (exercise) => exercise.id == restExercise.id,
+    );
+    if (exerciseIndex < 0) return null;
+    for (
+      var index = exerciseIndex + 1;
+      index < session.exercises.length;
+      index++
+    ) {
+      final candidate = session.exercises[index];
+      final setIndex = _currentSetIndexFor(candidate);
+      if (setIndex >= 0) {
+        return (
+          exercise: candidate,
+          set: candidate.sets[setIndex],
+          setIndex: setIndex,
+        );
+      }
+    }
+    return null;
+  }
+
   void _submitSetFromKeyboard(
     WorkoutExercise exercise,
     ExerciseSet set,
@@ -2080,6 +2134,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final activeRestSeconds = activeRestExercise == null
         ? null
         : _restController.remainingFor(activeRestExercise.id);
+    final restTarget = activeRestExercise == null
+        ? null
+        : _nextSetAfterRest(activeRestExercise);
+    final configuredRestSeconds = activeRestExercise == null
+        ? null
+        : _restController.configuredSecondsFor(activeRestExercise);
+    final restProgress =
+        activeRestSeconds == null ||
+            configuredRestSeconds == null ||
+            configuredRestSeconds <= 0
+        ? null
+        : (activeRestSeconds / configuredRestSeconds)
+              .clamp(0.0, 1.0)
+              .toDouble();
     final workoutReadiness = _workoutReadiness();
 
     return PopScope(
@@ -3245,65 +3313,235 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
             : SafeArea(
                 top: false,
                 child: Container(
+                  key: ValueKey('rest-mode-${activeRestExercise.id}'),
                   margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
                   decoration: BoxDecoration(
                     color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: colorScheme.outlineVariant),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: colorScheme.primary, width: 1.4),
+                    boxShadow: [
+                      BoxShadow(
+                        color: colorScheme.shadow.withValues(alpha: 0.12),
+                        blurRadius: 16,
+                        offset: const Offset(0, -3),
+                      ),
+                    ],
                   ),
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.timer, color: colorScheme.primary),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Recupero ${_formatDuration(activeRestSeconds)}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                              ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: colorScheme.primaryContainer,
+                              shape: BoxShape.circle,
                             ),
-                            Text(
-                              activeRestExercise.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall,
+                            child: Icon(
+                              Icons.timer_outlined,
+                              color: colorScheme.onPrimaryContainer,
+                              size: 28,
                             ),
-                          ],
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'RECUPERO',
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: colorScheme.primary,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.1,
+                                  ),
+                                ),
+                                Text(
+                                  _formatDuration(activeRestSeconds),
+                                  key: const ValueKey('rest-mode-countdown'),
+                                  style: theme.textTheme.displaySmall?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                    height: 1,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'dopo ${activeRestExercise.name}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (restProgress != null) ...[
+                        const SizedBox(height: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(99),
+                          child: LinearProgressIndicator(
+                            key: const ValueKey('rest-mode-progress'),
+                            value: restProgress,
+                            minHeight: 6,
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        tooltip: '-30 sec',
-                        onPressed: () =>
-                            _subtractThirtySeconds(activeRestExercise),
-                        icon: const Icon(Icons.remove),
-                      ),
-                      IconButton(
-                        tooltip: '+30 sec',
-                        onPressed: () => _addThirtySeconds(activeRestExercise),
-                        icon: const Icon(Icons.add),
-                      ),
-                      TextButton(
-                        onPressed: () =>
-                            _stopRestForExercise(activeRestExercise),
-                        child: const Text('Salta'),
+                      ],
+                      const SizedBox(height: 12),
+                      if (restTarget != null)
+                        Container(
+                          key: ValueKey('rest-next-set-${restTarget.set.id}'),
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 11,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surface,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: colorScheme.outlineVariant,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'PROSSIMO SET',
+                                      style: theme.textTheme.labelSmall
+                                          ?.copyWith(
+                                            color: colorScheme.primary,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 0.8,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      restTarget.exercise.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.titleMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                    ),
+                                    Text(
+                                      'Serie ${restTarget.setIndex + 1}${restTarget.set.type == SetType.normal ? '' : ' · ${restTarget.set.type.label}'}',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '${_formatWeight(restTarget.set.weight)} kg\n× ${restTarget.set.reps}',
+                                key: const ValueKey('rest-next-prescription'),
+                                textAlign: TextAlign.right,
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.05,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Container(
+                          key: const ValueKey('rest-workout-complete'),
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 11,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colorScheme.tertiaryContainer.withValues(
+                              alpha: isDark ? 0.35 : 0.65,
+                            ),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle,
+                                color: colorScheme.tertiary,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Ultimo set completato',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Recupera e poi puoi terminare l’allenamento.',
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              key: const ValueKey('rest-minus-30'),
+                              onPressed: () =>
+                                  _subtractThirtySeconds(activeRestExercise),
+                              icon: const Icon(Icons.remove),
+                              label: const Text('30 s'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              key: const ValueKey('rest-plus-30'),
+                              onPressed: () =>
+                                  _addThirtySeconds(activeRestExercise),
+                              icon: const Icon(Icons.add),
+                              label: const Text('30 s'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              key: const ValueKey('rest-skip'),
+                              onPressed: () =>
+                                  _stopRestForExercise(activeRestExercise),
+                              child: const Text('Salta'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: _openExercisePicker,
-          icon: const Icon(Icons.add),
-          label: const Text('Esercizio'),
-        ),
+        floatingActionButton: activeRestExercise == null
+            ? FloatingActionButton.extended(
+                onPressed: _openExercisePicker,
+                icon: const Icon(Icons.add),
+                label: const Text('Esercizio'),
+              )
+            : null,
       ),
     );
   }
