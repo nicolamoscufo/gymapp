@@ -20,6 +20,8 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Fix historical context patch anchors
+        run: python3 .github/scripts/fix_ai_coach_historical_context_patch.py
       - name: Apply historical Coach context
         run: python3 .github/scripts/add_ai_coach_historical_context.py
       - name: Format
