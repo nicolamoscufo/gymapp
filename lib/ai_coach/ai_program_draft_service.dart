@@ -9,6 +9,7 @@ import 'ai_action_protocol.dart';
 import 'ai_coach_memory.dart';
 import 'ai_coach_models.dart';
 import 'ai_coach_user_profile.dart';
+import 'exercise_catalog_retriever.dart';
 import 'local_llm_engine.dart';
 import 'training_context_builder.dart';
 
@@ -17,12 +18,14 @@ class AiProgramDraftService {
   final LocalLlmEngine? fallbackEngine;
   final bool allowFallback;
   final TrainingContextBuilder contextBuilder;
+  final ExerciseCatalogRetriever exerciseCatalogRetriever;
 
   const AiProgramDraftService({
     this.engine = const FlutterGemmaLocalLlmEngine(),
     this.fallbackEngine,
     this.allowFallback = false,
     this.contextBuilder = const TrainingContextBuilder(),
+    this.exerciseCatalogRetriever = const ExerciseCatalogRetriever(),
   });
 
   Future<AiProgramActionProposal> generate({
@@ -47,6 +50,15 @@ class AiProgramDraftService {
       profile: profile,
       memory: memory,
     );
+    final catalogContext = await exerciseCatalogRetriever.retrieveForProgram(
+      query: request,
+      preferredExerciseNames: schedules.expand(
+        (schedule) => schedule.exercises.map((exercise) => exercise.name),
+      ),
+    );
+    if (!catalogContext.isEmpty) {
+      context['exercise_catalog'] = catalogContext.toJson();
+    }
     context['program_action_request'] = {
       'user_request': request,
       'allowed_actions': const ['propose_program', 'modify_program'],
@@ -111,6 +123,10 @@ Rules:
 - Do not archive or delete whole schedules in this protocol version. Only propose modified existing schedules and/or additional new schedules.
 - Respect user_profile preferences, equipment, available days, session duration and avoided exercises when provided.
 - Use program_history and deterministic_analytics as evidence. Do not contradict deterministic progression/recovery facts without explicitly preserving the uncertainty in rationale.
+- If exercise_catalog exists, it is a retrieved shortlist from the app's local exercise dataset, not an exhaustive list. Prefer suitable catalog matches for new exercises.
+- When selecting a retrieved catalog exercise, copy its canonical name, muscle_group, equipment and movement_pattern exactly. Do not invent catalog metadata.
+- If no suitable retrieved match exists, a custom exercise is allowed, but do not claim that it came from the catalog.
+- Existing active-plan exercises remain authoritative for their persistent IDs and current prescription even when the catalog contains a similar exercise.
 - Use safe realistic numeric values. Do not prescribe medical treatment.
 - confidence must be low, medium, or high.
 - Every schedule needs a unique stable draft_key such as day_1, upper_a, lower_b. draft_key is only local draft metadata, never a database id.
