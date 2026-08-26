@@ -31,7 +31,6 @@ jobs:
           path = Path('lib/screens/active_workout.dart')
           text = path.read_text()
 
-          # Insert the one-tap previous-values helper immediately before RPE UI.
           method_marker = "  Future<void> _pickRpe(ExerciseSet set) async {"
           if "void _applyPreviousValuesForExercise" not in text:
               if text.count(method_marker) != 1:
@@ -49,7 +48,6 @@ jobs:
           """
               text = text.replace(method_marker, helper + method_marker)
 
-          # Replace the passive previous-performance line with an actionable row.
           previous_start_marker = "                      if (exercise.previousWeights.isNotEmpty) ...["
           previous_end_marker = "                      if (_progressionHintFor(exercise) != null) ...["
           if "'use-previous-values-${exercise.id}'" not in text:
@@ -87,26 +85,20 @@ jobs:
                         ),
                       ],
           """
-              text = (
-                  text[:previous_start]
-                  + previous_ui_replacement
-                  + text[previous_end:]
-              )
+              text = text[:previous_start] + previous_ui_replacement + text[previous_end:]
 
-          # Replace the raw rest TextFormField with a stable field plus quick presets.
-          timer_start_marker = """                          SizedBox(
-                            width: 96,
-                            child: TextFormField(
-                              key: ValueKey('rest-${exercise.id}'),
-          """
-          timer_end_marker = """                          IconButton(
-                            tooltip: activeRestSeconds == null
-          """
           if "'rest-preset-${exercise.id}'" not in text:
-              timer_start = text.find(timer_start_marker)
-              timer_end = text.find(timer_end_marker, timer_start)
+              rest_key = "key: ValueKey('rest-${exercise.id}')"
+              rest_key_index = text.find(rest_key)
+              if rest_key_index < 0:
+                  raise SystemExit('rest field key not found')
+              timer_start = text.rfind('                          SizedBox(', 0, rest_key_index)
+              timer_end = text.find(
+                  '                          IconButton(\n                            tooltip: activeRestSeconds == null',
+                  rest_key_index,
+              )
               if timer_start < 0 or timer_end < 0:
-                  raise SystemExit('timer UI markers not found')
+                  raise SystemExit('timer UI boundaries not found')
               timer_replacement = """                          SizedBox(
                             width: 88,
                             child: _StableSetTextField(
