@@ -22,6 +22,8 @@ jobs:
           cache: true
       - name: Apply period comparison
         run: python3 .github/scripts/add_period_mesocycle_comparison.py
+      - name: Fix integer types
+        run: python3 .github/scripts/fix_period_int_types.py
       - name: Format
         run: dart format lib/progress_analytics.dart lib/progress_period_comparison.dart lib/screens/progress_center.dart lib/screens/home.dart test/progress_period_comparison_test.dart
       - name: Install dependencies
