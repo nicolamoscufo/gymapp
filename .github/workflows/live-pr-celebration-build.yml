@@ -1,0 +1,49 @@
+name: Live PR Celebration Build
+
+on:
+  push:
+    branches:
+      - feat/live-pr-celebration
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/live-pr-celebration
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Apply feature
+        run: python tool/live_pr_celebration_patch.py
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Format
+        run: dart format lib/active_workout_insights.dart lib/screens/active_workout.dart test/refactor_foundations_test.dart test/active_workout_screen_test.dart
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Commit feature
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/active_workout_insights.dart lib/screens/active_workout.dart test/refactor_foundations_test.dart test/active_workout_screen_test.dart
+          git diff --cached --quiet && exit 0
+          git commit -m "Add live PR celebration"
+          git push origin HEAD:feat/live-pr-celebration
