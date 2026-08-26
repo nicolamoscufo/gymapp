@@ -8,6 +8,13 @@ if old_fab in ux:
     ux = ux.replace(old_fab, new_fab, 1)
 elif 'expect(restingScaffold.floatingActionButton, isNull);' not in ux:
     raise SystemExit('rest FAB assertion anchor not found')
+
+old_return = "    expect(find.widgetWithText(FloatingActionButton, 'Esercizio'), findsOneWidget);\n"
+new_return = "    final idleScaffold = tester.widget<Scaffold>(find.byType(Scaffold).first);\n    expect(idleScaffold.floatingActionButton, isNotNull);\n"
+if old_return in ux:
+    ux = ux.replace(old_return, new_return, 1)
+elif 'expect(idleScaffold.floatingActionButton, isNotNull);' not in ux:
+    raise SystemExit('idle FAB assertion anchor not found')
 ux_path.write_text(ux)
 
 active_test_path = Path('test/active_workout_screen_test.dart')
