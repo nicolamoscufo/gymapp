@@ -4,17 +4,25 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../models/exercise.dart';
+import '../models/schedule.dart';
 import '../models/workout.dart';
 import '../progress_analytics.dart';
 import '../progress_intelligence.dart';
+import '../progress_period_comparison.dart';
 import 'exercise_detail.dart';
 import 'stats.dart';
 
 class ProgressCenterScreen extends StatelessWidget {
   final List<WorkoutSession> history;
+  final List<Schedule> schedules;
   final DateTime? now;
 
-  const ProgressCenterScreen({super.key, required this.history, this.now});
+  const ProgressCenterScreen({
+    super.key,
+    required this.history,
+    this.schedules = const <Schedule>[],
+    this.now,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +36,7 @@ class ProgressCenterScreen extends StatelessWidget {
       now: now,
     );
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Column(
         children: [
           Material(
@@ -38,6 +46,7 @@ class ProgressCenterScreen extends StatelessWidget {
               tabs: [
                 Tab(icon: Icon(Icons.dashboard_outlined), text: 'Panoramica'),
                 Tab(icon: Icon(Icons.track_changes), text: 'Focus'),
+                Tab(icon: Icon(Icons.compare_arrows), text: 'Periodi'),
                 Tab(icon: Icon(Icons.show_chart), text: 'Esercizi'),
                 Tab(icon: Icon(Icons.accessibility_new), text: 'Muscoli'),
                 Tab(icon: Icon(Icons.emoji_events_outlined), text: 'Record'),
@@ -51,6 +60,12 @@ class ProgressCenterScreen extends StatelessWidget {
                 _ProgressFocusTab(
                   intelligence: intelligence,
                   history: history,
+                  now: now,
+                ),
+                _PeriodComparisonTab(
+                  history: history,
+                  analytics: analytics,
+                  schedules: schedules,
                   now: now,
                 ),
                 _ExerciseProgressTab(
@@ -67,6 +82,502 @@ class ProgressCenterScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PeriodComparisonTab extends StatefulWidget {
+  final List<WorkoutSession> history;
+  final ProgressAnalytics analytics;
+  final List<Schedule> schedules;
+  final DateTime? now;
+
+  const _PeriodComparisonTab({
+    required this.history,
+    required this.analytics,
+    required this.schedules,
+    required this.now,
+  });
+
+  @override
+  State<_PeriodComparisonTab> createState() => _PeriodComparisonTabState();
+}
+
+class _PeriodComparisonTabState extends State<_PeriodComparisonTab> {
+  ProgressComparisonRange _range = ProgressComparisonRange.fourWeeks;
+  String? _scheduleId;
+
+  @override
+  Widget build(BuildContext context) {
+    final schedules = List<Schedule>.from(widget.schedules)
+      ..sort((a, b) {
+        if (a.isArchived != b.isArchived) return a.isArchived ? 1 : -1;
+        return b.createdAt.compareTo(a.createdAt);
+      });
+    Schedule? selectedSchedule;
+    if (schedules.isNotEmpty) {
+      final desiredId = _scheduleId;
+      selectedSchedule = schedules.first;
+      if (desiredId != null) {
+        for (final schedule in schedules) {
+          if (schedule.id == desiredId) {
+            selectedSchedule = schedule;
+            break;
+          }
+        }
+      }
+    }
+
+    final comparison = buildProgressPeriodComparison(
+      history: widget.history,
+      analytics: widget.analytics,
+      range: _range,
+      now: widget.now,
+      schedule: _range == ProgressComparisonRange.mesocycle
+          ? selectedSchedule
+          : null,
+    );
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          'Confronto periodi',
+          style: Theme.of(context).textTheme.titleLarge
+              ?.copyWith(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Stessa durata contro il periodo immediatamente precedente: volume, frequenza, PR, forza ed esposizione muscolare.',
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: ProgressComparisonRange.values.map((range) {
+            return ChoiceChip(
+              key: ValueKey('period-range-${range.name}'),
+              label: Text(range.label),
+              selected: _range == range,
+              onSelected: (_) => setState(() => _range = range),
+            );
+          }).toList(),
+        ),
+        if (_range == ProgressComparisonRange.mesocycle) ...[
+          const SizedBox(height: 12),
+          if (schedules.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Nessuna scheda disponibile per il confronto del mesociclo.',
+                ),
+              ),
+            )
+          else
+            DropdownButtonFormField<String>(
+              key: const ValueKey('period-mesocycle-schedule'),
+              initialValue: selectedSchedule?.id,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Scheda / mesociclo',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: schedules
+                  .map(
+                    (schedule) => DropdownMenuItem<String>(
+                      value: schedule.id,
+                      child: Text(
+                        '${schedule.title} · ciclo ${schedule.cycleNumber} · ${schedule.mesocycleWeeks} sett.',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) => setState(() => _scheduleId = value),
+            ),
+        ],
+        const SizedBox(height: 12),
+        if (comparison == null)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Il confronto non è ancora disponibile per questa selezione.',
+              ),
+            ),
+          )
+        else
+          ..._comparisonContent(context, comparison),
+        const SizedBox(height: 80),
+      ],
+    );
+  }
+
+  List<Widget> _comparisonContent(
+    BuildContext context,
+    ProgressPeriodComparison comparison,
+  ) {
+    final current = comparison.current;
+    final previous = comparison.previous;
+    final strength = comparison.strengthShifts.take(8).toList();
+    final muscles = comparison.muscleShifts.take(8).toList();
+
+    return [
+      Card(
+        key: const ValueKey('period-comparison-window'),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                comparison.range == ProgressComparisonRange.mesocycle
+                    ? '${comparison.schedule?.title ?? 'Mesociclo'} · ciclo ${comparison.schedule?.cycleNumber ?? '-'}'
+                    : comparison.range.label,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 6),
+              Text('Adesso: ${comparison.currentWindow.label}'),
+              Text('Prima: ${comparison.previousWindow.label}'),
+              if (comparison.range == ProgressComparisonRange.mesocycle) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Confronto allineato sui ${comparison.currentWindow.durationDays} giorni già trascorsi del ciclo corrente.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      _ComparisonMetricGrid(
+        items: [
+          _ComparisonMetric(
+            keyName: 'workouts',
+            label: 'Allenamenti',
+            current: '${current.workouts}',
+            previous: '${previous.workouts}',
+            change: _percentDelta(
+              current.workouts.toDouble(),
+              previous.workouts.toDouble(),
+            ),
+            icon: Icons.fitness_center,
+          ),
+          _ComparisonMetric(
+            keyName: 'frequency',
+            label: 'Freq. / settimana',
+            current: comparison.currentWorkoutsPerWeek.toStringAsFixed(1),
+            previous: comparison.previousWorkoutsPerWeek.toStringAsFixed(1),
+            change: _percentDelta(
+              comparison.currentWorkoutsPerWeek,
+              comparison.previousWorkoutsPerWeek,
+            ),
+            icon: Icons.calendar_view_week,
+          ),
+          _ComparisonMetric(
+            keyName: 'volume',
+            label: 'Volume',
+            current: _compactPeriodKg(current.volume),
+            previous: _compactPeriodKg(previous.volume),
+            change: _percentDelta(current.volume, previous.volume),
+            icon: Icons.monitor_weight_outlined,
+          ),
+          _ComparisonMetric(
+            keyName: 'sets',
+            label: 'Set',
+            current: '${current.completedSets}',
+            previous: '${previous.completedSets}',
+            change: _percentDelta(
+              current.completedSets.toDouble(),
+              previous.completedSets.toDouble(),
+            ),
+            icon: Icons.format_list_numbered,
+          ),
+          _ComparisonMetric(
+            keyName: 'prs',
+            label: 'PR',
+            current: '${current.personalRecords}',
+            previous: '${previous.personalRecords}',
+            change: _percentDelta(
+              current.personalRecords.toDouble(),
+              previous.personalRecords.toDouble(),
+            ),
+            icon: Icons.emoji_events_outlined,
+          ),
+          _ComparisonMetric(
+            keyName: 'duration',
+            label: 'Minuti',
+            current: '${current.durationMinutes}',
+            previous: '${previous.durationMinutes}',
+            change: _percentDelta(
+              current.durationMinutes.toDouble(),
+              previous.durationMinutes.toDouble(),
+            ),
+            icon: Icons.timer_outlined,
+          ),
+        ],
+      ),
+      const SizedBox(height: 20),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Forza per esercizio',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+          ),
+          if (comparison.strengthShifts.isNotEmpty)
+            Text(
+              '${comparison.improvedStrengthCount} ↑ · ${comparison.declinedStrengthCount} ↓',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      Text(
+        'Best e1RM del periodo confrontato solo tra esercizi presenti in entrambe le finestre.',
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      ),
+      const SizedBox(height: 8),
+      if (strength.isEmpty)
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Nessun esercizio con e1RM confrontabile nei due periodi.',
+            ),
+          ),
+        )
+      else
+        ...strength.map((entry) => _PeriodStrengthTile(shift: entry)),
+      const SizedBox(height: 20),
+      Text(
+        'Distribuzione muscolare',
+        style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.w900),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        'Set di lavoro completati nel periodo corrente contro il precedente.',
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      ),
+      const SizedBox(height: 8),
+      if (muscles.isEmpty)
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Nessun set muscolare disponibile nei due periodi.'),
+          ),
+        )
+      else
+        ...muscles.map((entry) => _PeriodMuscleTile(shift: entry)),
+    ];
+  }
+}
+
+class _ComparisonMetric {
+  final String keyName;
+  final String label;
+  final String current;
+  final String previous;
+  final double? change;
+  final IconData icon;
+
+  const _ComparisonMetric({
+    required this.keyName,
+    required this.label,
+    required this.current,
+    required this.previous,
+    required this.change,
+    required this.icon,
+  });
+}
+
+class _ComparisonMetricGrid extends StatelessWidget {
+  final List<_ComparisonMetric> items;
+
+  const _ComparisonMetricGrid({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 700 ? 3 : 2;
+        final spacing = 10.0;
+        final width =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: items
+              .map(
+                (item) => SizedBox(
+                  width: width,
+                  child: _ComparisonMetricCard(item: item),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _ComparisonMetricCard extends StatelessWidget {
+  final _ComparisonMetric item;
+
+  const _ComparisonMetricCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final change = item.change;
+    final accent = change == null || change.abs() < 0.1
+        ? scheme.onSurfaceVariant
+        : change > 0
+        ? scheme.primary
+        : scheme.error;
+    return Card(
+      key: ValueKey('period-metric-${item.keyName}'),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(item.icon, size: 18),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    item.label,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              item.current,
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            Text(
+              'prima ${item.previous}',
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _changeLabel(change, item.current != '0'),
+              style: TextStyle(color: accent, fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PeriodStrengthTile extends StatelessWidget {
+  final PeriodStrengthShift shift;
+
+  const _PeriodStrengthTile({required this.shift});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = shift.declined
+        ? scheme.error
+        : shift.improved
+        ? scheme.primary
+        : scheme.onSurfaceVariant;
+    return Card(
+      key: ValueKey('period-strength-${shift.exerciseName}'),
+      child: ListTile(
+        leading: CircleAvatar(
+          child: Icon(
+            shift.declined
+                ? Icons.trending_down
+                : shift.improved
+                ? Icons.trending_up
+                : Icons.trending_flat,
+          ),
+        ),
+        title: Text(
+          shift.exerciseName,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(
+          '${_periodKg(shift.previousBestEstimatedOneRepMax)} → ${_periodKg(shift.currentBestEstimatedOneRepMax)} e1RM',
+        ),
+        trailing: Text(
+          _signedPeriodPercent(shift.changePercent),
+          style: TextStyle(color: color, fontWeight: FontWeight.w900),
+        ),
+      ),
+    );
+  }
+}
+
+class _PeriodMuscleTile extends StatelessWidget {
+  final PeriodMuscleShift shift;
+
+  const _PeriodMuscleTile({required this.shift});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final change = shift.changePercent;
+    final color = change != null && change < 0 ? scheme.error : scheme.primary;
+    return Card(
+      key: ValueKey('period-muscle-${shift.muscleGroup.name}'),
+      child: ListTile(
+        leading: const CircleAvatar(child: Icon(Icons.accessibility_new)),
+        title: Text(
+          shift.muscleGroup.label,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text('${shift.previousSets} → ${shift.currentSets} set'),
+        trailing: Text(
+          shift.newlyActive
+              ? 'Nuovo'
+              : change == null
+              ? '-'
+              : _signedPeriodPercent(change),
+          style: TextStyle(color: color, fontWeight: FontWeight.w900),
+        ),
+      ),
+    );
+  }
+}
+
+double? _percentDelta(double current, double previous) {
+  if (previous <= 0) return current > 0 ? null : 0;
+  return ((current - previous) / previous) * 100;
+}
+
+String _changeLabel(double? change, bool hasCurrent) {
+  if (change == null) return hasCurrent ? 'Nuovo' : '—';
+  return _signedPeriodPercent(change);
+}
+
+String _signedPeriodPercent(double value) =>
+    '${value > 0 ? '+' : ''}${value.toStringAsFixed(1)}%';
+
+String _periodKg(double value) => '${value.toStringAsFixed(1)} kg';
+
+String _compactPeriodKg(double value) {
+  if (value.abs() >= 1000) return '${(value / 1000).toStringAsFixed(1)}k kg';
+  return '${value.toStringAsFixed(0)} kg';
 }
 
 class _ProgressFocusTab extends StatelessWidget {

@@ -301,6 +301,22 @@ ProgressAnalytics buildProgressAnalytics({
   );
 }
 
+PeriodProgressReport buildPeriodProgressReport({
+  required List<WorkoutSession> history,
+  required List<PersonalRecordEvent> personalRecords,
+  required DateTime start,
+  required DateTime endExclusive,
+}) {
+  final sorted = List<WorkoutSession>.from(history)
+    ..sort((a, b) => a.startTime.compareTo(b.startTime));
+  return _buildPeriodReport(
+    sorted,
+    personalRecords,
+    _dateOnly(start),
+    _dateOnly(endExclusive),
+  );
+}
+
 List<ExerciseProgressSummary> _buildExerciseSummaries(
   List<WorkoutSession> history,
 ) {
