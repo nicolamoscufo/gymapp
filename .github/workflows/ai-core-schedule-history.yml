@@ -20,6 +20,8 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Fix patch quoting
+        run: python3 .github/scripts/fix_schedule_history_patch.py
       - name: Apply schedule history core
         run: python3 .github/scripts/add_schedule_history_core.py
       - name: Format
