@@ -7,7 +7,8 @@ rules:
       category: security
       cwe: CWE-89
       technology: [dart, sqflite]
-    pattern-regex: '(?s)\b(?:rawQuery|rawInsert|rawUpdate|rawDelete|execute)\s*\(\s*["'"'][^"'"']{0,400}\$(?:\{[^}]+\}|[A-Za-z_][A-Za-z0-9_.]*)'
+    pattern-regex: >-
+      (?s)\b(?:rawQuery|rawInsert|rawUpdate|rawDelete|execute)\s*\(\s*["'][^"']{0,400}\$(?:\{[^}]+\}|[A-Za-z_][A-Za-z0-9_.]*)
 
   - id: dart-process-run-in-shell
     languages: [generic]
@@ -17,7 +18,8 @@ rules:
       category: security
       cwe: CWE-78
       technology: [dart]
-    pattern-regex: '(?s)\bProcess\.(?:run|start)\s*\([^;]{0,800}\brunInShell\s*:\s*true'
+    pattern-regex: >-
+      (?s)\bProcess\.(?:run|start)\s*\([^;]{0,800}\brunInShell\s*:\s*true
 
   - id: dart-accept-all-tls-certificates
     languages: [generic]
@@ -27,7 +29,8 @@ rules:
       category: security
       cwe: CWE-295
       technology: [dart]
-    pattern-regex: '(?s)\bbadCertificateCallback\s*=\s*(?:\([^)]*\)\s*=>\s*true|[^;]{0,500}\breturn\s+true\s*;)'
+    pattern-regex: >-
+      (?s)\bbadCertificateCallback\s*=\s*(?:\([^)]*\)\s*=>\s*true|[^;]{0,500}\breturn\s+true\s*;)
 
   - id: dart-hardcoded-sensitive-credential
     languages: [generic]
@@ -37,4 +40,5 @@ rules:
       category: security
       cwe: CWE-798
       technology: [dart]
-    pattern-regex: '(?i)\b(?:api[_-]?key|client[_-]?secret|access[_-]?token|auth[_-]?token|password|passwd)\b\s*(?::|=)\s*["'"'][^"'"'\n]{8,}["'"']'
+    pattern-regex: >-
+      (?i)\b(?:api[_-]?key|client[_-]?secret|access[_-]?token|auth[_-]?token|password|passwd)\b\s*(?::|=)\s*["'][^"'\n]{8,}["']
