@@ -1,0 +1,301 @@
+name: Apply AI model hardening patch
+
+on:
+  push:
+    branches:
+      - feature/ai-model-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/ai-model-hardening
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Patch AI Coach lifecycle wiring
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('lib/screens/ai_coach.dart')
+          text = path.read_text()
+
+          def replace_once(old, new, label):
+              global text
+              if old not in text:
+                  raise SystemExit(f'Patch anchor not found: {label}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "import 'ai_program_draft_review.dart';\n",
+              "import 'ai_program_draft_review.dart';\nimport 'ai_model_management.dart';\n",
+              'management import',
+          )
+
+          replace_once(
+              "  bool _isModelInstalled = false;\n  bool _isDownloadingModel = false;\n  int? _downloadProgress;\n  String? _errorMessage;\n",
+              "  bool _isModelInstalled = false;\n  bool _isDownloadingModel = false;\n  int? _downloadProgress;\n  AiModelHealthReport _modelHealth = AiModelHealthReport.notInstalled();\n  String? _errorMessage;\n",
+              'health field',
+          )
+
+          old_refresh = '''  Future<void> _refreshModelState() async {
+            try {
+              final isInstalled = await widget.modelInstaller.isInstalled();
+              if (!mounted) return;
+              setState(() {
+                _isModelInstalled = isInstalled;
+                _isCheckingModel = false;
+                _modelChecked = true;
+              });
+              _maybeStartLaunchHandoff();
+            } catch (_) {
+              if (!mounted) return;
+              setState(() {
+                _isModelInstalled = false;
+                _isCheckingModel = false;
+                _modelChecked = true;
+                _errorMessage =
+                    'Unable to check the local model. Verify the platform and dependencies.';
+              });
+            }
+          }
+          '''
+          new_refresh = '''  Future<void> _refreshModelState() async {
+            try {
+              await widget.modelInstaller.initialize();
+              final recovery = await widget.modelInstaller.recoverInterruptedState();
+              final isInstalled = await widget.modelInstaller.isInstalled();
+              final health = isInstalled
+                  ? await widget.modelInstaller.verifyInstallation()
+                  : AiModelHealthReport.notInstalled();
+              if (!mounted) return;
+              setState(() {
+                _isModelInstalled = isInstalled;
+                _modelHealth = health;
+                _isCheckingModel = false;
+                _modelChecked = true;
+                if (recovery.userMessage != null) {
+                  _errorMessage = recovery.userMessage;
+                } else if (isInstalled &&
+                    health.status != AiModelHealthStatus.healthy) {
+                  _errorMessage = health.message;
+                }
+              });
+              _maybeStartLaunchHandoff();
+            } catch (error) {
+              if (!mounted) return;
+              setState(() {
+                _isModelInstalled = false;
+                _modelHealth = AiModelHealthReport.notInstalled();
+                _isCheckingModel = false;
+                _modelChecked = true;
+                _errorMessage =
+                    'Impossibile verificare il modello locale: $error';
+              });
+            }
+          }
+          '''
+          replace_once(old_refresh, new_refresh, 'refresh model state')
+
+          old_download = '''  Future<void> _downloadModel() async {
+            if (_isDownloadingModel) return;
+            setState(() {
+              _isDownloadingModel = true;
+              _downloadProgress = 0;
+              _errorMessage = null;
+            });
+
+            try {
+              await widget.modelInstaller.install(
+                onProgress: (progress) {
+                  if (!mounted) return;
+                  setState(() => _downloadProgress = progress.clamp(0, 100));
+                },
+              );
+              if (!mounted) return;
+              setState(() {
+                _isModelInstalled = true;
+                _downloadProgress = 100;
+                _modelChecked = true;
+              });
+              _maybeStartLaunchHandoff();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${widget.modelInstaller.modelName} is ready.')),
+              );
+            } catch (_) {
+              if (!mounted) return;
+              setState(
+                () => _errorMessage =
+                    'Model download failed. Check your connection and free storage space.',
+              );
+            } finally {
+              if (mounted) {
+                setState(() => _isDownloadingModel = false);
+              }
+            }
+          }
+          '''
+          new_download = '''  Future<void> _downloadModel() async {
+            if (_isDownloadingModel) return;
+
+            final preflight = await widget.modelInstaller.preflight();
+            if (!mounted) return;
+            if (!preflight.canInstall) {
+              setState(() => _errorMessage = preflight.userSummary);
+              return;
+            }
+            if (preflight.needsConfirmation) {
+              final continueDownload = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Compatibilità non ideale'),
+                      content: Text(
+                        '${preflight.warnings.join('\\n\\n')}\\n\\nVuoi continuare comunque?',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Annulla'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Continua'),
+                        ),
+                      ],
+                    ),
+                  ) ??
+                  false;
+              if (!continueDownload) return;
+            }
+
+            setState(() {
+              _isDownloadingModel = true;
+              _downloadProgress = 0;
+              _errorMessage = null;
+            });
+
+            try {
+              await widget.modelInstaller.install(
+                onProgress: (progress) {
+                  if (!mounted) return;
+                  setState(() => _downloadProgress = progress.clamp(0, 100));
+                },
+              );
+              final health = await widget.modelInstaller.verifyInstallation();
+              if (!mounted) return;
+              setState(() {
+                _isModelInstalled = true;
+                _modelHealth = health;
+                _downloadProgress = 100;
+                _modelChecked = true;
+              });
+              _maybeStartLaunchHandoff();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '${widget.modelInstaller.modelName} installato e verificato.',
+                  ),
+                ),
+              );
+            } on AiModelInstallException catch (error) {
+              if (!mounted) return;
+              setState(() => _errorMessage = error.message);
+            } catch (error) {
+              if (!mounted) return;
+              setState(
+                () => _errorMessage =
+                    'Download del modello fallito: $error',
+              );
+            } finally {
+              if (mounted) {
+                setState(() => _isDownloadingModel = false);
+              }
+            }
+          }
+
+          Future<void> _openModelManagement() async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => AiModelManagementScreen(
+                  installer: widget.modelInstaller,
+                ),
+              ),
+            );
+            if (!mounted) return;
+            setState(() => _isCheckingModel = true);
+            await _refreshModelState();
+          }
+          '''
+          replace_once(old_download, new_download, 'download model')
+
+          replace_once(
+              "    await _saveAndRefresh(conversation);\n\n    try {\n      if (text.isNotEmpty) {\n",
+              "    await _saveAndRefresh(conversation);\n    await widget.modelInstaller.markInferenceStarted();\n\n    try {\n      if (text.isNotEmpty) {\n",
+              'chat inference start',
+          )
+
+          replace_once(
+              "    } catch (_) {\n      if (!mounted) return;\n      setState(() {\n        _isRunning = false;\n        _errorMessage = 'Failed to get response. Please try again.';\n      });\n    }\n  }\n\n  String _programDraftKey",
+              "    } catch (_) {\n      if (!mounted) return;\n      setState(() {\n        _isRunning = false;\n        _errorMessage = 'Failed to get response. Please try again.';\n      });\n    } finally {\n      await widget.modelInstaller.markInferenceFinished();\n    }\n  }\n\n  String _programDraftKey",
+              'chat inference finish',
+          )
+
+          replace_once(
+              "    setState(() {\n      _isAnalyzingPlan = true;\n      _errorMessage = null;\n    });\n    try {\n      final report = await widget.service.suggestWorkoutAdjustments(\n",
+              "    setState(() {\n      _isAnalyzingPlan = true;\n      _errorMessage = null;\n    });\n    await widget.modelInstaller.markInferenceStarted();\n    try {\n      final report = await widget.service.suggestWorkoutAdjustments(\n",
+              'plan inference start',
+          )
+
+          replace_once(
+              "    } finally {\n      if (mounted) setState(() => _isAnalyzingPlan = false);\n    }\n  }\n\n  @override\n  Widget build(BuildContext context)",
+              "    } finally {\n      await widget.modelInstaller.markInferenceFinished();\n      if (mounted) setState(() => _isAnalyzingPlan = false);\n    }\n  }\n\n  @override\n  Widget build(BuildContext context)",
+              'plan inference finish',
+          )
+
+          replace_once(
+              "          IconButton(\n            icon: const Icon(Icons.edit_outlined),\n            tooltip: 'Edit profile',\n            onPressed: _editProfile,\n          ),\n",
+              "          if (widget.modelInstaller.canManageModel)\n            IconButton(\n              key: const ValueKey('ai-model-management'),\n              icon: Icon(\n                _modelHealth.isHealthy\n                    ? Icons.verified_user_outlined\n                    : Icons.settings_suggest_outlined,\n              ),\n              tooltip: 'Gestisci modello AI locale',\n              onPressed: _isDownloadingModel ? null : _openModelManagement,\n            ),\n          IconButton(\n            icon: const Icon(Icons.edit_outlined),\n            tooltip: 'Edit profile',\n            onPressed: _editProfile,\n          ),\n",
+              'management appbar button',
+          )
+
+          replace_once(
+              "          else if (_isModelInstalled && _allConversations.isEmpty)\n            _ModelReadyBanner(theme: theme, colorScheme: colorScheme)\n          else if (_errorMessage != null)\n            _ErrorBanner(\n",
+              "          else if (_errorMessage != null)\n            _ErrorBanner(\n",
+              'error priority part 1',
+          )
+
+          replace_once(
+              "              onDismiss: () => setState(() => _errorMessage = null),\n            ),\n          if (_isDownloadingModel && _downloadProgress != null)\n",
+              "              onDismiss: () => setState(() => _errorMessage = null),\n            )\n          else if (_isModelInstalled && _allConversations.isEmpty)\n            _ModelReadyBanner(theme: theme, colorScheme: colorScheme),\n          if (_isDownloadingModel && _downloadProgress != null)\n",
+              'error priority part 2',
+          )
+
+          path.write_text(text)
+          PY
+
+          dart format lib/screens/ai_coach.dart lib/screens/ai_model_management.dart lib/ai_coach/ai_coach_model_manager.dart
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No patch changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/screens/ai_coach.dart lib/screens/ai_model_management.dart lib/ai_coach/ai_coach_model_manager.dart
+          git commit -m "feat: wire resilient AI model lifecycle"
+          git push origin HEAD:feature/ai-model-hardening
