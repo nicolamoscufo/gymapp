@@ -31,19 +31,20 @@ void main() {
     final exerciseCard = find.byKey(
       const ValueKey('ai-draft-exercise-upper_a-1'),
     );
-    final reviewScrollable = find
-        .ancestor(of: exerciseCard, matching: find.byType(Scrollable))
-        .first;
-    await tester.scrollUntilVisible(
-      exerciseCard,
-      180,
-      scrollable: reviewScrollable,
-    );
-    final removeButtons = find.descendant(
+    final removeButton = find.descendant(
       of: exerciseCard,
       matching: find.byTooltip('Rimuovi esercizio'),
     );
-    await tester.tap(removeButtons);
+    final reviewScrollable = find
+        .ancestor(of: removeButton, matching: find.byType(Scrollable))
+        .first;
+    await tester.scrollUntilVisible(
+      removeButton,
+      220,
+      scrollable: reviewScrollable,
+    );
+    await tester.pump();
+    await tester.tap(removeButton);
     await tester.pump();
 
     await tester.tap(find.byKey(const ValueKey('ai-program-draft-done')));
