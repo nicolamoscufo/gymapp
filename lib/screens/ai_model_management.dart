@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../ai_coach/ai_coach_model_manager.dart';
@@ -24,14 +26,50 @@ class _AiModelManagementScreenState extends State<AiModelManagementScreen> {
   AiModelPreflightReport _preflight = AiModelPreflightReport.unknown();
   AiModelHealthReport _health = AiModelHealthReport.notInstalled();
 
+  AiCoachObservableModelInstaller? get _observableInstaller {
+    final installer = widget.installer;
+    return installer is AiCoachObservableModelInstaller ? installer : null;
+  }
+
   @override
   void initState() {
     super.initState();
+    _observableInstaller?.addInstallStateListener(_onInstallStateChanged);
     _refresh(runRecovery: true);
   }
 
+  @override
+  void dispose() {
+    _observableInstaller?.removeInstallStateListener(_onInstallStateChanged);
+    super.dispose();
+  }
+
+  void _onInstallStateChanged() {
+    if (!mounted) return;
+    final observable = _observableInstaller;
+    if (observable == null) return;
+
+    if (observable.isInstallInProgress) {
+      setState(() {
+        _busy = true;
+        _progress = observable.currentInstallProgress ?? _progress ?? 0;
+        if (!_installed) {
+          _message =
+              'Download di ${widget.installer.modelName} in corso. Puoi cambiare schermata: il download continuerà in background.';
+        }
+      });
+      return;
+    }
+
+    // A download started by this or another route just finished. Reconcile the
+    // installation state instead of keeping stale route-local progress UI.
+    if (_progress != null) {
+      unawaited(_refresh());
+    }
+  }
+
   Future<void> _refresh({bool runRecovery = false}) async {
-    setState(() => _loading = true);
+    if (mounted) setState(() => _loading = true);
     try {
       await widget.installer.initialize();
       AiModelRecoveryReport recovery = const AiModelRecoveryReport();
@@ -43,13 +81,23 @@ class _AiModelManagementScreenState extends State<AiModelManagementScreen> {
       final health = installed
           ? await widget.installer.verifyInstallation()
           : AiModelHealthReport.notInstalled();
+      final observable = _observableInstaller;
+      final downloading = observable?.isInstallInProgress ?? false;
+      final progress = observable?.currentInstallProgress;
       if (!mounted) return;
       setState(() {
         _preflight = preflight;
         _installed = installed;
         _health = health;
         _loading = false;
-        if (recovery.userMessage != null) _message = recovery.userMessage;
+        _busy = downloading;
+        _progress = downloading ? (progress ?? 0) : null;
+        if (recovery.userMessage != null) {
+          _message = recovery.userMessage;
+        } else if (downloading) {
+          _message =
+              'Download di ${widget.installer.modelName} in corso. Puoi cambiare schermata: il download continuerà in background.';
+        }
       });
     } catch (error) {
       if (!mounted) return;
@@ -290,7 +338,7 @@ class _AiModelManagementScreenState extends State<AiModelManagementScreen> {
                 ],
                 const SizedBox(height: 16),
                 Text(
-                  'Nota sul resume: flutter_gemma supporta il resume quando il server HTTP lo consente. Il CDN Hugging Face può richiedere di ricominciare il trasferimento dopo un’interruzione; l’app conserva comunque lo stato, ripulisce i file orfani e permette un retry sicuro.',
+                  'Il download è gestito a livello applicazione e, su Android, usa il foreground service di flutter_gemma. Puoi cambiare schermata senza interromperlo. Il resume dopo una vera interruzione dipende comunque dal server HTTP; Hugging Face può richiedere di ricominciare il trasferimento.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),
