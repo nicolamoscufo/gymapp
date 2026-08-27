@@ -13,6 +13,10 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await FlutterGemma.initialize(
     inferenceEngines: const [LiteRtLmEngine()],
+    // flutter_gemma applies exponential backoff for retryable network errors.
+    // The lifecycle layer persists interrupted state so a killed process can
+    // recover safely on the next launch.
+    maxDownloadRetries: 10,
   );
   await LocalNotificationService.initialize();
   runApp(const MainApp());
