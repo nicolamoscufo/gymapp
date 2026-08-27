@@ -178,6 +178,10 @@ void main() {
     expect(find.text('Verificato'), findsOneWidget);
     expect(find.byKey(const ValueKey('ai-model-verify')), findsOneWidget);
     expect(find.byKey(const ValueKey('ai-model-reinstall')), findsOneWidget);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+
     expect(find.byKey(const ValueKey('ai-model-remove')), findsOneWidget);
   });
 }
