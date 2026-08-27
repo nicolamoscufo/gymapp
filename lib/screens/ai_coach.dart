@@ -85,6 +85,11 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   bool _modelChecked = false;
   bool _launchStarted = false;
 
+  AiCoachManagedModelInstaller? get _managedModelInstaller {
+    final installer = widget.modelInstaller;
+    return installer is AiCoachManagedModelInstaller ? installer : null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -131,11 +136,19 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   Future<void> _refreshModelState() async {
     try {
       await widget.modelInstaller.initialize();
-      final recovery = await widget.modelInstaller.recoverInterruptedState();
+      final managed = _managedModelInstaller;
+      final recovery = managed == null
+          ? const AiModelRecoveryReport()
+          : await managed.recoverInterruptedState();
       final isInstalled = await widget.modelInstaller.isInstalled();
-      final health = isInstalled
-          ? await widget.modelInstaller.verifyInstallation()
-          : AiModelHealthReport.notInstalled();
+      final health = !isInstalled
+          ? AiModelHealthReport.notInstalled()
+          : managed == null
+          ? const AiModelHealthReport(
+              status: AiModelHealthStatus.healthy,
+              message: 'Modello installato.',
+            )
+          : await managed.verifyInstallation();
       if (!mounted) return;
       setState(() {
         _isModelInstalled = isInstalled;
@@ -165,7 +178,10 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   Future<void> _downloadModel() async {
     if (_isDownloadingModel) return;
 
-    final preflight = await widget.modelInstaller.preflight();
+    final managed = _managedModelInstaller;
+    final preflight = managed == null
+        ? AiModelPreflightReport.unknown()
+        : await managed.preflight();
     if (!mounted) return;
     if (!preflight.canInstall) {
       setState(() => _errorMessage = preflight.userSummary);
@@ -209,7 +225,12 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
           setState(() => _downloadProgress = progress.clamp(0, 100));
         },
       );
-      final health = await widget.modelInstaller.verifyInstallation();
+      final health = managed == null
+          ? const AiModelHealthReport(
+              status: AiModelHealthStatus.healthy,
+              message: 'Modello installato.',
+            )
+          : await managed.verifyInstallation();
       if (!mounted) return;
       setState(() {
         _isModelInstalled = true;
@@ -237,10 +258,11 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   }
 
   Future<void> _openModelManagement() async {
+    final managed = _managedModelInstaller;
+    if (managed == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            AiModelManagementScreen(installer: widget.modelInstaller),
+        builder: (_) => AiModelManagementScreen(installer: managed),
       ),
     );
     if (!mounted) return;
@@ -416,7 +438,10 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
     _scrollToBottom();
 
     await _saveAndRefresh(conversation);
-    await widget.modelInstaller.markInferenceStarted();
+    final managedInstaller = _managedModelInstaller;
+    if (managedInstaller != null) {
+      await managedInstaller.markInferenceStarted();
+    }
 
     try {
       if (text.isNotEmpty) {
@@ -488,7 +513,9 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
         _errorMessage = 'Failed to get response. Please try again.';
       });
     } finally {
-      await widget.modelInstaller.markInferenceFinished();
+      if (managedInstaller != null) {
+        await managedInstaller.markInferenceFinished();
+      }
     }
   }
 
@@ -649,7 +676,10 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
       _isAnalyzingPlan = true;
       _errorMessage = null;
     });
-    await widget.modelInstaller.markInferenceStarted();
+    final managedInstaller = _managedModelInstaller;
+    if (managedInstaller != null) {
+      await managedInstaller.markInferenceStarted();
+    }
     try {
       final report = await widget.service.suggestWorkoutAdjustments(
         history: widget.history,
@@ -710,7 +740,9 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
             'Impossibile generare modifiche sicure alla scheda.',
       );
     } finally {
-      await widget.modelInstaller.markInferenceFinished();
+      if (managedInstaller != null) {
+        await managedInstaller.markInferenceFinished();
+      }
       if (mounted) setState(() => _isAnalyzingPlan = false);
     }
   }
@@ -736,7 +768,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
               tooltip: 'Proponi modifiche alla scheda',
               onPressed: _isAnalyzingPlan ? null : _reviewPlanAdjustments,
             ),
-          if (widget.modelInstaller.canManageModel)
+          if (_managedModelInstaller != null)
             IconButton(
               key: const ValueKey('ai-model-management'),
               icon: Icon(

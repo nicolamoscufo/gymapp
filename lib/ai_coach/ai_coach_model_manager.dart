@@ -141,47 +141,24 @@ abstract class AiCoachModelInstaller {
   String get modelUrl;
   String get modelSizeLabel;
 
-  String get modelVersion => 'unknown';
-  String get expectedSha256 => '';
-  int get expectedSizeBytes => 0;
-  bool get canManageModel => false;
-
   Future<void> initialize();
   Future<bool> isInstalled();
   Future<void> install({void Function(int progress)? onProgress});
   Future<void> activateInstalledModel();
+}
 
-  Future<AiModelPreflightReport> preflight() async =>
-      AiModelPreflightReport.unknown();
+abstract class AiCoachManagedModelInstaller implements AiCoachModelInstaller {
+  String get modelVersion;
+  String get expectedSha256;
+  int get expectedSizeBytes;
 
-  Future<AiModelHealthReport> verifyInstallation() async {
-    return await isInstalled()
-        ? AiModelHealthReport(
-            status: AiModelHealthStatus.healthy,
-            message: 'Modello installato.',
-            modelVersion: modelVersion,
-            expectedSha256: expectedSha256,
-            runtimeLoadVerified: false,
-          )
-        : AiModelHealthReport.notInstalled();
-  }
-
-  Future<AiModelRecoveryReport> recoverInterruptedState() async =>
-      const AiModelRecoveryReport();
-
-  Future<void> uninstall() async {
-    throw UnsupportedError(
-      'Model uninstall is not supported by this installer.',
-    );
-  }
-
-  Future<void> reinstall({void Function(int progress)? onProgress}) async {
-    await uninstall();
-    await install(onProgress: onProgress);
-  }
-
-  Future<void> markInferenceStarted() async {}
-  Future<void> markInferenceFinished() async {}
+  Future<AiModelPreflightReport> preflight();
+  Future<AiModelHealthReport> verifyInstallation();
+  Future<AiModelRecoveryReport> recoverInterruptedState();
+  Future<void> uninstall();
+  Future<void> reinstall({void Function(int progress)? onProgress});
+  Future<void> markInferenceStarted();
+  Future<void> markInferenceFinished();
 }
 
 abstract class AiModelDeviceProbe {
@@ -280,7 +257,8 @@ class AiModelLifecycleStore {
   }
 }
 
-class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
+class FlutterGemmaAiCoachModelInstaller
+    implements AiCoachManagedModelInstaller {
   final AiModelDeviceProbe deviceProbe;
   final AiModelLifecycleStore lifecycleStore;
 
@@ -316,9 +294,6 @@ class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
 
   @override
   String get modelSizeLabel => '~2.6 GB';
-
-  @override
-  bool get canManageModel => true;
 
   int get requiredFreeStorageBytes => expectedSizeBytes + (768 * _mib);
 

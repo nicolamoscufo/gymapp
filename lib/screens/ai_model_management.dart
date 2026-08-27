@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../ai_coach/ai_coach_model_manager.dart';
 
 class AiModelManagementScreen extends StatefulWidget {
-  final AiCoachModelInstaller installer;
+  final AiCoachManagedModelInstaller installer;
 
   const AiModelManagementScreen({
     super.key,
@@ -87,6 +87,7 @@ class _AiModelManagementScreenState extends State<AiModelManagementScreen> {
   Future<void> _install({bool reinstall = false}) async {
     if (_busy || !_preflight.canInstall) return;
     if (!await _confirmWarnings()) return;
+    if (!mounted) return;
 
     if (reinstall) {
       final confirmed =

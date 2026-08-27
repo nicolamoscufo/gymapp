@@ -190,7 +190,7 @@ class _FakeDeviceProbe implements AiModelDeviceProbe {
   Future<AiModelDeviceProfile> inspect() async => profile;
 }
 
-class _FakeManagementInstaller implements AiCoachModelInstaller {
+class _FakeManagementInstaller implements AiCoachManagedModelInstaller {
   final bool installed;
   final AiModelPreflightReport preflightReport;
 
@@ -221,9 +221,6 @@ class _FakeManagementInstaller implements AiCoachModelInstaller {
   int get expectedSizeBytes => 123;
 
   @override
-  bool get canManageModel => true;
-
-  @override
   Future<void> initialize() async {}
 
   @override
@@ -250,6 +247,21 @@ class _FakeManagementInstaller implements AiCoachModelInstaller {
           runtimeLoadVerified: true,
         )
       : AiModelHealthReport.notInstalled();
+
+  @override
+  Future<AiModelRecoveryReport> recoverInterruptedState() async =>
+      const AiModelRecoveryReport();
+
+  @override
+  Future<void> reinstall({void Function(int progress)? onProgress}) async {
+    onProgress?.call(100);
+  }
+
+  @override
+  Future<void> markInferenceStarted() async {}
+
+  @override
+  Future<void> markInferenceFinished() async {}
 
   @override
   Future<void> uninstall() async {}
