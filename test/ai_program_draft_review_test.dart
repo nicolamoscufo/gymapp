@@ -31,7 +31,14 @@ void main() {
     final exerciseCard = find.byKey(
       const ValueKey('ai-draft-exercise-upper_a-1'),
     );
-    await tester.scrollUntilVisible(exerciseCard, 180);
+    final reviewScrollable = find
+        .ancestor(of: exerciseCard, matching: find.byType(Scrollable))
+        .first;
+    await tester.scrollUntilVisible(
+      exerciseCard,
+      180,
+      scrollable: reviewScrollable,
+    );
     final removeButtons = find.descendant(
       of: exerciseCard,
       matching: find.byTooltip('Rimuovi esercizio'),
@@ -67,7 +74,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('Correggi la bozza prima di continuare'), findsOneWidget);
-    expect(find.text('Inserisci un nome valido per la seduta.'), findsOneWidget);
+    expect(
+      find.textContaining('Inserisci un nome valido per la seduta.'),
+      findsOneWidget,
+    );
     expect(key.currentState!.result, isNull);
   });
 }
