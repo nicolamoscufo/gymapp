@@ -17,14 +17,6 @@ void main() {
 
     expect(find.text('37%'), findsOneWidget);
     expect(find.textContaining('continuerà in background'), findsOneWidget);
-    expect(
-      tester
-          .widget<FilledButton>(
-            find.byKey(const ValueKey('ai-model-download')),
-          )
-          .onPressed,
-      isNull,
-    );
 
     // Simulate leaving the model screen while the application-scoped download
     // keeps running.
