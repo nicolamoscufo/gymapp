@@ -6,6 +6,7 @@ import '../progress_analytics.dart';
 import '../workout_fatigue_analytics.dart';
 import '../workout_progression_analytics.dart';
 import 'ai_coach_memory.dart';
+import 'program_change_effectiveness.dart';
 import 'program_history_context.dart';
 import 'ai_coach_user_profile.dart';
 
@@ -131,6 +132,10 @@ class TrainingContextBuilder {
         scheduleVersions: scheduleVersions,
         history: fullHistory,
         schedules: schedules,
+      ),
+      'program_change_effectiveness': buildProgramChangeEffectivenessContext(
+        scheduleVersions: scheduleVersions,
+        history: fullHistory,
       ),
       'workouts': workouts,
       'body_logs': bodyLogs.map((entry) => entry.toJson()).toList(),
