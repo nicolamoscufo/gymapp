@@ -38,6 +38,16 @@ jobs:
                   raise SystemExit(f'Patch anchor not found: {label}')
               text = text.replace(old, new, 1)
 
+          def replace_between(start_marker, end_marker, replacement, label):
+              global text
+              start = text.find(start_marker)
+              if start < 0:
+                  raise SystemExit(f'Patch start not found: {label}')
+              end = text.find(end_marker, start)
+              if end < 0:
+                  raise SystemExit(f'Patch end not found: {label}')
+              text = text[:start] + replacement + text[end:]
+
           replace_once(
               "import 'ai_program_draft_review.dart';\n",
               "import 'ai_program_draft_review.dart';\nimport 'ai_model_management.dart';\n",
@@ -45,34 +55,15 @@ jobs:
           )
 
           replace_once(
-              "  bool _isModelInstalled = false;\n  bool _isDownloadingModel = false;\n  int? _downloadProgress;\n  String? _errorMessage;\n",
-              "  bool _isModelInstalled = false;\n  bool _isDownloadingModel = false;\n  int? _downloadProgress;\n  AiModelHealthReport _modelHealth = AiModelHealthReport.notInstalled();\n  String? _errorMessage;\n",
+              "  int? _downloadProgress;\n  String? _errorMessage;\n",
+              "  int? _downloadProgress;\n  AiModelHealthReport _modelHealth = AiModelHealthReport.notInstalled();\n  String? _errorMessage;\n",
               'health field',
           )
 
-          old_refresh = '''  Future<void> _refreshModelState() async {
-            try {
-              final isInstalled = await widget.modelInstaller.isInstalled();
-              if (!mounted) return;
-              setState(() {
-                _isModelInstalled = isInstalled;
-                _isCheckingModel = false;
-                _modelChecked = true;
-              });
-              _maybeStartLaunchHandoff();
-            } catch (_) {
-              if (!mounted) return;
-              setState(() {
-                _isModelInstalled = false;
-                _isCheckingModel = false;
-                _modelChecked = true;
-                _errorMessage =
-                    'Unable to check the local model. Verify the platform and dependencies.';
-              });
-            }
-          }
-          '''
-          new_refresh = '''  Future<void> _refreshModelState() async {
+          replace_between(
+              '  Future<void> _refreshModelState() async {',
+              '  Future<void> _downloadModel() async {',
+              '''  Future<void> _refreshModelState() async {
             try {
               await widget.modelInstaller.initialize();
               final recovery = await widget.modelInstaller.recoverInterruptedState();
@@ -101,53 +92,19 @@ jobs:
                 _modelHealth = AiModelHealthReport.notInstalled();
                 _isCheckingModel = false;
                 _modelChecked = true;
-                _errorMessage =
-                    'Impossibile verificare il modello locale: $error';
+                _errorMessage = 'Impossibile verificare il modello locale: $error';
               });
             }
           }
-          '''
-          replace_once(old_refresh, new_refresh, 'refresh model state')
 
-          old_download = '''  Future<void> _downloadModel() async {
-            if (_isDownloadingModel) return;
-            setState(() {
-              _isDownloadingModel = true;
-              _downloadProgress = 0;
-              _errorMessage = null;
-            });
+          ''',
+              'refresh model state',
+          )
 
-            try {
-              await widget.modelInstaller.install(
-                onProgress: (progress) {
-                  if (!mounted) return;
-                  setState(() => _downloadProgress = progress.clamp(0, 100));
-                },
-              );
-              if (!mounted) return;
-              setState(() {
-                _isModelInstalled = true;
-                _downloadProgress = 100;
-                _modelChecked = true;
-              });
-              _maybeStartLaunchHandoff();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('${widget.modelInstaller.modelName} is ready.')),
-              );
-            } catch (_) {
-              if (!mounted) return;
-              setState(
-                () => _errorMessage =
-                    'Model download failed. Check your connection and free storage space.',
-              );
-            } finally {
-              if (mounted) {
-                setState(() => _isDownloadingModel = false);
-              }
-            }
-          }
-          '''
-          new_download = '''  Future<void> _downloadModel() async {
+          replace_between(
+              '  Future<void> _downloadModel() async {',
+              '  Future<void> _startNewConversation() async {',
+              '''  Future<void> _downloadModel() async {
             if (_isDownloadingModel) return;
 
             final preflight = await widget.modelInstaller.preflight();
@@ -214,14 +171,9 @@ jobs:
               setState(() => _errorMessage = error.message);
             } catch (error) {
               if (!mounted) return;
-              setState(
-                () => _errorMessage =
-                    'Download del modello fallito: $error',
-              );
+              setState(() => _errorMessage = 'Download del modello fallito: $error');
             } finally {
-              if (mounted) {
-                setState(() => _isDownloadingModel = false);
-              }
+              if (mounted) setState(() => _isDownloadingModel = false);
             }
           }
 
@@ -237,65 +189,134 @@ jobs:
             setState(() => _isCheckingModel = true);
             await _refreshModelState();
           }
+
+          ''',
+              'download model',
+          )
+
+          send_start = text.find('  Future<void> _sendMessage() async {')
+          send_end = text.find('  String _programDraftKey', send_start)
+          if send_start < 0 or send_end < 0:
+              raise SystemExit('Could not isolate _sendMessage')
+          send = text[send_start:send_end]
+          old = '    await _saveAndRefresh(conversation);\n\n    try {\n'
+          if old not in send:
+              raise SystemExit('Chat inference-start anchor not found')
+          send = send.replace(
+              old,
+              '    await _saveAndRefresh(conversation);\n    await widget.modelInstaller.markInferenceStarted();\n\n    try {\n',
+              1,
+          )
+          old_catch = '''    } catch (_) {
+            if (!mounted) return;
+            setState(() {
+              _isRunning = false;
+              _errorMessage = 'Failed to get response. Please try again.';
+            });
+          }
           '''
-          replace_once(old_download, new_download, 'download model')
+          if old_catch not in send:
+              # Match the source indentation-independent suffix by its stable error string.
+              marker = "        _errorMessage = 'Failed to get response. Please try again.';"
+              pos = send.find(marker)
+              if pos < 0:
+                  raise SystemExit('Chat inference-finish anchor not found')
+              close = send.find('\n    }\n', pos)
+              if close < 0:
+                  raise SystemExit('Chat catch closing brace not found')
+              close += len('\n    }\n')
+              send = send[:close] + '    finally {\n      await widget.modelInstaller.markInferenceFinished();\n    }\n' + send[close:]
+          else:
+              send = send.replace(
+                  old_catch,
+                  old_catch[:-4] + ' finally {\n      await widget.modelInstaller.markInferenceFinished();\n    }\n',
+                  1,
+              )
+          text = text[:send_start] + send + text[send_end:]
 
-          replace_once(
-              "    await _saveAndRefresh(conversation);\n\n    try {\n      if (text.isNotEmpty) {\n",
-              "    await _saveAndRefresh(conversation);\n    await widget.modelInstaller.markInferenceStarted();\n\n    try {\n      if (text.isNotEmpty) {\n",
-              'chat inference start',
+          plan_start = text.find('  Future<void> _reviewPlanAdjustments() async {')
+          plan_end = text.find('  @override\n  Widget build(BuildContext context)', plan_start)
+          if plan_start < 0 or plan_end < 0:
+              raise SystemExit('Could not isolate _reviewPlanAdjustments')
+          plan = text[plan_start:plan_end]
+          state_anchor = '''    setState(() {
+            _isAnalyzingPlan = true;
+            _errorMessage = null;
+          });
+          '''
+          # Source is two-space method indentation; normalize using shorter stable anchor.
+          short = '    setState(() {\n      _isAnalyzingPlan = true;\n      _errorMessage = null;\n    });\n'
+          if short not in plan:
+              raise SystemExit('Plan inference-start anchor not found')
+          plan = plan.replace(
+              short,
+              short + '    await widget.modelInstaller.markInferenceStarted();\n',
+              1,
           )
-
-          replace_once(
-              "    } catch (_) {\n      if (!mounted) return;\n      setState(() {\n        _isRunning = false;\n        _errorMessage = 'Failed to get response. Please try again.';\n      });\n    }\n  }\n\n  String _programDraftKey",
-              "    } catch (_) {\n      if (!mounted) return;\n      setState(() {\n        _isRunning = false;\n        _errorMessage = 'Failed to get response. Please try again.';\n      });\n    } finally {\n      await widget.modelInstaller.markInferenceFinished();\n    }\n  }\n\n  String _programDraftKey",
-              'chat inference finish',
+          final_old = '    } finally {\n      if (mounted) setState(() => _isAnalyzingPlan = false);\n    }\n'
+          if final_old not in plan:
+              raise SystemExit('Plan inference-finish anchor not found')
+          plan = plan.replace(
+              final_old,
+              '    } finally {\n      await widget.modelInstaller.markInferenceFinished();\n      if (mounted) setState(() => _isAnalyzingPlan = false);\n    }\n',
+              1,
           )
-
-          replace_once(
-              "    setState(() {\n      _isAnalyzingPlan = true;\n      _errorMessage = null;\n    });\n    try {\n      final report = await widget.service.suggestWorkoutAdjustments(\n",
-              "    setState(() {\n      _isAnalyzingPlan = true;\n      _errorMessage = null;\n    });\n    await widget.modelInstaller.markInferenceStarted();\n    try {\n      final report = await widget.service.suggestWorkoutAdjustments(\n",
-              'plan inference start',
-          )
-
-          replace_once(
-              "    } finally {\n      if (mounted) setState(() => _isAnalyzingPlan = false);\n    }\n  }\n\n  @override\n  Widget build(BuildContext context)",
-              "    } finally {\n      await widget.modelInstaller.markInferenceFinished();\n      if (mounted) setState(() => _isAnalyzingPlan = false);\n    }\n  }\n\n  @override\n  Widget build(BuildContext context)",
-              'plan inference finish',
-          )
+          text = text[:plan_start] + plan + text[plan_end:]
 
           replace_once(
               "          IconButton(\n            icon: const Icon(Icons.edit_outlined),\n            tooltip: 'Edit profile',\n            onPressed: _editProfile,\n          ),\n",
               "          if (widget.modelInstaller.canManageModel)\n            IconButton(\n              key: const ValueKey('ai-model-management'),\n              icon: Icon(\n                _modelHealth.isHealthy\n                    ? Icons.verified_user_outlined\n                    : Icons.settings_suggest_outlined,\n              ),\n              tooltip: 'Gestisci modello AI locale',\n              onPressed: _isDownloadingModel ? null : _openModelManagement,\n            ),\n          IconButton(\n            icon: const Icon(Icons.edit_outlined),\n            tooltip: 'Edit profile',\n            onPressed: _editProfile,\n          ),\n",
-              'management appbar button',
+              'management button',
           )
 
-          replace_once(
-              "          else if (_isModelInstalled && _allConversations.isEmpty)\n            _ModelReadyBanner(theme: theme, colorScheme: colorScheme)\n          else if (_errorMessage != null)\n            _ErrorBanner(\n",
-              "          else if (_errorMessage != null)\n            _ErrorBanner(\n",
-              'error priority part 1',
-          )
-
-          replace_once(
-              "              onDismiss: () => setState(() => _errorMessage = null),\n            ),\n          if (_isDownloadingModel && _downloadProgress != null)\n",
-              "              onDismiss: () => setState(() => _errorMessage = null),\n            )\n          else if (_isModelInstalled && _allConversations.isEmpty)\n            _ModelReadyBanner(theme: theme, colorScheme: colorScheme),\n          if (_isDownloadingModel && _downloadProgress != null)\n",
-              'error priority part 2',
-          )
+          ready_first = '''          else if (_isModelInstalled && _allConversations.isEmpty)
+            _ModelReadyBanner(theme: theme, colorScheme: colorScheme)
+          else if (_errorMessage != null)
+            _ErrorBanner(
+          '''
+          error_first = '''          else if (_errorMessage != null)
+            _ErrorBanner(
+          '''
+          if ready_first in text:
+              text = text.replace(ready_first, error_first, 1)
+              dismiss = '''              onDismiss: () => setState(() => _errorMessage = null),
+            ),
+          if (_isDownloadingModel && _downloadProgress != null)
+          '''
+              replacement = '''              onDismiss: () => setState(() => _errorMessage = null),
+            )
+          else if (_isModelInstalled && _allConversations.isEmpty)
+            _ModelReadyBanner(theme: theme, colorScheme: colorScheme),
+          if (_isDownloadingModel && _downloadProgress != null)
+          '''
+              if dismiss not in text:
+                  raise SystemExit('Error-banner reorder anchor not found')
+              text = text.replace(dismiss, replacement, 1)
 
           path.write_text(text)
           PY
 
-          dart format lib/screens/ai_coach.dart lib/screens/ai_model_management.dart lib/ai_coach/ai_coach_model_manager.dart
+          dart format lib/screens/ai_coach.dart lib/screens/ai_model_management.dart lib/ai_coach/ai_coach_model_manager.dart test/ai_model_hardening_test.dart
 
-      - name: Commit patch
+      - name: Commit wired lifecycle
         shell: bash
         run: |
-          if git diff --quiet; then
-            echo "No patch changes"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/screens/ai_coach.dart lib/screens/ai_model_management.dart lib/ai_coach/ai_coach_model_manager.dart
-          git commit -m "feat: wire resilient AI model lifecycle"
-          git push origin HEAD:feature/ai-model-hardening
+          git add lib/screens/ai_coach.dart lib/screens/ai_model_management.dart lib/ai_coach/ai_coach_model_manager.dart test/ai_model_hardening_test.dart
+          if ! git diff --cached --quiet; then
+            git commit -m "feat: wire resilient AI model lifecycle"
+            git push origin HEAD:feature/ai-model-hardening
+          fi
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Compile Android debug APK
+        run: flutter build apk --debug
