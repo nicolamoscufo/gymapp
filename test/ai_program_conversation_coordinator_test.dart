@@ -14,6 +14,8 @@ import 'package:gymapp/models/schedule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
@@ -142,16 +144,10 @@ void main() {
 
   test('invalid generated draft is handled but never exposed as actionable', () async {
     final invalid = _proposalJson();
-    final schedule = Map<String, dynamic>.from(
-      ((invalid['program_draft'] as Map)['schedules'] as List).single as Map,
-    );
-    schedule['exercises'] = [
-      {
-        ...Map<String, dynamic>.from((schedule['exercises'] as List).single as Map),
-        'sets': 0,
-      },
-    ];
-    (invalid['program_draft'] as Map)['schedules'] = [schedule];
+    final schedule =
+        ((invalid['program_draft'] as Map)['schedules'] as List).single as Map;
+    final exercise = (schedule['exercises'] as List).single as Map;
+    exercise['sets'] = 0;
     final engine = _Engine(jsonEncode(invalid));
     final coordinator = AiProgramConversationCoordinator(
       draftService: AiProgramDraftService(engine: engine),
