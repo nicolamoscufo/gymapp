@@ -28,23 +28,19 @@ void main() {
     await tester.tap(wednesday);
     await tester.pump();
 
-    final exerciseCard = find.byKey(
-      const ValueKey('ai-draft-exercise-upper_a-1'),
+    final secondRemoveButton = find.byTooltip('Rimuovi esercizio').at(1);
+    final reviewScrollable = find.ancestor(
+      of: secondRemoveButton,
+      matching: find.byType(Scrollable),
     );
-    final removeButton = find.descendant(
-      of: exerciseCard,
-      matching: find.byTooltip('Rimuovi esercizio'),
-    );
-    final reviewScrollable = find
-        .ancestor(of: removeButton, matching: find.byType(Scrollable))
-        .first;
+    expect(reviewScrollable, findsOneWidget);
     await tester.scrollUntilVisible(
-      removeButton,
-      220,
+      secondRemoveButton,
+      180,
       scrollable: reviewScrollable,
     );
     await tester.pump();
-    await tester.tap(removeButton);
+    await tester.tap(secondRemoveButton);
     await tester.pump();
 
     await tester.tap(find.byKey(const ValueKey('ai-program-draft-done')));

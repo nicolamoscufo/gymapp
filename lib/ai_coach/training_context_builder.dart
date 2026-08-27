@@ -178,6 +178,7 @@ class TrainingContextBuilder {
     'exercises': session.exercises
         .map(
           (exercise) => {
+            'catalog_id': exercise.catalogId,
             'name': exercise.name,
             'notes': exercise.notes,
             'muscle_group': exercise.muscleGroup.name,

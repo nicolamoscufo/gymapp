@@ -1,10 +1,13 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app_data_store.dart';
+import '../exercise_catalog.dart';
+import '../models/exercise.dart';
 import '../models/schedule.dart';
 import '../models/schedule_version.dart';
 import 'ai_action_protocol.dart';
 import 'ai_program_draft_instance.dart';
+import 'exercise_catalog_retriever.dart';
 
 class AiProgramDraftCommitResult {
   final bool saved;
@@ -28,9 +31,11 @@ class AiProgramDraftCommitService {
   static const _maxRememberedDrafts = 80;
 
   final AiActionProtocolService actionProtocolService;
+  final ExerciseCatalogRetriever exerciseCatalogRetriever;
 
   const AiProgramDraftCommitService({
     this.actionProtocolService = const AiActionProtocolService(),
+    this.exerciseCatalogRetriever = const ExerciseCatalogRetriever(),
   });
 
   Future<AiProgramDraftCommitResult> commit(
@@ -49,6 +54,11 @@ class AiProgramDraftCommitService {
     }
 
     final latest = await AppDataStore.loadBundle();
+    final existingExercises = <String, Exercise>{
+      for (final schedule in latest.schedules)
+        for (final exercise in schedule.exercises)
+          exercise.id: Exercise.fromJson(exercise.toJson()),
+    };
     final working = latest.schedules
         .map((schedule) => Schedule.fromJson(schedule.toJson()))
         .toList();
@@ -71,6 +81,8 @@ class AiProgramDraftCommitService {
       );
     }
 
+    await _groundExercises(working, existingExercises);
+
     await AppDataStore.saveSchedules(
       working,
       source: ScheduleVersionSource.aiCoach,
@@ -88,6 +100,89 @@ class AiProgramDraftCommitService {
       schedules: persisted.schedules,
     );
   }
+
+  Future<void> _groundExercises(
+    List<Schedule> schedules,
+    Map<String, Exercise> existingExercises,
+  ) async {
+    for (final schedule in schedules) {
+      for (final exercise in schedule.exercises) {
+        final previous = existingExercises[exercise.id];
+        final identityUnchanged = previous != null &&
+            _sameExerciseIdentity(previous, exercise);
+        final previousCatalogId = previous?.catalogId?.trim() ?? '';
+
+        if (identityUnchanged && previousCatalogId.isNotEmpty) {
+          exercise.catalogId = previousCatalogId;
+          continue;
+        }
+
+        final resolved = await _resolveCatalogExercise(exercise);
+        if (resolved == null) {
+          exercise.catalogId = identityUnchanged ? previous.catalogId : null;
+          continue;
+        }
+
+        exercise.catalogId = resolved.id;
+        if (previous == null || !identityUnchanged) {
+          exercise.name = resolved.name;
+          exercise.muscleGroup = resolved.muscleGroup;
+          exercise.equipment = resolved.equipment;
+          exercise.movementPattern = resolved.movementPattern;
+        }
+      }
+    }
+  }
+
+  Future<ExerciseCatalogEntry?> _resolveCatalogExercise(Exercise exercise) async {
+    final name = _normalize(exercise.name);
+    final context = await exerciseCatalogRetriever.retrieveForQuestion(
+      query: exercise.name,
+      limit: 20,
+    );
+    var exact = context.matches
+        .map((match) => match.entry)
+        .where((entry) => _normalize(entry.name) == name)
+        .toList();
+
+    if (exact.length == 1) return exact.single;
+    if (exact.length > 1) {
+      final equipment = _normalize(exercise.equipment);
+      if (equipment.isNotEmpty) {
+        final byEquipment = exact
+            .where(
+              (entry) =>
+                  _normalize(entry.equipment).contains(equipment) ||
+                  equipment.contains(_normalize(entry.equipment)),
+            )
+            .toList();
+        if (byEquipment.isNotEmpty) exact = byEquipment;
+      }
+      if (exercise.muscleGroup != MuscleGroup.unassigned) {
+        final byGroup = exact
+            .where((entry) => entry.muscleGroup == exercise.muscleGroup)
+            .toList();
+        if (byGroup.isNotEmpty) exact = byGroup;
+      }
+      return exact.length == 1 ? exact.single : null;
+    }
+
+    return exerciseCatalogRetriever.resolveExercise(
+      name: exercise.name,
+      equipment: exercise.equipment,
+      muscleGroup: exercise.muscleGroup,
+    );
+  }
+
+  bool _sameExerciseIdentity(Exercise a, Exercise b) {
+    return _normalize(a.name) == _normalize(b.name) &&
+        a.muscleGroup == b.muscleGroup &&
+        _normalize(a.equipment) == _normalize(b.equipment) &&
+        _normalize(a.movementPattern) == _normalize(b.movementPattern);
+  }
+
+  String _normalize(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
   Future<bool> _wasDraftInstanceApplied(String instanceId) async {
     final prefs = await SharedPreferences.getInstance();

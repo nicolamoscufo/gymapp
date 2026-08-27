@@ -94,6 +94,7 @@ class ExerciseSet {
 class WorkoutExercise {
   final String id;
   String? sourceExerciseId;
+  String? catalogId;
   String name;
   String notes;
   MuscleGroup muscleGroup;
@@ -117,6 +118,7 @@ class WorkoutExercise {
   WorkoutExercise({
     String? id,
     this.sourceExerciseId,
+    this.catalogId,
     required this.name,
     required this.notes,
     this.muscleGroup = MuscleGroup.unassigned,
@@ -141,6 +143,7 @@ class WorkoutExercise {
   Map<String, dynamic> toJson() => {
     'id': id,
     'sourceExerciseId': sourceExerciseId,
+    'catalogId': catalogId,
     'name': name,
     'notes': notes,
     'muscleGroup': muscleGroup.name,
@@ -175,6 +178,7 @@ class WorkoutExercise {
     return WorkoutExercise(
       id: json['id'] as String?,
       sourceExerciseId: json['sourceExerciseId'] as String?,
+      catalogId: json['catalogId'] as String?,
       name: json['name'] as String,
       notes: json['notes'] as String? ?? '',
       muscleGroup: muscleGroupFromJson(json['muscleGroup']),

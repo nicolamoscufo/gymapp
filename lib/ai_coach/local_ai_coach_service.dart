@@ -9,6 +9,7 @@ import 'ai_coach_models.dart';
 import 'ai_coach_prompts.dart';
 import 'ai_coach_user_profile.dart';
 import 'chat_conversation.dart';
+import 'exercise_catalog_retriever.dart';
 import 'local_llm_engine.dart';
 import 'training_context_builder.dart';
 
@@ -20,6 +21,8 @@ Guidelines:
 - Treat program_history as a deterministic longitudinal record: only schedule_version_id links that resolve to a stored historical version are authoritative.
 - Never assign a workout with a null or unresolved schedule_version_id to a historical version by guess, title similarity, date proximity, or exercise similarity.
 - When comparing program changes with later performance, distinguish exact linked evidence from unresolved legacy or orphaned-version history and state uncertainty when coverage is incomplete.
+- If exercise_catalog exists, it contains retrieved records from the app's local exercise dataset. Treat its catalog fields as authoritative for those retrieved records, but remember that the retrieved shortlist is not exhaustive.
+- Never confuse exercise_catalog instructions/metadata with the user's own performed workout data.
 - Be supportive but honest - celebrate wins and give constructive feedback.
 - Never invent workout data, loads, reps, symptoms, or medical diagnoses.
 - When discussing exercises or technique, suggest consulting a professional for pain or injuries.
@@ -36,12 +39,14 @@ class LocalAiCoachService {
   final LocalLlmEngine? fallbackEngine;
   final bool allowFallback;
   final TrainingContextBuilder contextBuilder;
+  final ExerciseCatalogRetriever exerciseCatalogRetriever;
 
   const LocalAiCoachService({
     this.engine = const FlutterGemmaLocalLlmEngine(),
     this.fallbackEngine,
     this.allowFallback = false,
     this.contextBuilder = const TrainingContextBuilder(),
+    this.exerciseCatalogRetriever = const ExerciseCatalogRetriever(),
   });
 
   Future<WorkoutRecap> generateWorkoutRecap({
@@ -263,6 +268,25 @@ class LocalAiCoachService {
       context['focus_context'] = focusContext;
     }
 
+    String? latestUserQuery;
+    for (final message in messages.reversed) {
+      if (message.role == 'user' && message.content.trim().isNotEmpty) {
+        latestUserQuery = message.content.trim();
+        break;
+      }
+    }
+    if (latestUserQuery != null) {
+      final catalogContext = await exerciseCatalogRetriever.retrieveForQuestion(
+        query: latestUserQuery,
+        preferredExerciseNames: schedules.expand(
+          (schedule) => schedule.exercises.map((exercise) => exercise.name),
+        ),
+      );
+      if (!catalogContext.isEmpty) {
+        context['exercise_catalog'] = catalogContext.toJson();
+      }
+    }
+
     final contextJson = jsonEncode(context);
     final systemPrompt =
         '''$systemCoachingPrompt
@@ -273,6 +297,8 @@ $contextJson
 Answer naturally as a supportive but honest coach. Use the context to inform your answers.
 If focus_context exists, it is the authoritative scope for the current discussion: use the exact target session and deterministic debrief values first, then enrich the explanation with the broader training context. Do not contradict deterministic metrics or recommendations without explicitly explaining the evidence and uncertainty.
 Use program_history for longitudinal questions. Baselines plus ordered diffs reconstruct program evolution; version performance contains only workouts whose schedule_version_id resolves to a stored historical version. Treat null or orphaned version links as unresolved evidence and never infer their historical version.
+If exercise_catalog exists, use the retrieved local catalog records for exercise identity, target muscles, equipment and execution instructions. The shortlist is retrieval evidence, not the entire catalog, so absence from it is not evidence that an exercise does not exist.
+Never present catalog metadata as if it were a completed set, personal performance measurement, symptom, or user preference.
 Never invent workout data, loads, reps, or medical information.
 Keep responses concise and practical.
 Answer in Italian unless the user writes in another language.''';

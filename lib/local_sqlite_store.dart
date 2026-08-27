@@ -24,7 +24,7 @@ class LocalSqliteStore {
     final database = await _factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
         },
@@ -73,6 +73,7 @@ class LocalSqliteStore {
         id TEXT PRIMARY KEY,
         schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
         position INTEGER NOT NULL,
+        catalog_id TEXT,
         name TEXT NOT NULL,
         reps INTEGER NOT NULL,
         sets_count INTEGER NOT NULL,
@@ -123,6 +124,7 @@ class LocalSqliteStore {
         session_id TEXT NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
         position INTEGER NOT NULL,
         source_exercise_id TEXT,
+        catalog_id TEXT,
         name TEXT NOT NULL,
         notes TEXT NOT NULL,
         muscle_group TEXT NOT NULL,
@@ -232,6 +234,14 @@ class LocalSqliteStore {
       ''');
       await db.execute(
         'CREATE UNIQUE INDEX idx_schedule_versions_number ON schedule_versions(schedule_id, version_number)',
+      );
+    }
+    if (oldVersion < 3) {
+      await db.execute(
+        'ALTER TABLE schedule_exercises ADD COLUMN catalog_id TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE workout_exercises ADD COLUMN catalog_id TEXT',
       );
     }
   }
@@ -367,6 +377,7 @@ class LocalSqliteStore {
         'id': exercise.id,
         'schedule_id': schedule.id,
         'position': i,
+        'catalog_id': exercise.catalogId,
         'name': exercise.name,
         'reps': exercise.reps,
         'sets_count': exercise.set,
@@ -454,6 +465,7 @@ class LocalSqliteStore {
         'session_id': session.id,
         'position': i,
         'source_exercise_id': exercise.sourceExerciseId,
+        'catalog_id': exercise.catalogId,
         'name': exercise.name,
         'notes': exercise.notes,
         'muscle_group': exercise.muscleGroup.name,
@@ -611,6 +623,7 @@ class LocalSqliteStore {
   Exercise _scheduleExerciseFromRow(Map<String, Object?> row) {
     return Exercise(
       id: row['id'] as String,
+      catalogId: row['catalog_id'] as String?,
       name: row['name'] as String,
       reps: row['reps'] as int,
       set: row['sets_count'] as int,
@@ -716,6 +729,7 @@ class LocalSqliteStore {
     return WorkoutExercise(
       id: row['id'] as String,
       sourceExerciseId: row['source_exercise_id'] as String?,
+      catalogId: row['catalog_id'] as String?,
       name: row['name'] as String,
       notes: row['notes'] as String,
       muscleGroup: muscleGroupFromJson(row['muscle_group']),

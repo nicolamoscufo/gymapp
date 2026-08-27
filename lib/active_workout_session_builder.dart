@@ -239,6 +239,7 @@ class ActiveWorkoutSessionBuilder {
 
     return WorkoutExercise(
       sourceExerciseId: keepSourceExerciseId ? exercise.id : null,
+      catalogId: exercise.catalogId,
       name: exercise.name,
       notes: exercise.notes,
       muscleGroup: exercise.muscleGroup,
@@ -317,6 +318,7 @@ class ActiveWorkoutSessionBuilder {
         : null;
 
     return Exercise(
+      catalogId: exercise.catalogId,
       name: exercise.name,
       set: isBackoff ? 2 : math.max(1, workSets.length),
       reps: reps,
