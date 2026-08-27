@@ -1,4 +1,4 @@
-name: Apply AI model hardening patch
+name: Validate AI model hardening
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  patch:
+  validate:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -23,54 +23,92 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Patch AI Coach lifecycle wiring
+      - name: Fix managed-installer compatibility
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('lib/screens/ai_coach.dart')
-          text = path.read_text()
+          manager_path = Path('lib/ai_coach/ai_coach_model_manager.dart')
+          manager = manager_path.read_text()
+          start = manager.index('abstract class AiCoachModelInstaller {')
+          end = manager.index('abstract class AiModelDeviceProbe {', start)
+          manager = manager[:start] + '''abstract class AiCoachModelInstaller {
+            String get modelName;
+            String get modelFileName;
+            String get modelUrl;
+            String get modelSizeLabel;
 
-          def replace_once(old, new, label):
-              global text
-              if old not in text:
-                  raise SystemExit(f'Patch anchor not found: {label}')
-              text = text.replace(old, new, 1)
+            Future<void> initialize();
+            Future<bool> isInstalled();
+            Future<void> install({void Function(int progress)? onProgress});
+            Future<void> activateInstalledModel();
+          }
 
-          def replace_between(start_marker, end_marker, replacement, label):
-              global text
-              start = text.find(start_marker)
-              if start < 0:
-                  raise SystemExit(f'Patch start not found: {label}')
-              end = text.find(end_marker, start)
-              if end < 0:
-                  raise SystemExit(f'Patch end not found: {label}')
-              text = text[:start] + replacement + text[end:]
+          abstract class AiCoachManagedModelInstaller implements AiCoachModelInstaller {
+            String get modelVersion;
+            String get expectedSha256;
+            int get expectedSizeBytes;
 
-          replace_once(
-              "import 'ai_program_draft_review.dart';\n",
-              "import 'ai_program_draft_review.dart';\nimport 'ai_model_management.dart';\n",
-              'management import',
+            Future<AiModelPreflightReport> preflight();
+            Future<AiModelHealthReport> verifyInstallation();
+            Future<AiModelRecoveryReport> recoverInterruptedState();
+            Future<void> uninstall();
+            Future<void> reinstall({void Function(int progress)? onProgress});
+            Future<void> markInferenceStarted();
+            Future<void> markInferenceFinished();
+          }
+
+          ''' + manager[end:]
+          manager = manager.replace(
+              'class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {',
+              'class FlutterGemmaAiCoachModelInstaller implements AiCoachManagedModelInstaller {',
+              1,
+          )
+          manager = manager.replace(
+              '''  @override
+            bool get canManageModel => true;
+
+          ''',
+              '',
+              1,
+          )
+          manager_path.write_text(manager)
+
+          coach_path = Path('lib/screens/ai_coach.dart')
+          coach = coach_path.read_text()
+          state_anchor = '  bool _launchStarted = false;\n\n'
+          if state_anchor not in coach:
+              raise SystemExit('Coach state anchor missing')
+          coach = coach.replace(
+              state_anchor,
+              state_anchor + '''  AiCoachManagedModelInstaller? get _managedModelInstaller {
+            final installer = widget.modelInstaller;
+            return installer is AiCoachManagedModelInstaller ? installer : null;
+          }
+
+          ''',
+              1,
           )
 
-          replace_once(
-              "  int? _downloadProgress;\n  String? _errorMessage;\n",
-              "  int? _downloadProgress;\n  AiModelHealthReport _modelHealth = AiModelHealthReport.notInstalled();\n  String? _errorMessage;\n",
-              'health field',
-          )
-
-          replace_between(
-              '  Future<void> _refreshModelState() async {',
-              '  Future<void> _downloadModel() async {',
-              '''  Future<void> _refreshModelState() async {
+          refresh_start = coach.index('  Future<void> _refreshModelState() async {')
+          refresh_end = coach.index('  Future<void> _downloadModel() async {', refresh_start)
+          coach = coach[:refresh_start] + '''  Future<void> _refreshModelState() async {
             try {
               await widget.modelInstaller.initialize();
-              final recovery = await widget.modelInstaller.recoverInterruptedState();
+              final managed = _managedModelInstaller;
+              final recovery = managed == null
+                  ? const AiModelRecoveryReport()
+                  : await managed.recoverInterruptedState();
               final isInstalled = await widget.modelInstaller.isInstalled();
-              final health = isInstalled
-                  ? await widget.modelInstaller.verifyInstallation()
-                  : AiModelHealthReport.notInstalled();
+              final health = !isInstalled
+                  ? AiModelHealthReport.notInstalled()
+                  : managed == null
+                  ? const AiModelHealthReport(
+                      status: AiModelHealthStatus.healthy,
+                      message: 'Modello installato.',
+                    )
+                  : await managed.verifyInstallation();
               if (!mounted) return;
               setState(() {
                 _isModelInstalled = isInstalled;
@@ -97,17 +135,17 @@ jobs:
             }
           }
 
-          ''',
-              'refresh model state',
-          )
+          ''' + coach[refresh_end:]
 
-          replace_between(
-              '  Future<void> _downloadModel() async {',
-              '  Future<void> _startNewConversation() async {',
-              '''  Future<void> _downloadModel() async {
+          download_start = coach.index('  Future<void> _downloadModel() async {')
+          download_end = coach.index('  Future<void> _startNewConversation() async {', download_start)
+          coach = coach[:download_start] + '''  Future<void> _downloadModel() async {
             if (_isDownloadingModel) return;
 
-            final preflight = await widget.modelInstaller.preflight();
+            final managed = _managedModelInstaller;
+            final preflight = managed == null
+                ? AiModelPreflightReport.unknown()
+                : await managed.preflight();
             if (!mounted) return;
             if (!preflight.canInstall) {
               setState(() => _errorMessage = preflight.userSummary);
@@ -150,7 +188,12 @@ jobs:
                   setState(() => _downloadProgress = progress.clamp(0, 100));
                 },
               );
-              final health = await widget.modelInstaller.verifyInstallation();
+              final health = managed == null
+                  ? const AiModelHealthReport(
+                      status: AiModelHealthStatus.healthy,
+                      message: 'Modello installato.',
+                    )
+                  : await managed.verifyInstallation();
               if (!mounted) return;
               setState(() {
                 _isModelInstalled = true;
@@ -178,11 +221,11 @@ jobs:
           }
 
           Future<void> _openModelManagement() async {
+            final managed = _managedModelInstaller;
+            if (managed == null) return;
             await Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => AiModelManagementScreen(
-                  installer: widget.modelInstaller,
-                ),
+                builder: (_) => AiModelManagementScreen(installer: managed),
               ),
             );
             if (!mounted) return;
@@ -190,122 +233,105 @@ jobs:
             await _refreshModelState();
           }
 
+          ''' + coach[download_end:]
+
+          coach = coach.replace(
+              '    await widget.modelInstaller.markInferenceStarted();',
+              '''    final managedInstaller = _managedModelInstaller;
+            if (managedInstaller != null) {
+              await managedInstaller.markInferenceStarted();
+            }''',
+          )
+          coach = coach.replace(
+              '      await widget.modelInstaller.markInferenceFinished();',
+              '''      if (managedInstaller != null) {
+                await managedInstaller.markInferenceFinished();
+              }''',
+          )
+          coach = coach.replace(
+              'if (widget.modelInstaller.canManageModel)',
+              'if (_managedModelInstaller != null)',
+              1,
+          )
+          coach_path.write_text(coach)
+
+          screen_path = Path('lib/screens/ai_model_management.dart')
+          screen = screen_path.read_text()
+          screen = screen.replace(
+              'final AiCoachModelInstaller installer;',
+              'final AiCoachManagedModelInstaller installer;',
+              1,
+          )
+          screen = screen.replace(
+              '    if (!await _confirmWarnings()) return;\n\n    if (reinstall) {',
+              '    if (!await _confirmWarnings()) return;\n    if (!mounted) return;\n\n    if (reinstall) {',
+              1,
+          )
+          screen = screen.replace(
+              '''      final onProgress = (int progress) {
+                if (!mounted) return;
+                setState(() => _progress = progress.clamp(0, 100));
+              };
           ''',
-              'download model',
-          )
-
-          send_start = text.find('  Future<void> _sendMessage() async {')
-          send_end = text.find('  String _programDraftKey', send_start)
-          if send_start < 0 or send_end < 0:
-              raise SystemExit('Could not isolate _sendMessage')
-          send = text[send_start:send_end]
-          old = '    await _saveAndRefresh(conversation);\n\n    try {\n'
-          if old not in send:
-              raise SystemExit('Chat inference-start anchor not found')
-          send = send.replace(
-              old,
-              '    await _saveAndRefresh(conversation);\n    await widget.modelInstaller.markInferenceStarted();\n\n    try {\n',
+              '''      void onProgress(int progress) {
+                if (!mounted) return;
+                setState(() => _progress = progress.clamp(0, 100));
+              }
+          ''',
               1,
           )
-          old_catch = '''    } catch (_) {
-            if (!mounted) return;
-            setState(() {
-              _isRunning = false;
-              _errorMessage = 'Failed to get response. Please try again.';
-            });
-          }
-          '''
-          if old_catch not in send:
-              # Match the source indentation-independent suffix by its stable error string.
-              marker = "        _errorMessage = 'Failed to get response. Please try again.';"
-              pos = send.find(marker)
-              if pos < 0:
-                  raise SystemExit('Chat inference-finish anchor not found')
-              close = send.find('\n    }\n', pos)
-              if close < 0:
-                  raise SystemExit('Chat catch closing brace not found')
-              close += len('\n    }\n')
-              send = send[:close] + '    finally {\n      await widget.modelInstaller.markInferenceFinished();\n    }\n' + send[close:]
-          else:
-              send = send.replace(
-                  old_catch,
-                  old_catch[:-4] + ' finally {\n      await widget.modelInstaller.markInferenceFinished();\n    }\n',
-                  1,
-              )
-          text = text[:send_start] + send + text[send_end:]
+          screen_path.write_text(screen)
 
-          plan_start = text.find('  Future<void> _reviewPlanAdjustments() async {')
-          plan_end = text.find('  @override\n  Widget build(BuildContext context)', plan_start)
-          if plan_start < 0 or plan_end < 0:
-              raise SystemExit('Could not isolate _reviewPlanAdjustments')
-          plan = text[plan_start:plan_end]
-          state_anchor = '''    setState(() {
-            _isAnalyzingPlan = true;
-            _errorMessage = null;
-          });
-          '''
-          # Source is two-space method indentation; normalize using shorter stable anchor.
-          short = '    setState(() {\n      _isAnalyzingPlan = true;\n      _errorMessage = null;\n    });\n'
-          if short not in plan:
-              raise SystemExit('Plan inference-start anchor not found')
-          plan = plan.replace(
-              short,
-              short + '    await widget.modelInstaller.markInferenceStarted();\n',
+          test_path = Path('test/ai_model_hardening_test.dart')
+          test = test_path.read_text()
+          test = test.replace(
+              'class _FakeManagementInstaller implements AiCoachModelInstaller {',
+              'class _FakeManagementInstaller implements AiCoachManagedModelInstaller {',
               1,
           )
-          final_old = '    } finally {\n      if (mounted) setState(() => _isAnalyzingPlan = false);\n    }\n'
-          if final_old not in plan:
-              raise SystemExit('Plan inference-finish anchor not found')
-          plan = plan.replace(
-              final_old,
-              '    } finally {\n      await widget.modelInstaller.markInferenceFinished();\n      if (mounted) setState(() => _isAnalyzingPlan = false);\n    }\n',
+          test = test.replace(
+              '''  @override
+            bool get canManageModel => true;
+
+          ''',
+              '',
               1,
           )
-          text = text[:plan_start] + plan + text[plan_end:]
+          test = test.replace(
+              '  @override\n  Future<void> uninstall() async {}\n}',
+              '''  @override
+            Future<AiModelRecoveryReport> recoverInterruptedState() async =>
+                const AiModelRecoveryReport();
 
-          replace_once(
-              "          IconButton(\n            icon: const Icon(Icons.edit_outlined),\n            tooltip: 'Edit profile',\n            onPressed: _editProfile,\n          ),\n",
-              "          if (widget.modelInstaller.canManageModel)\n            IconButton(\n              key: const ValueKey('ai-model-management'),\n              icon: Icon(\n                _modelHealth.isHealthy\n                    ? Icons.verified_user_outlined\n                    : Icons.settings_suggest_outlined,\n              ),\n              tooltip: 'Gestisci modello AI locale',\n              onPressed: _isDownloadingModel ? null : _openModelManagement,\n            ),\n          IconButton(\n            icon: const Icon(Icons.edit_outlined),\n            tooltip: 'Edit profile',\n            onPressed: _editProfile,\n          ),\n",
-              'management button',
+            @override
+            Future<void> reinstall({void Function(int progress)? onProgress}) async {
+              onProgress?.call(100);
+            }
+
+            @override
+            Future<void> markInferenceStarted() async {}
+
+            @override
+            Future<void> markInferenceFinished() async {}
+
+            @override
+            Future<void> uninstall() async {}
+          }''',
+              1,
           )
-
-          ready_first = '''          else if (_isModelInstalled && _allConversations.isEmpty)
-            _ModelReadyBanner(theme: theme, colorScheme: colorScheme)
-          else if (_errorMessage != null)
-            _ErrorBanner(
-          '''
-          error_first = '''          else if (_errorMessage != null)
-            _ErrorBanner(
-          '''
-          if ready_first in text:
-              text = text.replace(ready_first, error_first, 1)
-              dismiss = '''              onDismiss: () => setState(() => _errorMessage = null),
-            ),
-          if (_isDownloadingModel && _downloadProgress != null)
-          '''
-              replacement = '''              onDismiss: () => setState(() => _errorMessage = null),
-            )
-          else if (_isModelInstalled && _allConversations.isEmpty)
-            _ModelReadyBanner(theme: theme, colorScheme: colorScheme),
-          if (_isDownloadingModel && _downloadProgress != null)
-          '''
-              if dismiss not in text:
-                  raise SystemExit('Error-banner reorder anchor not found')
-              text = text.replace(dismiss, replacement, 1)
-
-          path.write_text(text)
+          test_path.write_text(test)
           PY
 
-          dart format lib/screens/ai_coach.dart lib/screens/ai_model_management.dart lib/ai_coach/ai_coach_model_manager.dart test/ai_model_hardening_test.dart
+          dart format lib/ai_coach/ai_coach_model_manager.dart lib/screens/ai_coach.dart lib/screens/ai_model_management.dart test/ai_model_hardening_test.dart
 
-      - name: Commit wired lifecycle
+      - name: Commit compatibility fix
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/screens/ai_coach.dart lib/screens/ai_model_management.dart lib/ai_coach/ai_coach_model_manager.dart test/ai_model_hardening_test.dart
+          git add lib/ai_coach/ai_coach_model_manager.dart lib/screens/ai_coach.dart lib/screens/ai_model_management.dart test/ai_model_hardening_test.dart
           if ! git diff --cached --quiet; then
-            git commit -m "feat: wire resilient AI model lifecycle"
+            git commit -m "fix: isolate managed AI model capabilities"
             git push origin HEAD:feature/ai-model-hardening
           fi
 
