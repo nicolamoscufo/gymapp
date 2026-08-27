@@ -123,10 +123,11 @@ class _AiModelManagementScreenState extends State<AiModelManagementScreen> {
     });
 
     try {
-      final onProgress = (int progress) {
+      void onProgress(int progress) {
         if (!mounted) return;
         setState(() => _progress = progress.clamp(0, 100));
-      };
+      }
+
       if (reinstall) {
         await widget.installer.reinstall(onProgress: onProgress);
       } else {
