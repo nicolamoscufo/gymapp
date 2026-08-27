@@ -2,15 +2,23 @@ name: Flutter CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  analyze-and-test:
+  quality:
+    name: Format, analyze, test, coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,8 +32,20 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Analyze
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze and type-check
         run: flutter analyze
 
-      - name: Test
-        run: flutter test
+      - name: Test with coverage
+        run: flutter test --coverage
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-coverage
+          path: coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 14

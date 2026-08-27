@@ -1,0 +1,40 @@
+rules:
+  - id: dart-sql-string-interpolation
+    languages: [generic]
+    severity: ERROR
+    message: Avoid interpolating values into raw SQL. Use sqflite bind arguments/placeholders instead.
+    metadata:
+      category: security
+      cwe: CWE-89
+      technology: [dart, sqflite]
+    pattern-regex: '(?s)\b(?:rawQuery|rawInsert|rawUpdate|rawDelete|execute)\s*\(\s*["'"'][^"'"']{0,400}\$(?:\{[^}]+\}|[A-Za-z_][A-Za-z0-9_.]*)'
+
+  - id: dart-process-run-in-shell
+    languages: [generic]
+    severity: ERROR
+    message: Shell execution can become command injection when any argument is user-controlled. Prefer direct process execution with runInShell false.
+    metadata:
+      category: security
+      cwe: CWE-78
+      technology: [dart]
+    pattern-regex: '(?s)\bProcess\.(?:run|start)\s*\([^;]{0,800}\brunInShell\s*:\s*true'
+
+  - id: dart-accept-all-tls-certificates
+    languages: [generic]
+    severity: ERROR
+    message: Do not accept all TLS certificates. Certificate validation must fail closed.
+    metadata:
+      category: security
+      cwe: CWE-295
+      technology: [dart]
+    pattern-regex: '(?s)\bbadCertificateCallback\s*=\s*(?:\([^)]*\)\s*=>\s*true|[^;]{0,500}\breturn\s+true\s*;)'
+
+  - id: dart-hardcoded-sensitive-credential
+    languages: [generic]
+    severity: WARNING
+    message: Possible hardcoded credential or token. Keep secrets out of source control and load them from an appropriate secure mechanism.
+    metadata:
+      category: security
+      cwe: CWE-798
+      technology: [dart]
+    pattern-regex: '(?i)\b(?:api[_-]?key|client[_-]?secret|access[_-]?token|auth[_-]?token|password|passwd)\b\s*(?::|=)\s*["'"'][^"'"'\n]{8,}["'"']'

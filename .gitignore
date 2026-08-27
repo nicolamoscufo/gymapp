@@ -33,6 +33,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Graphify local/legacy scratch state. The shareable graphify-out/ directory
+# is intentionally committed and must not be ignored.
+.graphify/
+
 # Symbolication related
 app.*.symbols
 

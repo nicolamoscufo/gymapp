@@ -1,0 +1,115 @@
+name: Graphify Code Graph
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'analysis_options.yaml'
+      - 'AGENTS.md'
+      - '.github/workflows/**'
+      - '.semgrep/**'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'analysis_options.yaml'
+      - 'AGENTS.md'
+      - '.github/workflows/**'
+      - '.semgrep/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: graphify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRAPHIFY_VERSION: '0.9.50'
+
+jobs:
+  validate:
+    name: Build code graph for PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python for Graphify CLI
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install official Graphify package
+        run: python -m pip install --disable-pip-version-check "graphifyy==${GRAPHIFY_VERSION}"
+
+      - name: Generate deterministic project graph
+        run: |
+          graphify update .
+          test -s graphify-out/graph.json
+          test -s graphify-out/graph.html
+          test -s graphify-out/GRAPH_REPORT.md
+
+      - name: Upload Graphify preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphify-out
+          path: graphify-out/
+          if-no-files-found: error
+          retention-days: 14
+
+  refresh-main:
+    name: Refresh committed code graph
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python for Graphify CLI
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install official Graphify package
+        run: python -m pip install --disable-pip-version-check "graphifyy==${GRAPHIFY_VERSION}"
+
+      - name: Refresh deterministic project graph
+        run: |
+          graphify update .
+          test -s graphify-out/graph.json
+          test -s graphify-out/graph.html
+          test -s graphify-out/GRAPH_REPORT.md
+
+      - name: Commit graph when it changed
+        run: |
+          git add graphify-out/graph.json graphify-out/graph.html graphify-out/GRAPH_REPORT.md
+          if git diff --cached --quiet; then
+            echo "Graphify output is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(graphify): refresh code graph [skip ci]"
+          git push origin HEAD:main
