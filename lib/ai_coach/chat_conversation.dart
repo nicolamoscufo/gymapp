@@ -9,6 +9,7 @@ class ChatMessage {
   final String content;
   final List<Uint8List> imageBytes;
   final List<String> imageLabels;
+  final Map<String, dynamic>? actionPayload;
   final DateTime timestamp;
 
   ChatMessage({
@@ -16,16 +17,20 @@ class ChatMessage {
     required this.content,
     this.imageBytes = const [],
     this.imageLabels = const [],
+    this.actionPayload,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
   bool get hasImages => imageBytes.isNotEmpty;
+  bool get hasActionPayload => actionPayload != null && actionPayload!.isNotEmpty;
 
   ChatMessage copyWith({
     String? role,
     String? content,
     List<Uint8List>? imageBytes,
     List<String>? imageLabels,
+    Map<String, dynamic>? actionPayload,
+    bool clearActionPayload = false,
     DateTime? timestamp,
   }) {
     return ChatMessage(
@@ -33,6 +38,9 @@ class ChatMessage {
       content: content ?? this.content,
       imageBytes: imageBytes ?? this.imageBytes,
       imageLabels: imageLabels ?? this.imageLabels,
+      actionPayload: clearActionPayload
+          ? null
+          : actionPayload ?? this.actionPayload,
       timestamp: timestamp ?? this.timestamp,
     );
   }
@@ -40,13 +48,18 @@ class ChatMessage {
   Map<String, dynamic> toJson() => {
     'role': role,
     'content': content,
+    if (actionPayload != null) 'actionPayload': actionPayload,
     'timestamp': timestamp.toIso8601String(),
   };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    final payload = json['actionPayload'];
     return ChatMessage(
       role: json['role'] as String? ?? 'user',
       content: json['content'] as String? ?? '',
+      actionPayload: payload is Map
+          ? Map<String, dynamic>.from(payload)
+          : null,
       timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
           DateTime.now(),
     );
@@ -66,14 +79,15 @@ class ChatConversation {
     this.messages = const [],
     DateTime? createdAt,
     DateTime? updatedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  }) : createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
   int get messageCount => messages.length;
   String get lastMessagePreview {
     if (messages.isEmpty) return '';
     final last = messages.last;
     final text = last.content.replaceAll('\n', ' ');
+    if (text.isEmpty && last.hasActionPayload) return 'Proposta AI da rivedere';
     return text.length > 80 ? '${text.substring(0, 80)}...' : text;
   }
 
