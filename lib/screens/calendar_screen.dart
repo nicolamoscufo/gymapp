@@ -6,6 +6,7 @@ import '../models/schedule.dart';
 import '../models/workout.dart';
 import '../top_set_backoff.dart' as top_set_backoff;
 import 'active_workout.dart';
+import 'program_history.dart';
 import 'schedule_detail.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -200,6 +201,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     );
     widget.onRefresh();
+  }
+
+  Future<void> _openProgramHistory(Schedule schedule) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProgramHistoryScreen(
+          schedule: schedule,
+          history: widget.history,
+        ),
+      ),
+    );
   }
 
   Future<void> _startSchedule(Schedule schedule) async {
@@ -398,9 +411,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       subtitle: Text(
                         'Week ${schedule.currentWeek(now: _selectedCalendarDay)}${schedule.isDeloadWeek(now: _selectedCalendarDay) ? ' - deload' : ''}',
                       ),
-                      trailing: FilledButton(
-                        onPressed: () => _startSchedule(schedule),
-                        child: const Text('Start'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Evoluzione programma',
+                            icon: const Icon(Icons.timeline),
+                            onPressed: () => _openProgramHistory(schedule),
+                          ),
+                          FilledButton(
+                            onPressed: () => _startSchedule(schedule),
+                            child: const Text('Start'),
+                          ),
+                        ],
                       ),
                       onTap: () => _openScheduleDetail(schedule),
                     ),
