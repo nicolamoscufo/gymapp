@@ -23,251 +23,19 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Fix managed-installer compatibility
+      - name: Finalize model management typing
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          manager_path = Path('lib/ai_coach/ai_coach_model_manager.dart')
-          manager = manager_path.read_text()
-          start = manager.index('abstract class AiCoachModelInstaller {')
-          end = manager.index('abstract class AiModelDeviceProbe {', start)
-          manager = manager[:start] + '''abstract class AiCoachModelInstaller {
-            String get modelName;
-            String get modelFileName;
-            String get modelUrl;
-            String get modelSizeLabel;
-
-            Future<void> initialize();
-            Future<bool> isInstalled();
-            Future<void> install({void Function(int progress)? onProgress});
-            Future<void> activateInstalledModel();
-          }
-
-          abstract class AiCoachManagedModelInstaller implements AiCoachModelInstaller {
-            String get modelVersion;
-            String get expectedSha256;
-            int get expectedSizeBytes;
-
-            Future<AiModelPreflightReport> preflight();
-            Future<AiModelHealthReport> verifyInstallation();
-            Future<AiModelRecoveryReport> recoverInterruptedState();
-            Future<void> uninstall();
-            Future<void> reinstall({void Function(int progress)? onProgress});
-            Future<void> markInferenceStarted();
-            Future<void> markInferenceFinished();
-          }
-
-          ''' + manager[end:]
-          manager = manager.replace(
-              'class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {',
-              'class FlutterGemmaAiCoachModelInstaller implements AiCoachManagedModelInstaller {',
+          path = Path('lib/screens/ai_model_management.dart')
+          text = path.read_text()
+          text = text.replace(
+              'class _ModelIdentityCard extends StatelessWidget {\n  final AiCoachModelInstaller installer;',
+              'class _ModelIdentityCard extends StatelessWidget {\n  final AiCoachManagedModelInstaller installer;',
               1,
           )
-          manager = manager.replace(
-              '''  @override
-            bool get canManageModel => true;
-
-          ''',
-              '',
-              1,
-          )
-          manager_path.write_text(manager)
-
-          coach_path = Path('lib/screens/ai_coach.dart')
-          coach = coach_path.read_text()
-          state_anchor = '  bool _launchStarted = false;\n\n'
-          if state_anchor not in coach:
-              raise SystemExit('Coach state anchor missing')
-          coach = coach.replace(
-              state_anchor,
-              state_anchor + '''  AiCoachManagedModelInstaller? get _managedModelInstaller {
-            final installer = widget.modelInstaller;
-            return installer is AiCoachManagedModelInstaller ? installer : null;
-          }
-
-          ''',
-              1,
-          )
-
-          refresh_start = coach.index('  Future<void> _refreshModelState() async {')
-          refresh_end = coach.index('  Future<void> _downloadModel() async {', refresh_start)
-          coach = coach[:refresh_start] + '''  Future<void> _refreshModelState() async {
-            try {
-              await widget.modelInstaller.initialize();
-              final managed = _managedModelInstaller;
-              final recovery = managed == null
-                  ? const AiModelRecoveryReport()
-                  : await managed.recoverInterruptedState();
-              final isInstalled = await widget.modelInstaller.isInstalled();
-              final health = !isInstalled
-                  ? AiModelHealthReport.notInstalled()
-                  : managed == null
-                  ? const AiModelHealthReport(
-                      status: AiModelHealthStatus.healthy,
-                      message: 'Modello installato.',
-                    )
-                  : await managed.verifyInstallation();
-              if (!mounted) return;
-              setState(() {
-                _isModelInstalled = isInstalled;
-                _modelHealth = health;
-                _isCheckingModel = false;
-                _modelChecked = true;
-                if (recovery.userMessage != null) {
-                  _errorMessage = recovery.userMessage;
-                } else if (isInstalled &&
-                    health.status != AiModelHealthStatus.healthy) {
-                  _errorMessage = health.message;
-                }
-              });
-              _maybeStartLaunchHandoff();
-            } catch (error) {
-              if (!mounted) return;
-              setState(() {
-                _isModelInstalled = false;
-                _modelHealth = AiModelHealthReport.notInstalled();
-                _isCheckingModel = false;
-                _modelChecked = true;
-                _errorMessage = 'Impossibile verificare il modello locale: $error';
-              });
-            }
-          }
-
-          ''' + coach[refresh_end:]
-
-          download_start = coach.index('  Future<void> _downloadModel() async {')
-          download_end = coach.index('  Future<void> _startNewConversation() async {', download_start)
-          coach = coach[:download_start] + '''  Future<void> _downloadModel() async {
-            if (_isDownloadingModel) return;
-
-            final managed = _managedModelInstaller;
-            final preflight = managed == null
-                ? AiModelPreflightReport.unknown()
-                : await managed.preflight();
-            if (!mounted) return;
-            if (!preflight.canInstall) {
-              setState(() => _errorMessage = preflight.userSummary);
-              return;
-            }
-            if (preflight.needsConfirmation) {
-              final continueDownload = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Compatibilità non ideale'),
-                      content: Text(
-                        '${preflight.warnings.join('\\n\\n')}\\n\\nVuoi continuare comunque?',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Annulla'),
-                        ),
-                        FilledButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Continua'),
-                        ),
-                      ],
-                    ),
-                  ) ??
-                  false;
-              if (!continueDownload) return;
-            }
-
-            setState(() {
-              _isDownloadingModel = true;
-              _downloadProgress = 0;
-              _errorMessage = null;
-            });
-
-            try {
-              await widget.modelInstaller.install(
-                onProgress: (progress) {
-                  if (!mounted) return;
-                  setState(() => _downloadProgress = progress.clamp(0, 100));
-                },
-              );
-              final health = managed == null
-                  ? const AiModelHealthReport(
-                      status: AiModelHealthStatus.healthy,
-                      message: 'Modello installato.',
-                    )
-                  : await managed.verifyInstallation();
-              if (!mounted) return;
-              setState(() {
-                _isModelInstalled = true;
-                _modelHealth = health;
-                _downloadProgress = 100;
-                _modelChecked = true;
-              });
-              _maybeStartLaunchHandoff();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    '${widget.modelInstaller.modelName} installato e verificato.',
-                  ),
-                ),
-              );
-            } on AiModelInstallException catch (error) {
-              if (!mounted) return;
-              setState(() => _errorMessage = error.message);
-            } catch (error) {
-              if (!mounted) return;
-              setState(() => _errorMessage = 'Download del modello fallito: $error');
-            } finally {
-              if (mounted) setState(() => _isDownloadingModel = false);
-            }
-          }
-
-          Future<void> _openModelManagement() async {
-            final managed = _managedModelInstaller;
-            if (managed == null) return;
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => AiModelManagementScreen(installer: managed),
-              ),
-            );
-            if (!mounted) return;
-            setState(() => _isCheckingModel = true);
-            await _refreshModelState();
-          }
-
-          ''' + coach[download_end:]
-
-          coach = coach.replace(
-              '    await widget.modelInstaller.markInferenceStarted();',
-              '''    final managedInstaller = _managedModelInstaller;
-            if (managedInstaller != null) {
-              await managedInstaller.markInferenceStarted();
-            }''',
-          )
-          coach = coach.replace(
-              '      await widget.modelInstaller.markInferenceFinished();',
-              '''      if (managedInstaller != null) {
-                await managedInstaller.markInferenceFinished();
-              }''',
-          )
-          coach = coach.replace(
-              'if (widget.modelInstaller.canManageModel)',
-              'if (_managedModelInstaller != null)',
-              1,
-          )
-          coach_path.write_text(coach)
-
-          screen_path = Path('lib/screens/ai_model_management.dart')
-          screen = screen_path.read_text()
-          screen = screen.replace(
-              'final AiCoachModelInstaller installer;',
-              'final AiCoachManagedModelInstaller installer;',
-              1,
-          )
-          screen = screen.replace(
-              '    if (!await _confirmWarnings()) return;\n\n    if (reinstall) {',
-              '    if (!await _confirmWarnings()) return;\n    if (!mounted) return;\n\n    if (reinstall) {',
-              1,
-          )
-          screen = screen.replace(
+          text = text.replace(
               '''      final onProgress = (int progress) {
                 if (!mounted) return;
                 setState(() => _progress = progress.clamp(0, 100));
@@ -280,58 +48,18 @@ jobs:
           ''',
               1,
           )
-          screen_path.write_text(screen)
-
-          test_path = Path('test/ai_model_hardening_test.dart')
-          test = test_path.read_text()
-          test = test.replace(
-              'class _FakeManagementInstaller implements AiCoachModelInstaller {',
-              'class _FakeManagementInstaller implements AiCoachManagedModelInstaller {',
-              1,
-          )
-          test = test.replace(
-              '''  @override
-            bool get canManageModel => true;
-
-          ''',
-              '',
-              1,
-          )
-          test = test.replace(
-              '  @override\n  Future<void> uninstall() async {}\n}',
-              '''  @override
-            Future<AiModelRecoveryReport> recoverInterruptedState() async =>
-                const AiModelRecoveryReport();
-
-            @override
-            Future<void> reinstall({void Function(int progress)? onProgress}) async {
-              onProgress?.call(100);
-            }
-
-            @override
-            Future<void> markInferenceStarted() async {}
-
-            @override
-            Future<void> markInferenceFinished() async {}
-
-            @override
-            Future<void> uninstall() async {}
-          }''',
-              1,
-          )
-          test_path.write_text(test)
+          path.write_text(text)
           PY
+          dart format lib/screens/ai_model_management.dart
 
-          dart format lib/ai_coach/ai_coach_model_manager.dart lib/screens/ai_coach.dart lib/screens/ai_model_management.dart test/ai_model_hardening_test.dart
-
-      - name: Commit compatibility fix
+      - name: Commit final typing fix
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/ai_coach/ai_coach_model_manager.dart lib/screens/ai_coach.dart lib/screens/ai_model_management.dart test/ai_model_hardening_test.dart
+          git add lib/screens/ai_model_management.dart
           if ! git diff --cached --quiet; then
-            git commit -m "fix: isolate managed AI model capabilities"
+            git commit -m "fix: finalize managed model UI typing"
             git push origin HEAD:feature/ai-model-hardening
           fi
 
