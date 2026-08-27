@@ -9,6 +9,12 @@
         android:label="gymapp"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
+        <!-- LiteRT-LM GPU discovery on Android 12+. All are optional: CPU
+             fallback remains available when a vendor OpenCL library is absent. -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL-car.so" android:required="false" />
+        <uses-native-library android:name="libOpenCL-pixel.so" android:required="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
