@@ -89,7 +89,8 @@ class _AiModelManagementScreenState extends State<AiModelManagementScreen> {
     if (!await _confirmWarnings()) return;
 
     if (reinstall) {
-      final confirmed = await showDialog<bool>(
+      final confirmed =
+          await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
               title: const Text('Reinstalla modello?'),
@@ -173,7 +174,8 @@ class _AiModelManagementScreenState extends State<AiModelManagementScreen> {
 
   Future<void> _remove() async {
     if (_busy) return;
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Rimuovi modello locale?'),
@@ -381,11 +383,8 @@ class _DeviceCompatibilityCard extends StatelessWidget {
             if (preflight.blockers.isNotEmpty) ...[
               const SizedBox(height: 10),
               ...preflight.blockers.map(
-                (item) => _EvidenceLine(
-                  icon: Icons.block,
-                  text: item,
-                  isError: true,
-                ),
+                (item) =>
+                    _EvidenceLine(icon: Icons.block, text: item, isError: true),
               ),
             ],
             if (preflight.warnings.isNotEmpty) ...[

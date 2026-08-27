@@ -121,7 +121,8 @@ class AiModelRecoveryReport {
     this.userMessage,
   });
 
-  bool get recovered => interruptedOperation != AiModelInterruptedOperation.none;
+  bool get recovered =>
+      interruptedOperation != AiModelInterruptedOperation.none;
 }
 
 class AiModelInstallException implements Exception {
@@ -169,7 +170,9 @@ abstract class AiCoachModelInstaller {
       const AiModelRecoveryReport();
 
   Future<void> uninstall() async {
-    throw UnsupportedError('Model uninstall is not supported by this installer.');
+    throw UnsupportedError(
+      'Model uninstall is not supported by this installer.',
+    );
   }
 
   Future<void> reinstall({void Function(int progress)? onProgress}) async {
@@ -457,8 +460,7 @@ class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
     if (!runtimeHealthy) {
       return AiModelHealthReport(
         status: AiModelHealthStatus.runtimeBroken,
-        message:
-            'Il modello è presente ma non supera il test di caricamento LiteRT-LM. Reinstallalo.',
+        message: 'Il modello è presente ma non supera il test di caricamento LiteRT-LM. Reinstallalo.',
         modelVersion: modelVersion,
         expectedSha256: expectedSha256,
         runtimeLoadVerified: false,
@@ -469,8 +471,7 @@ class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
     if (!hasManifest) {
       return AiModelHealthReport(
         status: AiModelHealthStatus.legacyUnverified,
-        message:
-            'Installazione precedente rilevata e caricabile, ma senza manifest di versione/integrità. Reinstalla una volta per renderla verificata e riproducibile.',
+        message: 'Installazione precedente rilevata e caricabile, ma senza manifest di versione/integrità. Reinstalla una volta per renderla verificata e riproducibile.',
         modelVersion: modelVersion,
         expectedSha256: expectedSha256,
         runtimeLoadVerified: true,
@@ -485,8 +486,7 @@ class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
     if (!manifestMatches) {
       return AiModelHealthReport(
         status: AiModelHealthStatus.versionMismatch,
-        message:
-            'La versione installata non corrisponde all’artifact Gemma 4 E2B fissato dall’app. È consigliata la reinstallazione.',
+        message: 'La versione installata non corrisponde all’artifact Gemma 4 E2B fissato dall’app. È consigliata la reinstallazione.',
         modelVersion: modelVersion,
         expectedSha256: expectedSha256,
         runtimeLoadVerified: true,
@@ -495,8 +495,7 @@ class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
 
     return AiModelHealthReport(
       status: AiModelHealthStatus.healthy,
-      message:
-          'Installazione verificata: versione/manifest corretti e test di caricamento LiteRT-LM superato.',
+      message: 'Installazione verificata: versione/manifest corretti e test di caricamento LiteRT-LM superato.',
       modelVersion: modelVersion,
       expectedSha256: expectedSha256,
       runtimeLoadVerified: true,
@@ -519,8 +518,7 @@ class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
           return const AiModelRecoveryReport(
             interruptedOperation: AiModelInterruptedOperation.download,
             cleanupPerformed: true,
-            userMessage:
-                'Il download era stato interrotto, ma il modello risultava già completo: installazione recuperata e verificata.',
+            userMessage: 'Il download era stato interrotto, ma il modello risultava già completo: installazione recuperata e verificata.',
           );
         }
       }
@@ -528,8 +526,7 @@ class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
       return const AiModelRecoveryReport(
         interruptedOperation: AiModelInterruptedOperation.download,
         cleanupPerformed: true,
-        userMessage:
-            'Il download precedente è stato interrotto. I file temporanei sono stati ripuliti: puoi riprovare in sicurezza. Il server Hugging Face può richiedere di ricominciare il trasferimento.',
+        userMessage: 'Il download precedente è stato interrotto. I file temporanei sono stati ripuliti: puoi riprovare in sicurezza. Il server Hugging Face può richiedere di ricominciare il trasferimento.',
       );
     }
 
@@ -538,8 +535,7 @@ class FlutterGemmaAiCoachModelInstaller implements AiCoachModelInstaller {
       return const AiModelRecoveryReport(
         interruptedOperation: AiModelInterruptedOperation.inference,
         cleanupPerformed: false,
-        userMessage:
-            'La risposta AI precedente è stata interrotta dalla chiusura dell’app. Il modello non è stato modificato: puoi inviare di nuovo la richiesta.',
+        userMessage: 'La risposta AI precedente è stata interrotta dalla chiusura dell’app. Il modello non è stato modificato: puoi inviare di nuovo la richiesta.',
       );
     }
 

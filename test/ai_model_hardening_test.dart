@@ -15,7 +15,10 @@ void main() {
     const installer = FlutterGemmaAiCoachModelInstaller();
 
     expect(installer.modelUrl, isNot(contains('/resolve/main/')));
-    expect(installer.modelUrl, contains('/resolve/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94/'));
+    expect(
+      installer.modelUrl,
+      contains('/resolve/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94/'),
+    );
     expect(installer.expectedSizeBytes, 2588147712);
     expect(
       installer.expectedSha256,
@@ -85,36 +88,35 @@ void main() {
     expect(report.warnings.join(' '), contains('6 GB'));
   });
 
-  test('lifecycle manifest and inference phase survive process-like reload', () async {
-    const store = AiModelLifecycleStore();
+  test(
+    'lifecycle manifest and inference phase survive process-like reload',
+    () async {
+      const store = AiModelLifecycleStore();
 
-    await store.setPhase('inference');
-    expect(await const AiModelLifecycleStore().phase(), 'inference');
+      await store.setPhase('inference');
+      expect(await const AiModelLifecycleStore().phase(), 'inference');
 
-    await store.recordInstalled(
-      version: 'v1',
-      sha256: 'abc',
-      sizeBytes: 123,
-    );
+      await store.recordInstalled(version: 'v1', sha256: 'abc', sizeBytes: 123);
 
-    expect(await store.phase(), 'idle');
-    expect(
-      await const AiModelLifecycleStore().manifestMatches(
-        version: 'v1',
-        sha256: 'abc',
-        sizeBytes: 123,
-      ),
-      isTrue,
-    );
-    expect(
-      await store.manifestMatches(
-        version: 'v2',
-        sha256: 'abc',
-        sizeBytes: 123,
-      ),
-      isFalse,
-    );
-  });
+      expect(await store.phase(), 'idle');
+      expect(
+        await const AiModelLifecycleStore().manifestMatches(
+          version: 'v1',
+          sha256: 'abc',
+          sizeBytes: 123,
+        ),
+        isTrue,
+      );
+      expect(
+        await store.manifestMatches(
+          version: 'v2',
+          sha256: 'abc',
+          sizeBytes: 123,
+        ),
+        isFalse,
+      );
+    },
+  );
 
   testWidgets('management UI disables download for unsupported device', (
     tester,

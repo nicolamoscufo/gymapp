@@ -19,6 +19,7 @@ import '../models/schedule_version.dart';
 import '../models/workout.dart';
 import 'ai_program_draft_card.dart';
 import 'ai_program_draft_review.dart';
+import 'ai_model_management.dart';
 
 class AiCoachScreen extends StatefulWidget {
   final List<WorkoutSession> history;
@@ -76,6 +77,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   bool _isModelInstalled = false;
   bool _isDownloadingModel = false;
   int? _downloadProgress;
+  AiModelHealthReport _modelHealth = AiModelHealthReport.notInstalled();
   String? _errorMessage;
   Map<String, dynamic>? _focusContext;
   bool _profileLoaded = false;
@@ -87,9 +89,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
   void initState() {
     super.initState();
     _liveSchedules = List<Schedule>.from(widget.schedules);
-    _liveScheduleVersions = List<ScheduleVersion>.from(
-      widget.scheduleVersions,
-    );
+    _liveScheduleVersions = List<ScheduleVersion>.from(widget.scheduleVersions);
     _focusContext = widget.launchContext?.focusContext;
     _refreshModelState();
     _loadProfileAndMemory();
@@ -130,28 +130,72 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
 
   Future<void> _refreshModelState() async {
     try {
+      await widget.modelInstaller.initialize();
+      final recovery = await widget.modelInstaller.recoverInterruptedState();
       final isInstalled = await widget.modelInstaller.isInstalled();
+      final health = isInstalled
+          ? await widget.modelInstaller.verifyInstallation()
+          : AiModelHealthReport.notInstalled();
       if (!mounted) return;
       setState(() {
         _isModelInstalled = isInstalled;
+        _modelHealth = health;
         _isCheckingModel = false;
         _modelChecked = true;
+        if (recovery.userMessage != null) {
+          _errorMessage = recovery.userMessage;
+        } else if (isInstalled &&
+            health.status != AiModelHealthStatus.healthy) {
+          _errorMessage = health.message;
+        }
       });
       _maybeStartLaunchHandoff();
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
         _isModelInstalled = false;
+        _modelHealth = AiModelHealthReport.notInstalled();
         _isCheckingModel = false;
         _modelChecked = true;
-        _errorMessage =
-            'Unable to check the local model. Verify the platform and dependencies.';
+        _errorMessage = 'Impossibile verificare il modello locale: $error';
       });
     }
   }
 
   Future<void> _downloadModel() async {
     if (_isDownloadingModel) return;
+
+    final preflight = await widget.modelInstaller.preflight();
+    if (!mounted) return;
+    if (!preflight.canInstall) {
+      setState(() => _errorMessage = preflight.userSummary);
+      return;
+    }
+    if (preflight.needsConfirmation) {
+      final continueDownload =
+          await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Compatibilità non ideale'),
+              content: Text(
+                '${preflight.warnings.join('\n\n')}\n\nVuoi continuare comunque?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Annulla'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Continua'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!continueDownload) return;
+    }
+
     setState(() {
       _isDownloadingModel = true;
       _downloadProgress = 0;
@@ -165,27 +209,43 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
           setState(() => _downloadProgress = progress.clamp(0, 100));
         },
       );
+      final health = await widget.modelInstaller.verifyInstallation();
       if (!mounted) return;
       setState(() {
         _isModelInstalled = true;
+        _modelHealth = health;
         _downloadProgress = 100;
         _modelChecked = true;
       });
       _maybeStartLaunchHandoff();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${widget.modelInstaller.modelName} is ready.')),
+        SnackBar(
+          content: Text(
+            '${widget.modelInstaller.modelName} installato e verificato.',
+          ),
+        ),
       );
-    } catch (_) {
+    } on AiModelInstallException catch (error) {
       if (!mounted) return;
-      setState(
-        () => _errorMessage =
-            'Model download failed. Check your connection and free storage space.',
-      );
+      setState(() => _errorMessage = error.message);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _errorMessage = 'Download del modello fallito: $error');
     } finally {
-      if (mounted) {
-        setState(() => _isDownloadingModel = false);
-      }
+      if (mounted) setState(() => _isDownloadingModel = false);
     }
+  }
+
+  Future<void> _openModelManagement() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            AiModelManagementScreen(installer: widget.modelInstaller),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _isCheckingModel = true);
+    await _refreshModelState();
   }
 
   Future<void> _startNewConversation() async {
@@ -356,24 +416,26 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
     _scrollToBottom();
 
     await _saveAndRefresh(conversation);
+    await widget.modelInstaller.markInferenceStarted();
 
     try {
       if (text.isNotEmpty) {
-        final programResult = await widget.programConversationCoordinator.handle(
-          userRequest: text,
-          history: widget.history,
-          schedules: _liveSchedules,
-          scheduleVersions: _liveScheduleVersions,
-          bodyLogs: widget.bodyLogs,
-          profile: _profile,
-          memory: _memory,
-        );
+        final programResult = await widget.programConversationCoordinator
+            .handle(
+              userRequest: text,
+              history: widget.history,
+              schedules: _liveSchedules,
+              scheduleVersions: _liveScheduleVersions,
+              bodyLogs: widget.bodyLogs,
+              profile: _profile,
+              memory: _memory,
+            );
         if (programResult.isProgramActionIntent) {
-          final assistantMessage = programResult.assistantMessage ??
+          final assistantMessage =
+              programResult.assistantMessage ??
               ChatMessage(
                 role: 'assistant',
-                content:
-                    'Non sono riuscito a creare una bozza applicabile in sicurezza. Prova a specificare meglio giorni, obiettivo e vincoli della scheda.',
+                content: 'Non sono riuscito a creare una bozza applicabile in sicurezza. Prova a specificare meglio giorni, obiettivo e vincoli della scheda.',
               );
           final finalConversation = conversation.copyWith(
             messages: [...updatedMessages, assistantMessage],
@@ -425,6 +487,8 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
         _isRunning = false;
         _errorMessage = 'Failed to get response. Please try again.';
       });
+    } finally {
+      await widget.modelInstaller.markInferenceFinished();
     }
   }
 
@@ -585,6 +649,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
       _isAnalyzingPlan = true;
       _errorMessage = null;
     });
+    await widget.modelInstaller.markInferenceStarted();
     try {
       final report = await widget.service.suggestWorkoutAdjustments(
         history: widget.history,
@@ -594,10 +659,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
         profile: _profile,
         memory: _memory,
       );
-      final actions = widget.planActionService.validate(
-        report,
-        _liveSchedules,
-      );
+      final actions = widget.planActionService.validate(report, _liveSchedules);
       if (!mounted) return;
       if (actions.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -648,6 +710,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
             'Impossibile generare modifiche sicure alla scheda.',
       );
     } finally {
+      await widget.modelInstaller.markInferenceFinished();
       if (mounted) setState(() => _isAnalyzingPlan = false);
     }
   }
@@ -672,6 +735,17 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
                   : const Icon(Icons.auto_awesome),
               tooltip: 'Proponi modifiche alla scheda',
               onPressed: _isAnalyzingPlan ? null : _reviewPlanAdjustments,
+            ),
+          if (widget.modelInstaller.canManageModel)
+            IconButton(
+              key: const ValueKey('ai-model-management'),
+              icon: Icon(
+                _modelHealth.isHealthy
+                    ? Icons.verified_user_outlined
+                    : Icons.settings_suggest_outlined,
+              ),
+              tooltip: 'Gestisci modello AI locale',
+              onPressed: _isDownloadingModel ? null : _openModelManagement,
             ),
           IconButton(
             icon: const Icon(Icons.edit_outlined),
