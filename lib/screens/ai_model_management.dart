@@ -301,7 +301,7 @@ class _AiModelManagementScreenState extends State<AiModelManagementScreen> {
 }
 
 class _ModelIdentityCard extends StatelessWidget {
-  final AiCoachModelInstaller installer;
+  final AiCoachManagedModelInstaller installer;
 
   const _ModelIdentityCard({required this.installer});
 
