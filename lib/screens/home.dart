@@ -1067,7 +1067,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context) => AlertDialog(
           title: const Text('Importare CSV?'),
           content: Text(
-            'Verranno lette ${rows.length} righe in merge. Gli esercizi gia presenti verranno saltati.',
+            'Verranno lette ${rows.length} righe in modalità merge. Gli esercizi già presenti verranno saltati.',
           ),
           actions: [
             TextButton(
@@ -1630,7 +1630,7 @@ class _HomePageState extends State<HomePage> {
             builder: (context) => AlertDialog(
               title: const Text('Ripristinare auto-backup?'),
               content: Text(
-                'Verranno ripristinate ${backupBundle.schedules.length} schede, ${backupBundle.history.length} allenamenti, ${backupBundle.bodyLogs.length} misure corpo, ${backupBundle.customExercises.length} esercizi custom e ${backupBundle.favoriteExerciseIds.length} preferiti dall ultimo snapshot locale.',
+                'Verranno ripristinate ${backupBundle.schedules.length} schede, ${backupBundle.history.length} allenamenti, ${backupBundle.bodyLogs.length} misure corpo, ${backupBundle.customExercises.length} esercizi custom e ${backupBundle.favoriteExerciseIds.length} preferiti dall\'ultimo snapshot locale.',
               ),
               actions: [
                 TextButton(
@@ -1965,7 +1965,7 @@ class _HomePageState extends State<HomePage> {
                 }),
               ),
               appDialogFieldGap,
-              const Text('La settimana avanza ogni lunedi.'),
+              const Text('La settimana avanza ogni lunedì.'),
             ],
           ),
           actions: [
@@ -2164,7 +2164,7 @@ class _HomePageState extends State<HomePage> {
             leading: Icon(Icons.trending_up),
             title: Text('Progressione guidata'),
             subtitle: Text(
-              'Dopo la prima seduta l app suggerisce carico e reps prossime.',
+              'Dopo la prima seduta l\'app suggerisce carico e reps prossime.',
             ),
           ),
         ),
@@ -2250,14 +2250,16 @@ class _HomePageState extends State<HomePage> {
                 child: Card(
                   color: Theme.of(context).colorScheme.secondaryContainer,
                   child: ListTile(
+                    isThreeLine: true,
                     title: Text(
                       'Riprendi allenamento: ${_savedSession!.scheduleTitle}',
                     ),
                     subtitle: Text(
                       'Iniziato ${_savedSession!.startTime.day}/${_savedSession!.startTime.month}/${_savedSession!.startTime.year}',
                     ),
-                    trailing: Row(
+                    trailing: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         FilledButton(
                           onPressed: () async {
@@ -2280,7 +2282,7 @@ class _HomePageState extends State<HomePage> {
                           },
                           child: const Text('Riprendi'),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(height: 4),
                         TextButton(
                           onPressed: _discardSavedSession,
                           child: const Text('Scarta'),
@@ -2439,6 +2441,8 @@ class _HomePageState extends State<HomePage> {
                             ),
                             title: Text(
                               schedule.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontWeight: FontWeight.w900,
                                 color: schedule.isArchived
@@ -2450,6 +2454,7 @@ class _HomePageState extends State<HomePage> {
                               padding: const EdgeInsets.only(top: 4),
                               child: Text(
                                 '${schedule.exercises.length} esercizi${schedule.isDeloadWeek() ? ' • deload' : ''} • Ciclo ${schedule.cycleNumber}${schedule.programBlock.trim().isEmpty ? '' : ' • ${schedule.programBlock}'}${schedule.goal.trim().isNotEmpty ? '\n${schedule.goal}' : ''}${schedule.isArchived ? ' • archiviata' : ''}',
+                                softWrap: true,
                               ),
                             ),
                             trailing: PopupMenuButton<_ScheduleMenuAction>(

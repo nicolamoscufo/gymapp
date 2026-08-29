@@ -94,9 +94,9 @@ ThemeData _buildTheme(Brightness brightness) {
     onSurfaceVariant: isDark
         ? const Color(0xFFD1D6E8)
         : const Color(0xFF4D5267),
-    outlineVariant: isDark ? const Color(0xFF2C344A) : const Color(0xFFD9DDF0),
+    outlineVariant: isDark ? const Color(0xFF3B4664) : const Color(0xFFD9DDF0),
   );
-  final cardColor = isDark ? const Color(0xFF141C30) : Colors.white;
+  final cardColor = isDark ? const Color(0xFF1B2540) : Colors.white;
   final elevatedSurface = isDark
       ? const Color(0xFF19223A)
       : const Color(0xFFFFFFFF);
@@ -176,6 +176,11 @@ ThemeData _buildTheme(Brightness brightness) {
     listTileTheme: ListTileThemeData(
       iconColor: colorScheme.primary,
       textColor: colorScheme.onSurface,
+      titleTextStyle: TextStyle(
+        color: colorScheme.onSurface,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+      ),
       subtitleTextStyle: TextStyle(
         color: colorScheme.onSurfaceVariant,
         fontSize: 13,
