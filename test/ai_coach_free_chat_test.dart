@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gymapp/ai_coach/ai_coach_model_manager.dart';
 import 'package:gymapp/ai_coach/ai_coach_models.dart';
 import 'package:gymapp/ai_coach/chat_conversation.dart';
+import 'package:gymapp/ai_coach/exercise_catalog_retriever.dart';
 import 'package:gymapp/ai_coach/local_ai_coach_service.dart';
 import 'package:gymapp/ai_coach/local_llm_engine.dart';
+import 'package:gymapp/exercise_catalog.dart';
 import 'package:gymapp/screens/ai_coach.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -23,7 +25,12 @@ void main() {
         home: AiCoachScreen(
           history: const [],
           schedules: const [],
-          service: LocalAiCoachService(engine: engine),
+          service: LocalAiCoachService(
+            engine: engine,
+            exerciseCatalogRetriever: ExerciseCatalogRetriever(
+              catalogLoader: _emptyCatalog,
+            ),
+          ),
           modelInstaller: const _InstalledModel(),
         ),
       ),
@@ -54,10 +61,6 @@ void main() {
     );
 
     await tester.tap(sendFinder);
-    // The send pipeline now also reads local memory and retrieves relevant
-    // catalog context. Poll for the observable engine call instead of relying
-    // on an arbitrary single delay or pumpAndSettle (which also waits for UI
-    // animations unrelated to this assertion).
     await tester.pump();
     for (var i = 0; i < 20 && engine.messages.isEmpty; i += 1) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -85,7 +88,12 @@ void main() {
         home: AiCoachScreen(
           history: const [],
           schedules: const [],
-          service: LocalAiCoachService(engine: _CapturingEngine()),
+          service: LocalAiCoachService(
+            engine: _CapturingEngine(),
+            exerciseCatalogRetriever: ExerciseCatalogRetriever(
+              catalogLoader: _emptyCatalog,
+            ),
+          ),
           modelInstaller: const _InstalledModel(),
         ),
       ),
@@ -100,6 +108,8 @@ void main() {
     );
   });
 }
+
+Future<List<ExerciseCatalogEntry>> _emptyCatalog() async => const [];
 
 class _CapturingEngine implements LocalLlmEngine {
   List<ChatMessage> messages = const [];
