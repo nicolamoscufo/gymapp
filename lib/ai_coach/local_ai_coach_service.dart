@@ -14,29 +14,24 @@ import 'local_llm_engine.dart';
 import 'training_context_builder.dart';
 
 const systemCoachingPrompt = '''
-You are FitFlow AI Coach, an on-device personal training assistant. Your role is to help the user with their fitness journey by analyzing their workout data, providing coaching advice, answering training questions, and keeping them motivated.
+You are FitFlow AI Coach, an on-device personal training assistant.
 
-Guidelines:
-- Use the provided training context to give personalized advice.
-- Treat program_history as a deterministic longitudinal record: only schedule_version_id links that resolve to a stored historical version are authoritative.
-- Never assign a workout with a null or unresolved schedule_version_id to a historical version by guess, title similarity, date proximity, or exercise similarity.
-- When comparing program changes with later performance, distinguish exact linked evidence from unresolved legacy or orphaned-version history and state uncertainty when coverage is incomplete.
-- Treat program_change_effectiveness as deterministic association evidence for adjacent program versions. Its improved/stable/declined/mixed statuses are authoritative calculations for the declared windows, but they never prove that the program change caused the outcome.
-- If program_change_effectiveness reports insufficient data, say that the effect cannot yet be evaluated instead of guessing.
-- If exercise_catalog exists, it contains retrieved records from the app's local exercise dataset. Treat its catalog fields as authoritative for those retrieved records, but remember that the retrieved shortlist is not exhaustive.
-- Never confuse exercise_catalog instructions/metadata with the user's own performed workout data.
-- Be supportive but honest - celebrate wins and give constructive feedback.
-- Never invent workout data, loads, reps, symptoms, or medical diagnoses.
-- When discussing exercises or technique, suggest consulting a professional for pain or injuries.
-- Keep responses concise, practical, and actionable.
+Rules:
+- Use only the training context supplied by the app. Never invent loads, reps, symptoms, preferences, or workout history.
+- Deterministic analytics in the context are authoritative calculations. Explain them; do not contradict them without stating uncertainty.
+- Historical schedule links are authoritative only when schedule_version_id resolves to a stored version. Never guess unresolved links.
+- program_change_effectiveness is association evidence, never causal proof.
+- exercise_catalog records are authoritative catalog metadata, not evidence of exercises the user performed.
+- Give concise, practical, actionable coaching. Suggestions never count as changes until the user confirms them.
+- Do not diagnose injuries or prescribe medical treatment. For persistent pain or injury concerns, suggest a qualified professional.
+- For progress photos, discuss only visible training-related changes and photo-comparison limitations.
 - Answer in Italian unless the user writes in another language.
-- You can discuss: workout analysis, training programs, exercise technique, nutrition basics, recovery, motivation, progress tracking.
-- You cannot: diagnose injuries, prescribe medical treatment, provide specific medical nutrition plans.
-- For photo analysis, discuss only visible training-related changes and photo quality caveats.
-- Suggest specific changes as ideas that require user confirmation - never claim changes were applied.
 ''';
 
 class LocalAiCoachService {
+  static const int _chatContextCharBudget = 7000;
+  static const int _conversationReferenceCharBudget = 2200;
+
   final LocalLlmEngine engine;
   final LocalLlmEngine? fallbackEngine;
   final bool allowFallback;
@@ -258,6 +253,14 @@ class LocalAiCoachService {
     List<AiCoachImageInput> newImages = const [],
     Map<String, dynamic>? focusContext,
   }) async {
+    final latestUser = _latestUserMessage(messages);
+    if (latestUser == null) {
+      throw const AiCoachInsufficientDataException(
+        'Scrivi una domanda prima di avviare il Coach.',
+      );
+    }
+    final latestUserQuery = latestUser.content.trim();
+
     final context = contextBuilder.recent(
       history: history,
       schedules: schedules,
@@ -270,14 +273,7 @@ class LocalAiCoachService {
       context['focus_context'] = focusContext;
     }
 
-    String? latestUserQuery;
-    for (final message in messages.reversed) {
-      if (message.role == 'user' && message.content.trim().isNotEmpty) {
-        latestUserQuery = message.content.trim();
-        break;
-      }
-    }
-    if (latestUserQuery != null) {
+    if (latestUserQuery.isNotEmpty) {
       final catalogContext = await exerciseCatalogRetriever.retrieveForQuestion(
         query: latestUserQuery,
         preferredExerciseNames: schedules.expand(
@@ -289,28 +285,45 @@ class LocalAiCoachService {
       }
     }
 
-    final contextJson = jsonEncode(context);
-    final systemPrompt =
-        '''$systemCoachingPrompt
+    final longitudinal = _looksLongitudinal(latestUserQuery);
+    final compactContext = _compactContext(
+      context,
+      keepProgramHistory: longitudinal,
+      maxWorkouts: longitudinal ? 2 : 4,
+    );
+    final contextJson = _encodeBoundedContext(
+      compactContext,
+      keepProgramHistory: longitudinal,
+    );
+    final conversationReference = _conversationReference(
+      messages,
+      currentMessage: latestUser,
+    );
 
+    final systemPrompt = '''$systemCoachingPrompt
 Training context (JSON):
 $contextJson
+${conversationReference.isEmpty ? '' : '\nRecent conversation for continuity only:\n$conversationReference\n'}
+Use focus_context first when present. Use program_history only when it is present in the context.
+If exercise_catalog exists, use it only for exercise identity, target muscles, equipment and execution instructions.
+Keep the response concise and practical.''';
 
-Answer naturally as a supportive but honest coach. Use the context to inform your answers.
-If focus_context exists, it is the authoritative scope for the current discussion: use the exact target session and deterministic debrief values first, then enrich the explanation with the broader training context. Do not contradict deterministic metrics or recommendations without explicitly explaining the evidence and uncertainty.
-Use program_history for longitudinal questions. Baselines plus ordered diffs reconstruct program evolution; version performance contains only workouts whose schedule_version_id resolves to a stored historical version. Treat null or orphaned version links as unresolved evidence and never infer their historical version.
-Use program_change_effectiveness when discussing whether a reviewed program transition was followed by better, stable, worse, mixed, or insufficient outcomes. Treat it as deterministic association evidence, not causal proof, and preserve its uncertainty.
-If exercise_catalog exists, use the retrieved local catalog records for exercise identity, target muscles, equipment and execution instructions. The shortlist is retrieval evidence, not the entire catalog, so absence from it is not evidence that an exercise does not exist.
-Never present catalog metadata as if it were a completed set, personal performance measurement, symptom, or user preference.
-Never invent workout data, loads, reps, or medical information.
-Keep responses concise and practical.
-Answer in Italian unless the user writes in another language.''';
+    final currentMessage = newImages.isEmpty
+        ? latestUser
+        : latestUser.copyWith(
+            imageBytes: newImages.map((image) => image.bytes).toList(),
+            imageLabels: newImages.map((image) => image.label).toList(),
+          );
 
     await engine.initialize();
     return engine.generateChatText(
       systemPrompt: systemPrompt,
-      messages: messages,
-      newImages: newImages,
+      // The LiteRT chat implementation currently re-generates intermediate
+      // turns while replaying history. Passing only the active user turn makes
+      // inference deterministic: history is supplied above as bounded reference
+      // text and the runtime performs exactly one generation for this request.
+      messages: [currentMessage],
+      newImages: const [],
     );
   }
 
@@ -320,9 +333,14 @@ Answer in Italian unless the user writes in another language.''';
     List<AiCoachImageInput> images = const [],
   }) async {
     final schema = AiCoachPromptSchemas.forTask(task);
+    final compactContext = _compactContext(
+      context,
+      keepProgramHistory: false,
+      maxWorkouts: 6,
+    );
     final prompt = AiCoachPrompts.buildStructuredPrompt(
       task: task,
-      context: context,
+      context: compactContext,
       schema: schema,
     );
 
@@ -340,7 +358,7 @@ Answer in Italian unless the user writes in another language.''';
       try {
         final retryPrompt = AiCoachPrompts.buildStructuredPrompt(
           task: task,
-          context: context,
+          context: compactContext,
           schema: schema,
           strictRetry: true,
         );
@@ -364,5 +382,170 @@ Answer in Italian unless the user writes in another language.''';
         rethrow;
       }
     }
+  }
+
+  ChatMessage? _latestUserMessage(List<ChatMessage> messages) {
+    for (final message in messages.reversed) {
+      if (message.role == 'user') return message;
+    }
+    return null;
+  }
+
+  bool _looksLongitudinal(String query) {
+    final lower = query.toLowerCase();
+    const markers = [
+      'programma',
+      'scheda',
+      'mesociclo',
+      'cambiato',
+      'cambiamento',
+      'prima',
+      'dopo',
+      'storia',
+      'storico',
+      'versione',
+      'progressione nel tempo',
+    ];
+    return markers.any(lower.contains);
+  }
+
+  Map<String, dynamic> _compactContext(
+    Map<String, dynamic> source, {
+    required bool keepProgramHistory,
+    required int maxWorkouts,
+  }) {
+    final result = Map<String, dynamic>.from(source);
+
+    result['workouts'] = _tail(result['workouts'], maxWorkouts);
+    result['body_logs'] = _tail(result['body_logs'], 8);
+    result['notes'] = _tail(result['notes'], 12);
+
+    final plans = (result['active_plans'] as List? ?? const [])
+        .whereType<Map>()
+        .take(3)
+        .map((plan) => _compactPlan(Map<String, dynamic>.from(plan)))
+        .toList();
+    result['active_plans'] = plans;
+
+    if (!keepProgramHistory) {
+      result.remove('program_history');
+      result.remove('program_change_effectiveness');
+    }
+
+    return result;
+  }
+
+  Map<String, dynamic> _compactPlan(Map<String, dynamic> plan) {
+    final exercises = (plan['exercises'] as List? ?? const [])
+        .whereType<Map>()
+        .map((exercise) {
+          final item = Map<String, dynamic>.from(exercise);
+          return {
+            'id': item['id'],
+            'catalogId': item['catalogId'],
+            'name': item['name'],
+            'set': item['set'],
+            'reps': item['reps'],
+            'weight': item['weight'],
+            'targetMinReps': item['targetMinReps'],
+            'targetMaxReps': item['targetMaxReps'],
+            'technique': item['technique'],
+            'backoffReps': item['backoffReps'],
+            'backoffReductionPercent': item['backoffReductionPercent'],
+            'restSeconds': item['restSeconds'],
+            'progressionKgStep': item['progressionKgStep'],
+            'progressionRepStep': item['progressionRepStep'],
+            'progressionScheme': item['progressionScheme'],
+          };
+        })
+        .toList();
+
+    return {
+      'id': plan['id'],
+      'title': plan['title'],
+      'week': plan['week'],
+      'goal': plan['goal'],
+      'programBlock': plan['programBlock'],
+      'cycleNumber': plan['cycleNumber'],
+      'currentVersionId': plan['currentVersionId'],
+      'currentVersionNumber': plan['currentVersionNumber'],
+      'exercises': exercises,
+    };
+  }
+
+  List<dynamic> _tail(Object? raw, int count) {
+    final list = raw is List ? raw : const <dynamic>[];
+    if (list.length <= count) return List<dynamic>.from(list);
+    return List<dynamic>.from(list.sublist(list.length - count));
+  }
+
+  String _encodeBoundedContext(
+    Map<String, dynamic> original, {
+    required bool keepProgramHistory,
+  }) {
+    final context = Map<String, dynamic>.from(original);
+    var encoded = jsonEncode(context);
+    if (encoded.length <= _chatContextCharBudget) return encoded;
+
+    context['workouts'] = _tail(context['workouts'], 2);
+    context['body_logs'] = _tail(context['body_logs'], 4);
+    context['notes'] = _tail(context['notes'], 6);
+    encoded = jsonEncode(context);
+    if (encoded.length <= _chatContextCharBudget) return encoded;
+
+    final analytics = context['deterministic_analytics'];
+    if (analytics is Map) {
+      final compactAnalytics = Map<String, dynamic>.from(analytics);
+      compactAnalytics.remove('exercise_progress');
+      compactAnalytics.remove('progression_recommendations');
+      context['deterministic_analytics'] = compactAnalytics;
+    }
+    encoded = jsonEncode(context);
+    if (encoded.length <= _chatContextCharBudget) return encoded;
+
+    if (keepProgramHistory) {
+      context.remove('workouts');
+      context.remove('body_logs');
+      context.remove('notes');
+    } else {
+      context.remove('active_plans');
+    }
+    encoded = jsonEncode(context);
+    if (encoded.length <= _chatContextCharBudget) return encoded;
+
+    context.remove('program_change_effectiveness');
+    context.remove('program_history');
+    encoded = jsonEncode(context);
+    if (encoded.length <= _chatContextCharBudget) return encoded;
+
+    context.remove('deterministic_analytics');
+    return jsonEncode(context);
+  }
+
+  String _conversationReference(
+    List<ChatMessage> messages, {
+    required ChatMessage currentMessage,
+  }) {
+    final prior = <ChatMessage>[];
+    var skippedCurrent = false;
+    for (final message in messages.reversed) {
+      if (!skippedCurrent && identical(message, currentMessage)) {
+        skippedCurrent = true;
+        continue;
+      }
+      if (message.content.trim().isEmpty) continue;
+      prior.add(message);
+      if (prior.length == 4) break;
+    }
+
+    final buffer = StringBuffer();
+    for (final message in prior.reversed) {
+      var text = message.content.trim().replaceAll(RegExp(r'\s+'), ' ');
+      if (text.length > 600) text = '${text.substring(0, 600)}…';
+      final line = '${message.role}: $text\n';
+      if (buffer.length + line.length > _conversationReferenceCharBudget) break;
+      buffer.write(line);
+    }
+    return buffer.toString().trim();
   }
 }
