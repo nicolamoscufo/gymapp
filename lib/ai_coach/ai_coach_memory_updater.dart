@@ -17,8 +17,11 @@ class AiCoachMemoryUpdater {
     final normalizedText = text.trim();
     if (normalizedText.isEmpty) return memory;
 
-    final lower = normalizedText.toLowerCase();
-    if (_clearAllMarkers.any(lower.contains)) {
+    final command = normalizedText
+        .toLowerCase()
+        .replaceFirst(RegExp(r'[.!?]+$'), '')
+        .trim();
+    if (_clearAllMarkers.contains(command)) {
       memory = const AiCoachMemory();
       await store.save(memory);
       return memory;
