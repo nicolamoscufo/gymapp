@@ -182,10 +182,14 @@ class AppTheme {
         selectedItemColor: scheme.primary,
         unselectedItemColor: scheme.onSurfaceVariant,
         showUnselectedLabels: true,
-        selectedFontSize: 11,
-        unselectedFontSize: 11,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w800),
-        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
+        selectedLabelStyle: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
