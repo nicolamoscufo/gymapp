@@ -13,6 +13,11 @@ class AiCoachMemory {
     this.coachingNotes = const [],
   });
 
+  bool get isEmpty =>
+      recurringPreferences.isEmpty &&
+      recurringLimitations.isEmpty &&
+      coachingNotes.isEmpty;
+
   Map<String, dynamic> toJson() => {
     'recurring_preferences': recurringPreferences,
     'recurring_limitations': recurringLimitations,
@@ -30,6 +35,11 @@ class AiCoachMemoryStore {
   static const _key = 'ai_coach_memory_v1';
 
   const AiCoachMemoryStore();
+
+  Future<bool> hasStoredValue() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.containsKey(_key);
+  }
 
   Future<AiCoachMemory> load() async {
     final prefs = await SharedPreferences.getInstance();
