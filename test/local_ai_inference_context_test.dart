@@ -32,6 +32,7 @@ void main() {
     expect(engine.messages, hasLength(1));
     expect(engine.messages.single.role, 'user');
     expect(engine.messages.single.content, 'Domanda corrente');
+    expect(engine.newImages, isEmpty);
 
     final prompt = engine.systemPrompt ?? '';
     expect(prompt, contains('Messaggio precedente'));
