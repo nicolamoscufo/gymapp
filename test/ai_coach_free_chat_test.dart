@@ -54,7 +54,11 @@ void main() {
     );
 
     await tester.tap(sendFinder);
-    await tester.pumpAndSettle();
+    // Do not use pumpAndSettle here: sending starts a scroll animation, so the
+    // test should wait only for the async message pipeline it actually asserts.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(engine.messages, hasLength(1));
     expect(
