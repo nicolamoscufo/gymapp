@@ -79,7 +79,11 @@ class AiCoachMemoryUpdater {
   }
 
   Iterable<String> _sentences(String text) sync* {
-    for (final raw in text.split(RegExp(r'[\n.!?]+'))) {
+    // Commas and semicolons are useful clause boundaries for requests such as
+    // "Creami una upper/lower, preferisco i manubri". This lets explicit
+    // memory declarations be captured without treating the surrounding request
+    // as memory.
+    for (final raw in text.split(RegExp(r'[\n.!?;,]+'))) {
       final value = _clean(raw);
       if (value.isNotEmpty) yield value;
     }
