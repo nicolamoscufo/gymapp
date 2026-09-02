@@ -4,7 +4,7 @@ import 'package:gymapp/ai_coach/chat_conversation.dart';
 import 'package:gymapp/ai_coach/exercise_catalog_retriever.dart';
 import 'package:gymapp/ai_coach/local_ai_coach_service.dart';
 import 'package:gymapp/ai_coach/local_llm_engine.dart';
-import 'package:gymapp/models/exercise.dart';
+import 'package:gymapp/exercise_catalog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
