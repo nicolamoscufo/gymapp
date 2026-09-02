@@ -28,13 +28,11 @@ class AiProgramConversationResult {
 class AiProgramConversationCoordinator {
   final AiProgramDraftService draftService;
   final AiActionProtocolService actionProtocolService;
-  final AiCoachMemoryStore memoryStore;
   final AiCoachMemoryUpdater memoryUpdater;
 
   const AiProgramConversationCoordinator({
     this.draftService = const AiProgramDraftService(),
     this.actionProtocolService = const AiActionProtocolService(),
-    this.memoryStore = const AiCoachMemoryStore(),
     this.memoryUpdater = const AiCoachMemoryUpdater(),
   });
 
