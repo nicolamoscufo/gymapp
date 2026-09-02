@@ -14,6 +14,8 @@ import 'local_llm_engine.dart';
 import 'training_context_builder.dart';
 
 class AiProgramDraftService {
+  static const int _contextCharBudget = 7000;
+
   final LocalLlmEngine engine;
   final LocalLlmEngine? fallbackEngine;
   final bool allowFallback;
@@ -69,15 +71,16 @@ class AiProgramDraftService {
       'requires_user_confirmation': true,
     };
 
+    final boundedContext = _boundedContext(context);
     final raw = await _generate(
-      _prompt(context, strictRetry: false),
+      _prompt(boundedContext, strictRetry: false),
       _schema,
     );
     try {
       return AiProgramActionProposal.fromJson(decodeJsonObject(raw));
     } catch (_) {
       final retryRaw = await _generate(
-        _prompt(context, strictRetry: true),
+        _prompt(boundedContext, strictRetry: true),
         _schema,
       );
       return AiProgramActionProposal.fromJson(decodeJsonObject(retryRaw));
@@ -148,6 +151,195 @@ ${jsonEncode(_schema)}
 ${jsonEncode(context)}
 </context_json>
 ''';
+  }
+
+  Map<String, dynamic> _boundedContext(Map<String, dynamic> source) {
+    final context = Map<String, dynamic>.from(source);
+    context['workouts'] = _tail(context['workouts'], 4);
+    context['body_logs'] = _tail(context['body_logs'], 6);
+    context['notes'] = _tail(context['notes'], 10);
+    context['active_plans'] = (context['active_plans'] as List? ?? const [])
+        .whereType<Map>()
+        .map((plan) => _compactPlan(Map<String, dynamic>.from(plan)))
+        .toList();
+    context['program_history'] = _compactProgramHistory(
+      context['program_history'],
+      maxPrograms: 4,
+      maxVersions: 4,
+    );
+    context['deterministic_analytics'] = _compactAnalytics(
+      context['deterministic_analytics'],
+      detailed: true,
+    );
+
+    if (jsonEncode(context).length <= _contextCharBudget) return context;
+
+    context['workouts'] = _tail(context['workouts'], 2);
+    context['body_logs'] = _tail(context['body_logs'], 3);
+    context['notes'] = _tail(context['notes'], 5);
+    context['program_history'] = _compactProgramHistory(
+      context['program_history'],
+      maxPrograms: 2,
+      maxVersions: 3,
+    );
+    context['deterministic_analytics'] = _compactAnalytics(
+      context['deterministic_analytics'],
+      detailed: false,
+    );
+    if (jsonEncode(context).length <= _contextCharBudget) return context;
+
+    context.remove('program_change_effectiveness');
+    context['workouts'] = _tail(context['workouts'], 1);
+    context['notes'] = _tail(context['notes'], 3);
+    if (jsonEncode(context).length <= _contextCharBudget) return context;
+
+    // Keep action-critical data last: request, profile, current plan IDs and
+    // prescriptions, catalog shortlist, and deterministic recommendation state.
+    context.remove('workouts');
+    context.remove('body_logs');
+    context.remove('notes');
+    context['program_history'] = _compactProgramHistory(
+      context['program_history'],
+      maxPrograms: 1,
+      maxVersions: 2,
+    );
+    return context;
+  }
+
+  Map<String, dynamic> _compactPlan(Map<String, dynamic> plan) {
+    final exercises = (plan['exercises'] as List? ?? const [])
+        .whereType<Map>()
+        .map((raw) {
+          final exercise = Map<String, dynamic>.from(raw);
+          return {
+            'id': exercise['id'],
+            'catalogId': exercise['catalogId'],
+            'name': exercise['name'],
+            'set': exercise['set'],
+            'reps': exercise['reps'],
+            'weight': exercise['weight'],
+            'notes': exercise['notes'],
+            'muscleGroup': exercise['muscleGroup'],
+            'equipment': exercise['equipment'],
+            'movementPattern': exercise['movementPattern'],
+            'targetMinReps': exercise['targetMinReps'],
+            'targetMaxReps': exercise['targetMaxReps'],
+            'technique': exercise['technique'],
+            'backoffReps': exercise['backoffReps'],
+            'backoffReductionPercent': exercise['backoffReductionPercent'],
+            'restSeconds': exercise['restSeconds'],
+            'supersetGroup': exercise['supersetGroup'],
+            'progressionKgStep': exercise['progressionKgStep'],
+            'progressionRepStep': exercise['progressionRepStep'],
+            'progressionScheme': exercise['progressionScheme'],
+          };
+        })
+        .toList();
+
+    return {
+      'id': plan['id'],
+      'title': plan['title'],
+      'week': plan['week'],
+      'goal': plan['goal'],
+      'mesocycleWeeks': plan['mesocycleWeeks'],
+      'deloadEveryWeeks': plan['deloadEveryWeeks'],
+      'trainingWeekdays': plan['trainingWeekdays'],
+      'programBlock': plan['programBlock'],
+      'cycleNumber': plan['cycleNumber'],
+      'cycleNotes': plan['cycleNotes'],
+      'currentVersionId': plan['currentVersionId'],
+      'currentVersionNumber': plan['currentVersionNumber'],
+      'exercises': exercises,
+    };
+  }
+
+  Map<String, dynamic> _compactProgramHistory(
+    Object? raw, {
+    required int maxPrograms,
+    required int maxVersions,
+  }) {
+    if (raw is! Map) return const {};
+    final history = Map<String, dynamic>.from(raw);
+    final programs = (history['programs'] as List? ?? const [])
+        .whereType<Map>()
+        .toList();
+    final selectedPrograms = programs.length <= maxPrograms
+        ? programs
+        : programs.sublist(programs.length - maxPrograms);
+
+    return {
+      'contract': history['contract'],
+      'coverage': history['coverage'],
+      'programs': selectedPrograms.map((rawProgram) {
+        final program = Map<String, dynamic>.from(rawProgram);
+        final versions = (program['versions'] as List? ?? const [])
+            .whereType<Map>()
+            .toList();
+        final selectedVersions = <Map>[];
+        if (versions.isNotEmpty) {
+          selectedVersions.add(versions.first);
+          final remaining = maxVersions - 1;
+          if (remaining > 0 && versions.length > 1) {
+            final start = (versions.length - remaining).clamp(1, versions.length);
+            selectedVersions.addAll(versions.sublist(start));
+          }
+        }
+        return {
+          'schedule_id': program['schedule_id'],
+          'title': program['title'],
+          'is_present_in_current_plans': program['is_present_in_current_plans'],
+          'is_archived': program['is_archived'],
+          'current_version_id': program['current_version_id'],
+          'current_version_number': program['current_version_number'],
+          'versions': selectedVersions,
+        };
+      }).toList(),
+    };
+  }
+
+  Map<String, dynamic> _compactAnalytics(Object? raw, {required bool detailed}) {
+    if (raw is! Map) return const {};
+    final analytics = Map<String, dynamic>.from(raw);
+    if (!detailed) {
+      return {
+        'fatigue_readiness': analytics['fatigue_readiness'],
+        'progression_recommendations': _tail(
+          analytics['progression_recommendations'],
+          8,
+        ),
+        'session_count': analytics['session_count'],
+        'latest_session_at': analytics['latest_session_at'],
+      };
+    }
+
+    analytics.remove('exercise_progress');
+    final progress = analytics['progress_analytics'];
+    if (progress is Map) {
+      final compactProgress = Map<String, dynamic>.from(progress);
+      compactProgress.remove('personal_records');
+      final exercises = (compactProgress['exercises'] as List? ?? const [])
+          .whereType<Map>()
+          .take(8)
+          .map((rawExercise) {
+            final exercise = Map<String, dynamic>.from(rawExercise);
+            exercise.remove('timeline');
+            return exercise;
+          })
+          .toList();
+      compactProgress['exercises'] = exercises;
+      analytics['progress_analytics'] = compactProgress;
+    }
+    analytics['progression_recommendations'] = _tail(
+      analytics['progression_recommendations'],
+      10,
+    );
+    return analytics;
+  }
+
+  List<dynamic> _tail(Object? raw, int count) {
+    final list = raw is List ? raw : const <dynamic>[];
+    if (list.length <= count) return List<dynamic>.from(list);
+    return List<dynamic>.from(list.sublist(list.length - count));
   }
 
   static const Map<String, dynamic> _schema = {

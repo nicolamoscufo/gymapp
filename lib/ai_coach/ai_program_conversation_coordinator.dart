@@ -5,6 +5,7 @@ import '../models/schedule_version.dart';
 import '../models/workout.dart';
 import 'ai_action_protocol.dart';
 import 'ai_coach_memory.dart';
+import 'ai_coach_memory_updater.dart';
 import 'ai_coach_user_profile.dart';
 import 'ai_program_draft_instance.dart';
 import 'ai_program_draft_service.dart';
@@ -27,10 +28,12 @@ class AiProgramConversationResult {
 class AiProgramConversationCoordinator {
   final AiProgramDraftService draftService;
   final AiActionProtocolService actionProtocolService;
+  final AiCoachMemoryUpdater memoryUpdater;
 
   const AiProgramConversationCoordinator({
     this.draftService = const AiProgramDraftService(),
     this.actionProtocolService = const AiActionProtocolService(),
+    this.memoryUpdater = const AiCoachMemoryUpdater(),
   });
 
   Future<AiProgramConversationResult> handle({
@@ -46,13 +49,16 @@ class AiProgramConversationCoordinator {
       return const AiProgramConversationResult(isProgramActionIntent: false);
     }
 
-    // Some callers (notably the Home AI Coach tab) historically did not pass
-    // scheduleVersions. Program drafting needs the persisted version graph for
-    // longitudinal context and safe modification proposals, so hydrate it only
-    // when the caller has not supplied an explicit snapshot.
     final resolvedScheduleVersions = scheduleVersions.isNotEmpty
         ? scheduleVersions
         : await AppDataStore.loadScheduleVersions();
+
+    // Memory commands and explicit preferences must behave identically even
+    // when the request is intercepted by Program Builder before regular chat.
+    final resolvedMemory = await memoryUpdater.updateFromUserText(
+      userRequest,
+      current: memory,
+    );
 
     final proposal = await draftService.generate(
       userRequest: userRequest,
@@ -61,7 +67,7 @@ class AiProgramConversationCoordinator {
       scheduleVersions: resolvedScheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
-      memory: memory,
+      memory: resolvedMemory,
     );
     final validation = actionProtocolService.validate(proposal, schedules);
     if (!validation.isValid) {
@@ -71,9 +77,6 @@ class AiProgramConversationCoordinator {
       );
     }
 
-    // Identity belongs to this concrete proposal card, not to its semantic
-    // content. This makes repeated taps idempotent while still allowing a new
-    // conversation to intentionally create an identical program later.
     final instancedProposal = InstancedAiProgramActionProposal.fromProposal(
       proposal,
       generateConversationId(),
