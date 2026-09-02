@@ -22,6 +22,10 @@ void main() {
       AiCoachChatIntent.progress,
     );
     expect(
+      router.classify('Confronta queste foto progressi'),
+      AiCoachChatIntent.progress,
+    );
+    expect(
       router.classify('Come cambieresti la mia scheda upper lower?'),
       AiCoachChatIntent.program,
     );
