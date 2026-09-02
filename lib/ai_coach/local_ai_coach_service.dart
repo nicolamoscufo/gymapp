@@ -25,7 +25,7 @@ Rules:
 - exercise_catalog records are authoritative catalog metadata, not evidence of exercises the user performed.
 - Give concise, practical, actionable coaching. Suggestions never count as changes until the user confirms them.
 - Do not diagnose injuries or prescribe medical treatment. For persistent pain or injury concerns, suggest a qualified professional.
-- For progress photos, discuss only visible training-related changes and photo-comparison limitations.
+- Attached images are optional visual context. Answer the user's explicit training question about what is visibly shown. For physique/progress photos, discuss only visible training-related changes and photo-comparison limitations; never infer diagnoses, health status, or other sensitive traits from an image.
 - Answer in Italian unless the user writes in another language.
 ''';
 
@@ -309,9 +309,17 @@ Use focus_context first when present. Use program_history only when it is presen
 If exercise_catalog exists, use it only for exercise identity, target muscles, equipment and execution instructions.
 Keep the response concise and practical.''';
 
+    final hasCurrentImages = latestUser.hasImages || newImages.isNotEmpty;
+    final messageForInference = latestUserQuery.isEmpty && hasCurrentImages
+        ? latestUser.copyWith(
+            content:
+                'Analizza le immagini allegate come contesto visivo per il mio allenamento. Descrivi solo ciò che è effettivamente visibile, segnala i limiti di una singola immagine e dammi indicazioni pratiche senza fare diagnosi.',
+          )
+        : latestUser;
+
     final currentMessage = newImages.isEmpty
-        ? latestUser
-        : latestUser.copyWith(
+        ? messageForInference
+        : messageForInference.copyWith(
             imageBytes: newImages.map((image) => image.bytes).toList(),
             imageLabels: newImages.map((image) => image.label).toList(),
           );
