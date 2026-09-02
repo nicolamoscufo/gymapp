@@ -23,6 +23,17 @@ void main() {
     expect(persisted.recurringPreferences, memory.recurringPreferences);
   });
 
+  test('generic sentiment is not promoted to persistent training memory', () async {
+    const updater = AiCoachMemoryUpdater();
+
+    final memory = await updater.updateFromUserText(
+      'Mi piace questa risposta, grazie.',
+    );
+
+    expect(memory.isEmpty, isTrue);
+    expect(await const AiCoachMemoryStore().hasStoredValue(), isFalse);
+  });
+
   test('stores explicit constraints and deduplicates repeated statements', () async {
     const updater = AiCoachMemoryUpdater();
 
