@@ -20,7 +20,8 @@ Rules:
 - Use only the training context supplied by the app. Never invent loads, reps, symptoms, preferences, or workout history.
 - Deterministic analytics in the context are authoritative calculations. Explain them; do not contradict them without stating uncertainty.
 - Historical schedule links are authoritative only when schedule_version_id resolves to a stored version. Never guess unresolved links.
-- program_change_effectiveness is association evidence, never causal proof.
+- When focus_context is present, treat it as the authoritative scope for that answer before broader context.
+- program_change_effectiveness reports associations only; these signals never prove causation. If evidence is sparse or links are unresolved, say insufficient data.
 - exercise_catalog records are authoritative catalog metadata, not evidence of exercises the user performed.
 - Give concise, practical, actionable coaching. Suggestions never count as changes until the user confirms them.
 - Do not diagnose injuries or prescribe medical treatment. For persistent pain or injury concerns, suggest a qualified professional.
@@ -526,26 +527,27 @@ Keep the response concise and practical.''';
     List<ChatMessage> messages, {
     required ChatMessage currentMessage,
   }) {
-    final prior = <ChatMessage>[];
+    final newestFirst = <String>[];
+    var usedChars = 0;
     var skippedCurrent = false;
+
     for (final message in messages.reversed) {
       if (!skippedCurrent && identical(message, currentMessage)) {
         skippedCurrent = true;
         continue;
       }
       if (message.content.trim().isEmpty) continue;
-      prior.add(message);
-      if (prior.length == 4) break;
-    }
 
-    final buffer = StringBuffer();
-    for (final message in prior.reversed) {
       var text = message.content.trim().replaceAll(RegExp(r'\s+'), ' ');
       if (text.length > 600) text = '${text.substring(0, 600)}…';
       final line = '${message.role}: $text\n';
-      if (buffer.length + line.length > _conversationReferenceCharBudget) break;
-      buffer.write(line);
+      if (usedChars + line.length > _conversationReferenceCharBudget) break;
+
+      newestFirst.add(line);
+      usedChars += line.length;
+      if (newestFirst.length == 4) break;
     }
-    return buffer.toString().trim();
+
+    return newestFirst.reversed.join().trim();
   }
 }
