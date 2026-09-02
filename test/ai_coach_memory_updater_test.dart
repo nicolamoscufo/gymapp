@@ -83,6 +83,18 @@ void main() {
     expect(memory.coachingNotes, isEmpty);
   });
 
+  test('mentioning clear-memory words does not clear without a command', () async {
+    const updater = AiCoachMemoryUpdater();
+    final original = await updater.updateFromUserText('Preferisco la panca piana.');
+
+    final memory = await updater.updateFromUserText(
+      'Non cancellare tutta la memoria del Coach.',
+      current: original,
+    );
+
+    expect(memory.recurringPreferences, contains('la panca piana'));
+  });
+
   test('persisted clear wins over stale screen memory on later turns', () async {
     const updater = AiCoachMemoryUpdater();
     final stale = await updater.updateFromUserText('Preferisco la panca piana.');
