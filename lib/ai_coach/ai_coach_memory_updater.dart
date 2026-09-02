@@ -149,7 +149,6 @@ class AiCoachMemoryUpdater {
   static final List<RegExp> _preferencePatterns = [
     RegExp(r'^(?:io\s+)?preferisco\s+(.+)$', caseSensitive: false),
     RegExp(r'^(?:io\s+)?mi trovo meglio con\s+(.+)$', caseSensitive: false),
-    RegExp(r'^(?:io\s+)?mi piace(?:rebbe)?\s+(.+)$', caseSensitive: false),
     RegExp(
       r'^(?:io\s+)?voglio dare priorità\s+((?:a|al|alla|ai|agli|alle)\s+.+)$',
       caseSensitive: false,
