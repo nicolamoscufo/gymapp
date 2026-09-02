@@ -230,7 +230,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 12),
           _SettingsSection(
-            title: 'Allenamento',
+            title: 'Back off',
             icon: Icons.fitness_center_outlined,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -238,8 +238,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 TextField(
                   controller: _backoffReductionController,
                   decoration: InputDecoration(
-                    labelText: 'Riduzione back off',
-                    suffixText: '%',
+                    labelText: 'Riduzione back off %',
                     helperText:
                         'Attuale: ${formatDecimal(_backoffReductionPercent)}%',
                   ),
@@ -260,7 +259,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ? null
                         : _saveBackoffReductionPercent,
                     icon: const Icon(Icons.check),
-                    label: const Text('Salva'),
+                    label: const Text('Salva e aggiorna schede'),
                   ),
                 ),
                 if (_isSavingBackoffReduction) ...[
