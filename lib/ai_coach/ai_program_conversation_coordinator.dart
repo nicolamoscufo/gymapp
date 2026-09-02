@@ -5,6 +5,7 @@ import '../models/schedule_version.dart';
 import '../models/workout.dart';
 import 'ai_action_protocol.dart';
 import 'ai_coach_memory.dart';
+import 'ai_coach_memory_updater.dart';
 import 'ai_coach_user_profile.dart';
 import 'ai_program_draft_instance.dart';
 import 'ai_program_draft_service.dart';
@@ -28,11 +29,13 @@ class AiProgramConversationCoordinator {
   final AiProgramDraftService draftService;
   final AiActionProtocolService actionProtocolService;
   final AiCoachMemoryStore memoryStore;
+  final AiCoachMemoryUpdater memoryUpdater;
 
   const AiProgramConversationCoordinator({
     this.draftService = const AiProgramDraftService(),
     this.actionProtocolService = const AiActionProtocolService(),
     this.memoryStore = const AiCoachMemoryStore(),
+    this.memoryUpdater = const AiCoachMemoryUpdater(),
   });
 
   Future<AiProgramConversationResult> handle({
@@ -52,11 +55,12 @@ class AiProgramConversationCoordinator {
         ? scheduleVersions
         : await AppDataStore.loadScheduleVersions();
 
-    // Chat memory can change after the screen was built. When the memory store
-    // has an explicit value, including an intentionally cleared empty value,
-    // that persisted snapshot is authoritative for Program Builder too.
-    final hasPersistedMemory = await memoryStore.hasStoredValue();
-    final resolvedMemory = hasPersistedMemory ? await memoryStore.load() : memory;
+    // Memory commands and explicit preferences must behave identically even
+    // when the request is intercepted by Program Builder before regular chat.
+    final resolvedMemory = await memoryUpdater.updateFromUserText(
+      userRequest,
+      current: memory,
+    );
 
     final proposal = await draftService.generate(
       userRequest: userRequest,
