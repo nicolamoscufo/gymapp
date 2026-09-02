@@ -1365,7 +1365,7 @@ class _EmptyChatView extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Chiedi consigli sugli allenamenti, analisi dei progressi, suggerimenti e molto altro.',
+          'Scrivi liberamente nella chat oppure allega fino a 4 foto. I suggerimenti qui sotto sono solo scorciatoie facoltative.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -1411,7 +1411,7 @@ class _EmptyChatView extends StatelessWidget {
         if (isModelReady) ...[
           const SizedBox(height: 24),
           Text(
-            'Cosa vuoi fare?',
+            'Spunti rapidi (facoltativi)',
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w900,
             ),
@@ -1735,8 +1735,9 @@ class _ChatInputBar extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           IconButton(
+            key: const ValueKey('ai-chat-photo'),
             icon: const Icon(Icons.add_photo_alternate_outlined),
-            tooltip: 'Upload photos',
+            tooltip: 'Aggiungi foto',
             onPressed: isRunning ? null : onPickImages,
             color: colorScheme.onSurfaceVariant,
           ),
@@ -1748,26 +1749,37 @@ class _ChatInputBar extends StatelessWidget {
               minLines: 1,
               maxLines: 4,
               decoration: const InputDecoration(
-                hintText: 'Chiedi qualcosa...',
+                hintText: 'Scrivi al Coach...',
                 border: InputBorder.none,
                 filled: false,
                 contentPadding: EdgeInsets.symmetric(horizontal: 8),
               ),
-              onSubmitted: (_) => onSend(),
-              onChanged: (_) {},
+              onSubmitted: (_) {
+                if (!isRunning &&
+                    (controller.text.trim().isNotEmpty || hasImages)) {
+                  onSend();
+                }
+              },
             ),
           ),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            child: IconButton(
-              key: const ValueKey('ai-chat-send'),
-              icon: const Icon(Icons.send_rounded),
-              tooltip: 'Send',
-              onPressed: (hasText || hasImages) && !isRunning ? onSend : null,
-              color: (hasText || hasImages) && !isRunning
-                  ? colorScheme.primary
-                  : colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-            ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (context, value, _) {
+              final canSend =
+                  !isRunning && (value.text.trim().isNotEmpty || hasImages);
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                child: IconButton(
+                  key: const ValueKey('ai-chat-send'),
+                  icon: const Icon(Icons.send_rounded),
+                  tooltip: 'Invia',
+                  onPressed: canSend ? onSend : null,
+                  color: canSend
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                ),
+              );
+            },
           ),
         ],
       ),
