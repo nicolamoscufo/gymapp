@@ -4,7 +4,9 @@ import '../models/body_log.dart';
 import '../models/schedule.dart';
 import '../models/schedule_version.dart';
 import '../models/workout.dart';
+import 'ai_coach_context_router.dart';
 import 'ai_coach_memory.dart';
+import 'ai_coach_memory_updater.dart';
 import 'ai_coach_models.dart';
 import 'ai_coach_prompts.dart';
 import 'ai_coach_user_profile.dart';
@@ -16,16 +18,22 @@ import 'training_context_builder.dart';
 const systemCoachingPrompt = '''
 You are FitFlow AI Coach, an on-device personal training assistant.
 
-Rules:
-- Use only the training context supplied by the app. Never invent loads, reps, symptoms, preferences, or workout history.
-- Deterministic analytics in the context are authoritative calculations. Explain them; do not contradict them without stating uncertainty.
+Coaching contract:
+- Answer the user's actual question first. Avoid generic motivational filler, long disclaimers, and restating the entire training context.
+- Personalize only from supplied app data and user-declared memory. Never invent loads, reps, symptoms, preferences, exercise history, or goals.
+- When a concrete recommendation depends on missing data, name the missing data instead of guessing.
+- Prefer comparisons against the user's own verified history over generic population norms.
+- Deterministic analytics are authoritative calculations. Use their exact direction and values when relevant; do not silently override them with model intuition.
+- Separate observed facts from interpretation. Use calibrated language when evidence is limited or mixed.
 - Historical schedule links are authoritative only when schedule_version_id resolves to a stored version. Never guess unresolved links.
-- When focus_context is present, treat it as the authoritative scope for that answer before broader context.
-- program_change_effectiveness reports associations only; these signals never prove causation. If evidence is sparse or links are unresolved, say insufficient data.
-- exercise_catalog records are authoritative catalog metadata, not evidence of exercises the user performed.
-- Give concise, practical, actionable coaching. Suggestions never count as changes until the user confirms them.
-- Do not diagnose injuries or prescribe medical treatment. For persistent pain or injury concerns, suggest a qualified professional.
-- Attached images are optional visual context. Answer the user's explicit training question about what is visibly shown. For physique/progress photos, discuss only visible training-related changes and photo-comparison limitations; never infer diagnoses, health status, or other sensitive traits from an image.
+- When focus_context is present, treat it as the authoritative scope before broader context.
+- program_change_effectiveness reports associations only; it never proves causation.
+- exercise_catalog is metadata about exercise identity, muscles, equipment, and execution. It is not evidence that the user performed an exercise.
+- memory contains only user-declared preferences, constraints, or notes. Respect it, but do not treat it as performance evidence.
+- Give a small number of high-value actions. If useful, explain why using the user's own data.
+- Suggestions never count as program changes until the user confirms them through the app.
+- Do not diagnose injuries or prescribe medical treatment. For persistent or concerning pain, recommend evaluation by a qualified professional.
+- Attached images are optional visual context. Answer the explicit training question about what is visibly shown. For physique/progress photos, discuss only visible training-related differences and image-comparison limitations; never infer diagnoses, health status, or sensitive traits.
 - Answer in Italian unless the user writes in another language.
 ''';
 
@@ -38,6 +46,8 @@ class LocalAiCoachService {
   final bool allowFallback;
   final TrainingContextBuilder contextBuilder;
   final ExerciseCatalogRetriever exerciseCatalogRetriever;
+  final AiCoachContextRouter contextRouter;
+  final AiCoachMemoryUpdater memoryUpdater;
 
   const LocalAiCoachService({
     this.engine = const FlutterGemmaLocalLlmEngine(),
@@ -45,6 +55,8 @@ class LocalAiCoachService {
     this.allowFallback = false,
     this.contextBuilder = const TrainingContextBuilder(),
     this.exerciseCatalogRetriever = const ExerciseCatalogRetriever(),
+    this.contextRouter = const AiCoachContextRouter(),
+    this.memoryUpdater = const AiCoachMemoryUpdater(),
   });
 
   Future<WorkoutRecap> generateWorkoutRecap({
@@ -261,6 +273,10 @@ class LocalAiCoachService {
       );
     }
     final latestUserQuery = latestUser.content.trim();
+    final resolvedMemory = await memoryUpdater.updateFromUserText(
+      latestUserQuery,
+      current: memory,
+    );
 
     final context = contextBuilder.recent(
       history: history,
@@ -268,7 +284,7 @@ class LocalAiCoachService {
       scheduleVersions: scheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
-      memory: memory,
+      memory: resolvedMemory,
     );
     if (focusContext != null && focusContext.isNotEmpty) {
       context['focus_context'] = focusContext;
@@ -287,13 +303,19 @@ class LocalAiCoachService {
     }
 
     final longitudinal = _looksLongitudinal(latestUserQuery);
+    final intent = contextRouter.classify(latestUserQuery);
     final compactContext = _compactContext(
       context,
       keepProgramHistory: longitudinal,
       maxWorkouts: longitudinal ? 2 : 4,
     );
-    final contextJson = _encodeBoundedContext(
+    final routedContext = contextRouter.route(
       compactContext,
+      intent: intent,
+      keepProgramHistory: longitudinal,
+    );
+    final contextJson = _encodeBoundedContext(
+      routedContext,
       keepProgramHistory: longitudinal,
     );
     final conversationReference = _conversationReference(
@@ -302,12 +324,19 @@ class LocalAiCoachService {
     );
 
     final systemPrompt = '''$systemCoachingPrompt
+Coaching mode: ${intent.name}
+${contextRouter.promptHint(intent)}
+
 Training context (JSON):
 $contextJson
 ${conversationReference.isEmpty ? '' : '\nRecent conversation for continuity only:\n$conversationReference\n'}
-Use focus_context first when present. Use program_history only when it is present in the context.
-If exercise_catalog exists, use it only for exercise identity, target muscles, equipment and execution instructions.
-Keep the response concise and practical.''';
+Response policy:
+- Start with a direct answer, not a summary of the context.
+- Ground personalized claims in the supplied data. Mention exact values only when they exist in the context.
+- Give 1-4 prioritized actions rather than a long generic checklist.
+- If evidence is insufficient, say what is missing and give the safest useful next step.
+- Use focus_context first when present. Use program_history only when present.
+- If exercise_catalog exists, use it only for exercise identity, target muscles, equipment, and execution instructions.''';
 
     final hasCurrentImages = latestUser.hasImages || newImages.isNotEmpty;
     final messageForInference = latestUserQuery.isEmpty && hasCurrentImages
@@ -327,10 +356,6 @@ Keep the response concise and practical.''';
     await engine.initialize();
     return engine.generateChatText(
       systemPrompt: systemPrompt,
-      // The LiteRT chat implementation currently re-generates intermediate
-      // turns while replaying history. Passing only the active user turn makes
-      // inference deterministic: history is supplied above as bounded reference
-      // text and the runtime performs exactly one generation for this request.
       messages: [currentMessage],
       newImages: const [],
     );
