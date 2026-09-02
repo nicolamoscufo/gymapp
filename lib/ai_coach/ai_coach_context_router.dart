@@ -128,8 +128,10 @@ class AiCoachContextRouter {
             'latest_session_at',
           },
         );
-        result.remove('program_history');
-        result.remove('program_change_effectiveness');
+        if (!keepProgramHistory) {
+          result.remove('program_history');
+          result.remove('program_change_effectiveness');
+        }
         break;
     }
 
@@ -185,17 +187,16 @@ class AiCoachContextRouter {
   static const List<String> _techniqueMarkers = [
     'tecnica',
     'esecuzione',
-    'form ',
+    'forma del movimento',
+    'form check',
+    'my form',
     'setup',
     'assetto',
     'presa',
     'stance',
-    'rom',
     'range of motion',
-    'foto',
-    'video',
     'come eseguo',
-    'come faccio',
+    'come faccio questo esercizio',
   ];
 
   static const List<String> _progressionMarkers = [
@@ -242,6 +243,8 @@ class AiCoachContextRouter {
     'volume nel tempo',
     'ultime settimane',
     'ultimo mese',
+    'foto progressi',
+    'progress photo',
   ];
 
   static const List<String> _programMarkers = [
@@ -250,7 +253,8 @@ class AiCoachContextRouter {
     'split',
     'mesociclo',
     'volume settimanale',
-    'frequenza',
+    'frequenza di allenamento',
+    'frequenza settimanale',
     'giorni a settimana',
     'upper lower',
     'push pull',
