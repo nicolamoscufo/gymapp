@@ -41,6 +41,28 @@ void main() {
     expect(engine.lastPrompt, contains('manubri per le spinte del petto'));
     expect(engine.lastPrompt, isNot(contains('questa memoria è vecchia')));
   });
+
+  test('Program Builder captures explicit preferences in the same request', () async {
+    final engine = _CapturingProgramEngine();
+    final coordinator = AiProgramConversationCoordinator(
+      draftService: AiProgramDraftService(engine: engine),
+    );
+
+    final result = await coordinator.handle(
+      userRequest:
+          'Creami una nuova scheda upper lower, preferisco i manubri per il petto.',
+      history: const [],
+      schedules: const [],
+    );
+
+    expect(result.hasDraft, isTrue);
+    expect(engine.lastPrompt, contains('i manubri per il petto'));
+    final persisted = await const AiCoachMemoryStore().load();
+    expect(
+      persisted.recurringPreferences,
+      contains('i manubri per il petto'),
+    );
+  });
 }
 
 class _CapturingProgramEngine implements LocalLlmEngine {
