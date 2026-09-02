@@ -12,8 +12,8 @@ class AiCoachMemoryUpdater {
     String text, {
     AiCoachMemory current = const AiCoachMemory(),
   }) async {
-    final persisted = await store.load();
-    var memory = _merge(current, persisted);
+    final hasPersistedMemory = await store.hasStoredValue();
+    var memory = hasPersistedMemory ? await store.load() : current;
     final normalizedText = text.trim();
     if (normalizedText.isEmpty) return memory;
 
@@ -76,26 +76,6 @@ class AiCoachMemoryUpdater {
       await store.save(updated);
     }
     return updated;
-  }
-
-  AiCoachMemory _merge(AiCoachMemory a, AiCoachMemory b) {
-    final preferences = <String>[];
-    final limitations = <String>[];
-    final notes = <String>[];
-    for (final value in [...b.recurringPreferences, ...a.recurringPreferences]) {
-      _appendUnique(preferences, value);
-    }
-    for (final value in [...b.recurringLimitations, ...a.recurringLimitations]) {
-      _appendUnique(limitations, value);
-    }
-    for (final value in [...b.coachingNotes, ...a.coachingNotes]) {
-      _appendUnique(notes, value);
-    }
-    return AiCoachMemory(
-      recurringPreferences: _bounded(preferences),
-      recurringLimitations: _bounded(limitations),
-      coachingNotes: _bounded(notes),
-    );
   }
 
   Iterable<String> _sentences(String text) sync* {
