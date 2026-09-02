@@ -54,17 +54,26 @@ void main() {
     );
 
     await tester.tap(sendFinder);
-    // Do not use pumpAndSettle here: sending starts a scroll animation, so the
-    // test should wait only for the async message pipeline it actually asserts.
+    // The send pipeline now also reads local memory and retrieves relevant
+    // catalog context. Poll for the observable engine call instead of relying
+    // on an arbitrary single delay or pumpAndSettle (which also waits for UI
+    // animations unrelated to this assertion).
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-    await tester.pump(const Duration(milliseconds: 400));
+    for (var i = 0; i < 20 && engine.messages.isEmpty; i += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
 
     expect(engine.messages, hasLength(1));
     expect(
       engine.messages.single.content,
       'Come posso migliorare la mia tecnica in panca?',
     );
+
+    for (var i = 0;
+        i < 10 && find.text('Risposta libera del Coach').evaluate().isEmpty;
+        i += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     expect(find.text('Risposta libera del Coach'), findsOneWidget);
   });
 
