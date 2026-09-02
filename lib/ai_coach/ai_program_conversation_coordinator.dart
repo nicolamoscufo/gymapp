@@ -27,10 +27,12 @@ class AiProgramConversationResult {
 class AiProgramConversationCoordinator {
   final AiProgramDraftService draftService;
   final AiActionProtocolService actionProtocolService;
+  final AiCoachMemoryStore memoryStore;
 
   const AiProgramConversationCoordinator({
     this.draftService = const AiProgramDraftService(),
     this.actionProtocolService = const AiActionProtocolService(),
+    this.memoryStore = const AiCoachMemoryStore(),
   });
 
   Future<AiProgramConversationResult> handle({
@@ -46,13 +48,15 @@ class AiProgramConversationCoordinator {
       return const AiProgramConversationResult(isProgramActionIntent: false);
     }
 
-    // Some callers (notably the Home AI Coach tab) historically did not pass
-    // scheduleVersions. Program drafting needs the persisted version graph for
-    // longitudinal context and safe modification proposals, so hydrate it only
-    // when the caller has not supplied an explicit snapshot.
     final resolvedScheduleVersions = scheduleVersions.isNotEmpty
         ? scheduleVersions
         : await AppDataStore.loadScheduleVersions();
+
+    // Chat memory can change after the screen was built. When the memory store
+    // has an explicit value, including an intentionally cleared empty value,
+    // that persisted snapshot is authoritative for Program Builder too.
+    final hasPersistedMemory = await memoryStore.hasStoredValue();
+    final resolvedMemory = hasPersistedMemory ? await memoryStore.load() : memory;
 
     final proposal = await draftService.generate(
       userRequest: userRequest,
@@ -61,7 +65,7 @@ class AiProgramConversationCoordinator {
       scheduleVersions: resolvedScheduleVersions,
       bodyLogs: bodyLogs,
       profile: profile,
-      memory: memory,
+      memory: resolvedMemory,
     );
     final validation = actionProtocolService.validate(proposal, schedules);
     if (!validation.isValid) {
@@ -71,9 +75,6 @@ class AiProgramConversationCoordinator {
       );
     }
 
-    // Identity belongs to this concrete proposal card, not to its semantic
-    // content. This makes repeated taps idempotent while still allowing a new
-    // conversation to intentionally create an identical program later.
     final instancedProposal = InstancedAiProgramActionProposal.fromProposal(
       proposal,
       generateConversationId(),
