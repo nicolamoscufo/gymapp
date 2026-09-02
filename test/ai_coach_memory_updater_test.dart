@@ -71,4 +71,21 @@ void main() {
     expect(memory.recurringLimitations, isEmpty);
     expect(memory.coachingNotes, isEmpty);
   });
+
+  test('persisted clear wins over stale screen memory on later turns', () async {
+    const updater = AiCoachMemoryUpdater();
+    final stale = await updater.updateFromUserText('Preferisco la panca piana.');
+
+    final cleared = await updater.updateFromUserText(
+      'Cancella tutta la memoria del Coach',
+      current: stale,
+    );
+    expect(cleared.isEmpty, isTrue);
+
+    final nextTurn = await updater.updateFromUserText(
+      'Come mi alleno oggi?',
+      current: stale,
+    );
+    expect(nextTurn.isEmpty, isTrue);
+  });
 }
