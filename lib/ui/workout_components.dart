@@ -290,6 +290,7 @@ class WorkoutRestPanel extends StatelessWidget {
   final String exerciseName;
   final String countdown;
   final double? progress;
+  final String? nextSetId;
   final String? nextExerciseName;
   final String? nextSetLabel;
   final String? nextPrescription;
@@ -305,6 +306,7 @@ class WorkoutRestPanel extends StatelessWidget {
     required this.onPlusThirty,
     required this.onSkip,
     this.progress,
+    this.nextSetId,
     this.nextExerciseName,
     this.nextSetLabel,
     this.nextPrescription,
@@ -388,6 +390,9 @@ class WorkoutRestPanel extends StatelessWidget {
             ],
             const SizedBox(height: AppSpacing.md),
             Container(
+              key: _hasNextSet && nextSetId != null
+                  ? ValueKey('rest-next-set-$nextSetId')
+                  : const ValueKey('rest-workout-complete'),
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
