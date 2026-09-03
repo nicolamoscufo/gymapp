@@ -22,6 +22,7 @@ import '../models/schedule.dart';
 import '../models/workout.dart';
 import '../number_input.dart';
 import '../top_set_backoff.dart' as top_set_backoff;
+import '../ui/workout_components.dart';
 import '../workout_fatigue_analytics.dart';
 import '../workout_plate_calculator.dart';
 import '../workout_progression_analytics.dart';
@@ -168,83 +169,24 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   Widget _compactExerciseCard({
     required WorkoutExercise exercise,
     required Color accent,
-    required ThemeData theme,
-    required ColorScheme colorScheme,
   }) {
     final completed = _completedSetCount(exercise);
     final total = exercise.sets.length;
     final isComplete = _isExerciseComplete(exercise);
     final nextIndex = _currentSetIndexFor(exercise);
     final nextSet = nextIndex >= 0 ? exercise.sets[nextIndex] : null;
-    final status = isComplete
-        ? 'Completato · $completed/$total set'
-        : nextSet == null
-        ? '$completed/$total set'
-        : '$completed/$total set · prossimo ${_formatWeight(nextSet.weight)} kg × ${nextSet.reps}';
 
-    return Card(
-      key: ValueKey('compact-exercise-${exercise.id}'),
-      margin: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-      child: InkWell(
-        key: ValueKey('expand-exercise-${exercise.id}'),
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => _focusExercise(exercise.id),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                width: 8,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: isComplete ? colorScheme.tertiary : accent,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            exercise.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        if (isComplete)
-                          Icon(
-                            Icons.check_circle,
-                            size: 18,
-                            color: colorScheme.tertiary,
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      status,
-                      key: ValueKey('compact-progress-${exercise.id}'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(Icons.expand_more, color: colorScheme.primary),
-            ],
-          ),
-        ),
-      ),
+    return WorkoutCompactExerciseCard(
+      exerciseId: exercise.id,
+      name: exercise.name,
+      completedSets: completed,
+      totalSets: total,
+      isComplete: isComplete,
+      accent: accent,
+      nextPrescription: nextSet == null
+          ? null
+          : '${_formatWeight(nextSet.weight)} kg × ${nextSet.reps}',
+      onTap: () => _focusExercise(exercise.id),
     );
   }
 
@@ -2640,8 +2582,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                 child: _compactExerciseCard(
                   exercise: exercise,
                   accent: accent,
-                  theme: theme,
-                  colorScheme: colorScheme,
                 ),
               );
             }
@@ -2651,14 +2591,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
               margin: const EdgeInsets.fromLTRB(8, 5, 8, 5),
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      accent.withValues(alpha: isDark ? 0.18 : 0.10),
-                      Colors.transparent,
-                    ],
-                  ),
+                  color: colorScheme.surfaceContainerLow,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(10.0),
@@ -3001,39 +2934,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                         ],
                       ),
                       const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const SizedBox(
-                            width: 72,
-                            child: Text(
-                              '#',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          Expanded(
-                            child: Center(
-                              child: Text(
-                                'kg',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Center(
-                              child: Text(
-                                'reps',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ),
-                          Container(
-                            width: 40,
-                            alignment: Alignment.center,
-                            child: Icon(Icons.check),
-                          ),
-                        ],
-                      ),
+                      const WorkoutSetTableHeader(),
                       const Divider(),
                       ...List.generate(exercise.sets.length, (setIndex) {
                         final exSet = exercise.sets[setIndex];
@@ -3672,230 +3573,23 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         bottomNavigationBar:
             activeRestExercise == null || activeRestSeconds == null
             ? null
-            : SafeArea(
-                top: false,
-                child: Container(
-                  key: ValueKey('rest-mode-${activeRestExercise.id}'),
-                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: colorScheme.primary, width: 1.4),
-                    boxShadow: [
-                      BoxShadow(
-                        color: colorScheme.shadow.withValues(alpha: 0.12),
-                        blurRadius: 16,
-                        offset: const Offset(0, -3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              color: colorScheme.primaryContainer,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.timer_outlined,
-                              color: colorScheme.onPrimaryContainer,
-                              size: 28,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'RECUPERO',
-                                  style: theme.textTheme.labelMedium?.copyWith(
-                                    color: colorScheme.primary,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1.1,
-                                  ),
-                                ),
-                                Text(
-                                  _formatDuration(activeRestSeconds),
-                                  key: const ValueKey('rest-mode-countdown'),
-                                  style: theme.textTheme.displaySmall?.copyWith(
-                                    fontWeight: FontWeight.w900,
-                                    height: 1,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'dopo ${activeRestExercise.name}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (restProgress != null) ...[
-                        const SizedBox(height: 10),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(99),
-                          child: LinearProgressIndicator(
-                            key: const ValueKey('rest-mode-progress'),
-                            value: restProgress,
-                            minHeight: 6,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 12),
-                      if (restTarget != null)
-                        Container(
-                          key: ValueKey('rest-next-set-${restTarget.set.id}'),
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 11,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colorScheme.surface,
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: colorScheme.outlineVariant,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'PROSSIMO SET',
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(
-                                            color: colorScheme.primary,
-                                            fontWeight: FontWeight.w900,
-                                            letterSpacing: 0.8,
-                                          ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      restTarget.exercise.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                    ),
-                                    Text(
-                                      'Serie ${restTarget.setIndex + 1}${restTarget.set.type == SetType.normal ? '' : ' · ${restTarget.set.type.label}'}',
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                '${_formatWeight(restTarget.set.weight)} kg\n× ${restTarget.set.reps}',
-                                key: const ValueKey('rest-next-prescription'),
-                                textAlign: TextAlign.right,
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.05,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        Container(
-                          key: const ValueKey('rest-workout-complete'),
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 11,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colorScheme.tertiaryContainer.withValues(
-                              alpha: isDark ? 0.35 : 0.65,
-                            ),
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.check_circle,
-                                color: colorScheme.tertiary,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Ultimo set completato',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Recupera e poi puoi terminare l’allenamento.',
-                                      style: theme.textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              key: const ValueKey('rest-minus-30'),
-                              onPressed: () =>
-                                  _subtractThirtySeconds(activeRestExercise),
-                              icon: const Icon(Icons.remove),
-                              label: const Text('30 s'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              key: const ValueKey('rest-plus-30'),
-                              onPressed: () =>
-                                  _addThirtySeconds(activeRestExercise),
-                              icon: const Icon(Icons.add),
-                              label: const Text('30 s'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: FilledButton(
-                              key: const ValueKey('rest-skip'),
-                              onPressed: () =>
-                                  _stopRestForExercise(activeRestExercise),
-                              child: const Text('Salta'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+            : WorkoutRestPanel(
+                key: ValueKey('rest-mode-${activeRestExercise.id}'),
+                exerciseName: activeRestExercise.name,
+                countdown: _formatDuration(activeRestSeconds),
+                progress: restProgress,
+                nextSetId: restTarget?.set.id,
+                nextExerciseName: restTarget?.exercise.name,
+                nextSetLabel: restTarget == null
+                    ? null
+                    : 'Serie ${restTarget.setIndex + 1}${restTarget.set.type == SetType.normal ? '' : ' · ${restTarget.set.type.label}'}',
+                nextPrescription: restTarget == null
+                    ? null
+                    : '${_formatWeight(restTarget.set.weight)} kg × ${restTarget.set.reps}',
+                onMinusThirty: () =>
+                    _subtractThirtySeconds(activeRestExercise),
+                onPlusThirty: () => _addThirtySeconds(activeRestExercise),
+                onSkip: () => _stopRestForExercise(activeRestExercise),
               ),
         floatingActionButton: activeRestExercise == null
             ? FloatingActionButton.extended(
