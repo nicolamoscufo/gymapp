@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.head_commit.message, '[workout-ui-refactor]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +20,11 @@ jobs:
       - name: Replace inline workout UI with shared components
         shell: bash
         run: |
+          if git log -1 --pretty=%B | grep -q '\[workout-ui-refactor\]'; then
+            echo "Refactor already applied"
+            exit 0
+          fi
+
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -92,10 +96,9 @@ jobs:
               r"                      Row\(\n                        mainAxisAlignment: MainAxisAlignment\.spaceBetween,[\s\S]*?\n                      const Divider\(\),",
               re.MULTILINE,
           )
-          table_header_replacement = '''                      const WorkoutSetTableHeader(),
-                      const Divider(),'''
           text, count = table_header_pattern.subn(
-              table_header_replacement,
+              '''                      const WorkoutSetTableHeader(),
+                      const Divider(),''',
               text,
               count=1,
           )
