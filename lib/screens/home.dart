@@ -18,6 +18,7 @@ import '../models/schedule_version.dart';
 import '../models/workout.dart';
 import '../number_input.dart';
 import '../top_set_backoff.dart';
+import '../ui/home_dashboard_components.dart';
 import '../workout_fatigue_analytics.dart';
 import '../schedule_version_history.dart';
 import 'schedule_detail.dart';
@@ -3628,14 +3629,7 @@ class _HomePageState extends State<HomePage> {
         Card(
           child: Container(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  colorScheme.secondary.withValues(alpha: isDark ? 0.20 : 0.12),
-                  Colors.transparent,
-                ],
-              ),
+              color: colorScheme.surfaceContainerLow,
             ),
             child: ListTile(
               leading: Container(
@@ -3795,7 +3789,6 @@ class _HomePageState extends State<HomePage> {
   Widget _buildHomeDashboard() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
     final planned = _nextPlannedWorkout();
     final latestBody = _latestBodyLog();
     final computedReadiness = buildGlobalReadinessReport(
@@ -3826,6 +3819,12 @@ class _HomePageState extends State<HomePage> {
         ? '${strongestProgress.name}: volume ${_formatSignedVolume(strongestProgress.volumeDelta)} rispetto alla sessione precedente.'
         : '${strongestProgress.name}: nessun miglioramento netto nell’ultimo confronto. Puoi chiedere al Coach cosa cambiare.';
 
+    final primaryAction = _savedSession != null
+        ? _resumeSavedWorkoutFromHome
+        : planned == null
+        ? () => setState(() => _currentIndex = 1)
+        : () => _startScheduleFromHome(planned.schedule);
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
@@ -3851,198 +3850,59 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
-        Card(
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  colorScheme.primary.withValues(alpha: isDark ? 0.26 : 0.16),
-                  colorScheme.secondary.withValues(alpha: isDark ? 0.10 : 0.06),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Icon(
-                        _savedSession == null
-                            ? Icons.fitness_center
-                            : Icons.play_arrow_rounded,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _savedSession == null
-                                ? 'Prossimo allenamento'
-                                : 'Riprendi allenamento',
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            workoutTitle,
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  workoutSubtitle,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _savedSession != null
-                            ? _resumeSavedWorkoutFromHome
-                            : planned == null
-                            ? () => setState(() => _currentIndex = 1)
-                            : () => _startScheduleFromHome(planned.schedule),
-                        icon: Icon(
-                          planned == null && _savedSession == null
-                              ? Icons.add
-                              : Icons.play_arrow,
-                        ),
-                        label: Text(
-                          _savedSession != null
-                              ? 'Riprendi'
-                              : planned == null
-                              ? 'Crea scheda'
-                              : 'Inizia',
-                        ),
-                      ),
-                    ),
-                    if (planned != null && _savedSession == null) ...[
-                      const SizedBox(width: 10),
-                      OutlinedButton(
-                        onPressed: () => _openScheduleDetail(planned.schedule),
-                        child: const Text('Dettagli'),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
+        HomeWorkoutCard(
+          eyebrow: _savedSession == null
+              ? 'Prossimo allenamento'
+              : 'Riprendi allenamento',
+          title: workoutTitle,
+          subtitle: workoutSubtitle,
+          icon: _savedSession == null
+              ? Icons.fitness_center
+              : Icons.play_arrow_rounded,
+          primaryLabel: _savedSession != null
+              ? 'Riprendi'
+              : planned == null
+              ? 'Crea scheda'
+              : 'Inizia',
+          primaryIcon: planned == null && _savedSession == null
+              ? Icons.add
+              : Icons.play_arrow,
+          onPrimary: primaryAction,
+          secondaryLabel: planned != null && _savedSession == null
+              ? 'Dettagli'
+              : null,
+          onSecondary: planned != null && _savedSession == null
+              ? () => _openScheduleDetail(planned.schedule)
+              : null,
         ),
-        const SizedBox(height: 14),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _DashboardMetric(
-                    icon: Icons.calendar_view_week,
-                    value: '$workoutsThisWeek',
-                    label: 'questa settimana',
-                  ),
-                ),
-                Expanded(
-                  child: _DashboardMetric(
-                    icon: Icons.monitor_weight_outlined,
-                    value: latestBody?.bodyWeight == null
-                        ? '--'
-                        : '${latestBody!.bodyWeight!.toStringAsFixed(1)} kg',
-                    label: 'peso',
-                  ),
-                ),
-                Expanded(
-                  child: _DashboardMetric(
-                    icon: Icons.bolt,
-                    value: '${computedReadiness.score}',
-                    label:
-                        '${computedReadiness.status.label.toLowerCase()} /100',
-                  ),
-                ),
-              ],
+        const SizedBox(height: 12),
+        HomeMetricsStrip(
+          metrics: [
+            HomeDashboardMetric(
+              icon: Icons.calendar_view_week,
+              value: '$workoutsThisWeek',
+              label: 'questa settimana',
             ),
-          ),
+            HomeDashboardMetric(
+              icon: Icons.monitor_weight_outlined,
+              value: latestBody?.bodyWeight == null
+                  ? '--'
+                  : '${latestBody!.bodyWeight!.toStringAsFixed(1)} kg',
+              label: 'peso',
+            ),
+            HomeDashboardMetric(
+              icon: Icons.bolt,
+              value: '${computedReadiness.score}',
+              label: '${computedReadiness.status.label.toLowerCase()} /100',
+            ),
+          ],
         ),
-        const SizedBox(height: 14),
-        Card(
-          child: Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  colorScheme.secondary.withValues(alpha: isDark ? 0.20 : 0.11),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.psychology_alt, color: colorScheme.secondary),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        'AI Coach',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    Chip(
-                      avatar: const Icon(Icons.lock_outline, size: 16),
-                      label: const Text('Locale'),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  coachPreview,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                OutlinedButton.icon(
-                  onPressed: () => setState(() => _currentIndex = 4),
-                  icon: const Icon(Icons.auto_awesome),
-                  label: const Text('Chiedi al Coach'),
-                ),
-              ],
-            ),
-          ),
+        const SizedBox(height: 12),
+        HomeCoachCard(
+          preview: coachPreview,
+          onOpen: () => setState(() => _currentIndex = 4),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         Card(
           child: ListTile(
             leading: const Icon(Icons.insights),
@@ -4113,7 +3973,6 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final isCoach = _currentIndex == 4;
     final title = switch (_currentIndex) {
       0 => 'Home',
@@ -4243,62 +4102,39 @@ class _HomePageState extends State<HomePage> {
               child: const Icon(Icons.monitor_weight),
             )
           : null,
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.28 : 0.10),
-                  blurRadius: 22,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: BottomNavigationBar(
-                type: BottomNavigationBarType.fixed,
-                currentIndex: _currentIndex,
-                showSelectedLabels: false,
-                showUnselectedLabels: false,
-                onTap: (index) {
-                  setState(() => _currentIndex = index);
-                },
-                items: const [
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.home_outlined),
-                    activeIcon: Icon(Icons.home_rounded),
-                    label: 'Home',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.list_alt),
-                    activeIcon: Icon(Icons.list_alt),
-                    label: 'Schede',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.calendar_month),
-                    activeIcon: Icon(Icons.calendar_month),
-                    label: 'Allenati',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.history),
-                    activeIcon: Icon(Icons.insights),
-                    label: 'Progressi',
-                  ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.psychology_alt_outlined),
-                    activeIcon: Icon(Icons.psychology_alt),
-                    label: 'Coach',
-                  ),
-                ],
-              ),
-            ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        onDestinationSelected: (index) {
+          setState(() => _currentIndex = index);
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
+            label: 'Home',
           ),
-        ),
+          NavigationDestination(
+            icon: Icon(Icons.list_alt),
+            selectedIcon: Icon(Icons.list_alt),
+            label: 'Schede',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
+            label: 'Allenati',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.insights_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'Progressi',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.psychology_alt_outlined),
+            selectedIcon: Icon(Icons.psychology_alt),
+            label: 'Coach',
+          ),
+        ],
       ),
     );
   }
@@ -4309,52 +4145,6 @@ class _PlannedWorkout {
   final DateTime date;
 
   const _PlannedWorkout({required this.schedule, required this.date});
-}
-
-class _DashboardMetric extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
-
-  const _DashboardMetric({
-    required this.icon,
-    required this.value,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 20, color: colorScheme.primary),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _ExerciseOccurrence {
