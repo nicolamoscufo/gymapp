@@ -381,7 +381,7 @@ class WorkoutRestPanel extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
               LinearProgressIndicator(
                 key: const ValueKey('rest-mode-progress'),
-                value: progress!.clamp(0, 1),
+                value: progress!.clamp(0.0, 1.0).toDouble(),
                 minHeight: 4,
                 borderRadius: BorderRadius.circular(2),
               ),
