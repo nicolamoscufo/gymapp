@@ -21,9 +21,8 @@ jobs:
       - name: Apply refactor
         run: python3 tool/apply_home_ui_refactor.py
 
-      - name: Format and commit
+      - name: Commit refactor
         run: |
-          dart format lib/screens/home.dart lib/ui/home_dashboard_components.dart
           git config user.name "gymapp-refactor"
           git config user.email "actions@users.noreply.github.com"
           git add lib/screens/home.dart lib/ui/home_dashboard_components.dart
