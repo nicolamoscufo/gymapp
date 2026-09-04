@@ -5,7 +5,7 @@ import 'package:gymapp/ai_coach/ai_coach_model_config.dart';
 void main() {
   group('AI Coach generation profiles', () {
     test('defines one bounded profile for each generation task', () {
-      const contextWindow = AiCoachModelConfig().maxTokens;
+      final contextWindow = const AiCoachModelConfig().maxTokens;
       final tasks = AiCoachGenerationProfiles.all
           .map((profile) => profile.task)
           .toSet();
