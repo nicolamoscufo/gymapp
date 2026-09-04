@@ -3,6 +3,8 @@ from pathlib import Path
 path = Path('lib/ai_coach/local_ai_coach_service.dart')
 text = path.read_text()
 
+text = text.replace("import 'dart:convert';\n\n", '', 1)
+
 old_import = "import 'ai_coach_context_router.dart';\n"
 new_import = "import 'ai_coach_context_budget.dart';\nimport 'ai_coach_context_router.dart';\n"
 if old_import not in text:
