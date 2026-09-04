@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_gemma/flutter_gemma.dart';
 
 import 'ai_coach_models.dart';
+import 'ai_coach_generation_profile.dart';
 import 'ai_coach_model_config.dart';
 import 'ai_coach_model_manager.dart';
 import 'chat_conversation.dart';
@@ -568,13 +569,16 @@ class FlutterGemmaLocalLlmEngine implements LocalLlmEngine {
       );
     }
 
+    final profile = AiCoachGenerationProfiles.visionStructured;
     InferenceChat? chat;
     try {
       chat = await model.createChat(
-        temperature: 0.2,
-        topK: 40,
-        topP: 0.9,
-        tokenBuffer: 1024,
+        temperature: profile.temperature,
+        randomSeed: profile.randomSeed,
+        topK: profile.topK,
+        topP: profile.topP,
+        tokenBuffer: profile.tokenBuffer,
+        maxOutputTokens: profile.maxOutputTokens,
         supportImage: true,
         supportAudio: false,
         supportsFunctionCalls: false,
@@ -603,8 +607,7 @@ class FlutterGemmaLocalLlmEngine implements LocalLlmEngine {
     required List<ChatMessage> messages,
     List<AiCoachImageInput> newImages = const [],
   }) async {
-    final hasImages = newImages.isNotEmpty ||
-        messages.any((m) => m.hasImages);
+    final hasImages = newImages.isNotEmpty || messages.any((m) => m.hasImages);
     await _ensureModel(supportImage: hasImages);
     final model = _model;
     if (model == null) {
@@ -613,13 +616,16 @@ class FlutterGemmaLocalLlmEngine implements LocalLlmEngine {
       );
     }
 
+    final profile = AiCoachGenerationProfiles.chat;
     InferenceChat? chat;
     try {
       chat = await model.createChat(
-        temperature: 0.3,
-        topK: 40,
-        topP: 0.9,
-        tokenBuffer: 1024,
+        temperature: profile.temperature,
+        randomSeed: profile.randomSeed,
+        topK: profile.topK,
+        topP: profile.topP,
+        tokenBuffer: profile.tokenBuffer,
+        maxOutputTokens: profile.maxOutputTokens,
         supportImage: hasImages,
         supportAudio: false,
         supportsFunctionCalls: false,
@@ -691,13 +697,16 @@ class FlutterGemmaLocalLlmEngine implements LocalLlmEngine {
       );
     }
 
+    final profile = AiCoachGenerationProfiles.forStructuredPrompt(prompt);
     InferenceChat? chat;
     try {
       chat = await model.createChat(
-        temperature: 0.2,
-        topK: 40,
-        topP: 0.9,
-        tokenBuffer: 1024,
+        temperature: profile.temperature,
+        randomSeed: profile.randomSeed,
+        topK: profile.topK,
+        topP: profile.topP,
+        tokenBuffer: profile.tokenBuffer,
+        maxOutputTokens: profile.maxOutputTokens,
         supportImage: false,
         supportAudio: false,
         supportsFunctionCalls: false,
