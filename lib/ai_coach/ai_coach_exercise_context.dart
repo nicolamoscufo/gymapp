@@ -212,6 +212,14 @@ class AiCoachExerciseContextFilter {
       result['deterministic_analytics'] = analytics;
     }
 
+    final verifiedEvidence = _map(result['verified_evidence']);
+    if (verifiedEvidence.isNotEmpty) {
+      result['verified_evidence'] = _filterVerifiedEvidence(
+        verifiedEvidence,
+        focus,
+      );
+    }
+
     final catalog = _map(result['exercise_catalog']);
     if (catalog.isNotEmpty && focus.catalogIds.isNotEmpty) {
       final matches = _list(catalog['matches'])
@@ -230,6 +238,77 @@ class AiCoachExerciseContextFilter {
     }
 
     return result;
+  }
+
+  Map<String, dynamic> _filterVerifiedEvidence(
+    Map<String, dynamic> source,
+    AiCoachExerciseFocus focus,
+  ) {
+    final output = Map<String, dynamic>.from(source);
+    final matchedMuscleGroups = <String>{};
+
+    final strength = _map(output['strength']);
+    if (strength.isNotEmpty) {
+      final exercises = _filterNamedList(
+        strength['exercises'],
+        focus,
+        key: 'exercise',
+      );
+      final records = _filterNamedList(
+        strength['recent_prs'],
+        focus,
+        key: 'exercise',
+      );
+      for (final exercise in exercises) {
+        final muscleGroup = exercise['muscle_group']?.toString();
+        if (muscleGroup != null && muscleGroup.isNotEmpty) {
+          matchedMuscleGroups.add(muscleGroup);
+        }
+      }
+      if (exercises.isEmpty && records.isEmpty) {
+        output.remove('strength');
+      } else {
+        output['strength'] = {
+          if (exercises.isNotEmpty) 'exercises': exercises,
+          if (records.isNotEmpty) 'recent_prs': records,
+        };
+      }
+    }
+
+    final progression = _map(output['progression']);
+    if (progression.isNotEmpty) {
+      final recommendations = _filterNamedList(
+        progression['recommendations'],
+        focus,
+        key: 'exercise',
+      );
+      if (recommendations.isEmpty) {
+        output.remove('progression');
+      } else {
+        output['progression'] = {'recommendations': recommendations};
+      }
+    }
+
+    final volumeFrequency = _map(output['volume_frequency']);
+    if (volumeFrequency.isNotEmpty && matchedMuscleGroups.isNotEmpty) {
+      final muscles = _list(volumeFrequency['muscles'])
+          .where((item) {
+            if (item is! Map) return false;
+            return matchedMuscleGroups.contains(
+              item['muscle_group']?.toString(),
+            );
+          })
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+      if (muscles.isEmpty) {
+        volumeFrequency.remove('muscles');
+      } else {
+        volumeFrequency['muscles'] = muscles;
+      }
+      output['volume_frequency'] = volumeFrequency;
+    }
+
+    return output;
   }
 
   List<dynamic> _filterWorkouts(Object? raw, AiCoachExerciseFocus focus) {
