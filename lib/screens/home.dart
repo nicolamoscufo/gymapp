@@ -3947,7 +3947,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final isCoach = _currentIndex == 4;
     final title = switch (_currentIndex) {
       0 => 'Home',
