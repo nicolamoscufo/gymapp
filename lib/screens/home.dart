@@ -10,6 +10,8 @@ import '../app_data_store.dart';
 import '../app_preferences.dart';
 import '../dialog_form.dart';
 import '../home_data_policy.dart';
+import '../home_dashboard_state.dart';
+import '../home_history_analytics.dart';
 import '../local_notifications.dart';
 import '../models/body_log.dart';
 import '../models/exercise.dart';
@@ -39,8 +41,6 @@ enum _HomeAction {
 }
 
 enum _ScheduleMenuAction { rename, duplicate, toggleArchive, delete }
-
-enum _HistoryRangeFilter { all, last30, last90 }
 
 enum _BackupImportMode { merge, replace }
 
@@ -72,7 +72,7 @@ class _HomePageState extends State<HomePage> {
   String _searchQuery = '';
   String _historyQuery = '';
   int? _selectedWeekFilter;
-  _HistoryRangeFilter _historyRangeFilter = _HistoryRangeFilter.all;
+  HomeHistoryRangeFilter _historyRangeFilter = HomeHistoryRangeFilter.all;
   bool _historyOnlyPr = false;
   bool _showArchived = false;
   final int _defaultRestSeconds = AppPreferences.defaultRestSeconds;
@@ -291,8 +291,9 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showExerciseDetail(String exerciseName) {
@@ -505,8 +506,9 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Text(
                   'Strumenti rapidi',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 12),
                 Card(
@@ -638,8 +640,9 @@ class _HomePageState extends State<HomePage> {
 
   List<List<dynamic>> _decodeCsv(String rawText) {
     final normalizedText = _normalizeText(rawText);
-    List<List<dynamic>> rows = const CsvToListConverter(eol: '\n')
-        .convert(normalizedText);
+    List<List<dynamic>> rows = const CsvToListConverter(
+      eol: '\n',
+    ).convert(normalizedText);
 
     if (rows.isNotEmpty &&
         rows.first.length < 7 &&
@@ -2520,179 +2523,36 @@ class _HomePageState extends State<HomePage> {
     return '$prefix${_formatHistoryVolume(value)} kg';
   }
 
-  String _normalizeExerciseName(String name) => name.trim().toLowerCase();
+  double _exerciseVolume(WorkoutExercise exercise) =>
+      HomeHistoryAnalytics(history).exerciseVolume(exercise);
 
-  double _setVolume(ExerciseSet set) => set.weight * set.reps;
-
-  double _exerciseVolume(WorkoutExercise exercise) {
-    var volume = 0.0;
-    for (final set in exercise.sets) {
-      if (set.isCompleted && !set.isWarmup) {
-        volume += _setVolume(set);
-      }
-    }
-    return volume;
-  }
-
-  double _bestSetVolume(WorkoutExercise exercise) {
-    var bestVolume = 0.0;
-    for (final set in exercise.sets) {
-      if (!set.isCompleted || set.isWarmup) {
-        continue;
-      }
-      final volume = _setVolume(set);
-      if (volume > bestVolume) {
-        bestVolume = volume;
-      }
-    }
-    return bestVolume;
-  }
-
-  int _completedWorkSets(WorkoutExercise exercise) {
-    return exercise.sets
-        .where((set) => set.isCompleted && !set.isWarmup)
-        .length;
-  }
+  double _bestSetVolume(WorkoutExercise exercise) =>
+      HomeHistoryAnalytics(history).bestSetVolume(exercise);
 
   WorkoutExercise? _previousExerciseBefore(
     WorkoutSession session,
     WorkoutExercise exercise,
-  ) {
-    final exerciseName = _normalizeExerciseName(exercise.name);
-    final olderSessions = List<WorkoutSession>.from(history)
-      ..sort((a, b) => b.endTime.compareTo(a.endTime));
-
-    for (final candidateSession in olderSessions) {
-      if (!candidateSession.endTime.isBefore(session.endTime)) {
-        continue;
-      }
-
-      for (final candidateExercise in candidateSession.exercises) {
-        if (_normalizeExerciseName(candidateExercise.name) == exerciseName &&
-            _completedWorkSets(candidateExercise) > 0) {
-          return candidateExercise;
-        }
-      }
-    }
-
-    return null;
-  }
+  ) => HomeHistoryAnalytics(history).previousExerciseBefore(session, exercise);
 
   bool _exerciseHasPrAtSession(
     WorkoutSession session,
     WorkoutExercise exercise,
-  ) {
-    final exerciseName = _normalizeExerciseName(exercise.name);
-    final previousExercises = history
-        .where(
-          (candidateSession) =>
-              candidateSession.endTime.isBefore(session.endTime),
-        )
-        .expand((candidateSession) => candidateSession.exercises)
-        .where(
-          (candidateExercise) =>
-              _normalizeExerciseName(candidateExercise.name) == exerciseName,
-        )
-        .toList();
-    if (previousExercises.isEmpty) {
-      return false;
-    }
+  ) => HomeHistoryAnalytics(history).exerciseHasPrAtSession(session, exercise);
 
-    double bestWeight = 0;
-    int bestReps = 0;
-    double bestSetVolume = 0;
-    double bestExerciseVolume = 0;
-    for (final previousExercise in previousExercises) {
-      bestExerciseVolume = math.max(
-        bestExerciseVolume,
-        _exerciseVolume(previousExercise),
-      );
-      for (final set in previousExercise.sets) {
-        if (!set.isCompleted || set.isWarmup) {
-          continue;
-        }
-        bestWeight = math.max(bestWeight, set.weight);
-        bestReps = math.max(bestReps, set.reps);
-        bestSetVolume = math.max(bestSetVolume, _setVolume(set));
-      }
-    }
-
-    for (final set in exercise.sets) {
-      if (!set.isCompleted || set.isWarmup) {
-        continue;
-      }
-      if (set.weight > bestWeight ||
-          set.reps > bestReps ||
-          _setVolume(set) > bestSetVolume) {
-        return true;
-      }
-    }
-
-    return _exerciseVolume(exercise) > bestExerciseVolume;
-  }
-
-  bool _sessionHasPr(WorkoutSession session) {
-    return session.exercises.any(
-      (exercise) => _exerciseHasPrAtSession(session, exercise),
-    );
-  }
+  bool _sessionHasPr(WorkoutSession session) =>
+      HomeHistoryAnalytics(history).sessionHasPr(session);
 
   List<WorkoutSession> _filteredHistorySessions(
     List<WorkoutSession> sortedHistory,
-  ) {
-    final now = DateTime.now();
-    final minDate = switch (_historyRangeFilter) {
-      _HistoryRangeFilter.all => null,
-      _HistoryRangeFilter.last30 => now.subtract(const Duration(days: 30)),
-      _HistoryRangeFilter.last90 => now.subtract(const Duration(days: 90)),
-    };
-    final normalizedQuery = _historyQuery.trim().toLowerCase();
+  ) => HomeHistoryAnalytics(history).filteredSessions(
+    sortedHistory,
+    range: _historyRangeFilter,
+    query: _historyQuery,
+    onlyPr: _historyOnlyPr,
+  );
 
-    return sortedHistory.where((session) {
-      if (minDate != null && session.endTime.isBefore(minDate)) {
-        return false;
-      }
-      if (_historyOnlyPr && !_sessionHasPr(session)) {
-        return false;
-      }
-      if (normalizedQuery.isEmpty) {
-        return true;
-      }
-
-      return session.scheduleTitle.toLowerCase().contains(normalizedQuery) ||
-          session.exercises.any((exercise) {
-            return exercise.name.toLowerCase().contains(normalizedQuery) ||
-                exercise.muscleGroup.label.toLowerCase().contains(
-                  normalizedQuery,
-                );
-          });
-    }).toList();
-  }
-
-  List<_PrSummary> _buildRecentPrSummaries() {
-    final summaries = <_PrSummary>[];
-    final sortedHistory = List<WorkoutSession>.from(history)
-      ..sort((a, b) => b.endTime.compareTo(a.endTime));
-
-    for (final session in sortedHistory) {
-      for (final exercise in session.exercises) {
-        if (_exerciseHasPrAtSession(session, exercise)) {
-          summaries.add(
-            _PrSummary(
-              exerciseName: exercise.name,
-              scheduleTitle: session.scheduleTitle,
-              date: session.endTime,
-            ),
-          );
-        }
-      }
-      if (summaries.length >= 8) {
-        break;
-      }
-    }
-
-    return summaries;
-  }
+  List<HomePrSummary> _buildRecentPrSummaries() =>
+      HomeHistoryAnalytics(history).buildRecentPrSummaries();
 
   Widget _buildHistoryFilterCard() {
     return Card(
@@ -2714,23 +2574,25 @@ class _HomePageState extends State<HomePage> {
               children: [
                 ChoiceChip(
                   label: const Text('Tutto'),
-                  selected: _historyRangeFilter == _HistoryRangeFilter.all,
+                  selected: _historyRangeFilter == HomeHistoryRangeFilter.all,
                   onSelected: (_) => setState(
-                    () => _historyRangeFilter = _HistoryRangeFilter.all,
+                    () => _historyRangeFilter = HomeHistoryRangeFilter.all,
                   ),
                 ),
                 ChoiceChip(
                   label: const Text('30 giorni'),
-                  selected: _historyRangeFilter == _HistoryRangeFilter.last30,
+                  selected:
+                      _historyRangeFilter == HomeHistoryRangeFilter.last30,
                   onSelected: (_) => setState(
-                    () => _historyRangeFilter = _HistoryRangeFilter.last30,
+                    () => _historyRangeFilter = HomeHistoryRangeFilter.last30,
                   ),
                 ),
                 ChoiceChip(
                   label: const Text('90 giorni'),
-                  selected: _historyRangeFilter == _HistoryRangeFilter.last90,
+                  selected:
+                      _historyRangeFilter == HomeHistoryRangeFilter.last90,
                   onSelected: (_) => setState(
-                    () => _historyRangeFilter = _HistoryRangeFilter.last90,
+                    () => _historyRangeFilter = HomeHistoryRangeFilter.last90,
                   ),
                 ),
                 FilterChip(
@@ -2747,7 +2609,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildPrDashboardCard(List<_PrSummary> summaries) {
+  Widget _buildPrDashboardCard(List<HomePrSummary> summaries) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ExpansionTile(
@@ -2880,61 +2742,11 @@ class _HomePageState extends State<HomePage> {
     _saveHistory();
   }
 
-  List<_ExerciseProgressSummary> _buildExerciseProgressSummaries() {
-    final occurrencesByExercise = <String, List<_ExerciseOccurrence>>{};
-    final sortedHistory = List<WorkoutSession>.from(history)
-      ..sort((a, b) => a.endTime.compareTo(b.endTime));
-
-    for (final session in sortedHistory) {
-      for (final exercise in session.exercises) {
-        if (_completedWorkSets(exercise) == 0) {
-          continue;
-        }
-
-        final key = _normalizeExerciseName(exercise.name);
-        occurrencesByExercise
-            .putIfAbsent(key, () => [])
-            .add(_ExerciseOccurrence(session: session, exercise: exercise));
-      }
-    }
-
-    final summaries = <_ExerciseProgressSummary>[];
-    for (final occurrences in occurrencesByExercise.values) {
-      if (occurrences.length < 2) {
-        continue;
-      }
-
-      final latest = occurrences.last;
-      final previous = occurrences[occurrences.length - 2];
-      final latestVolume = _exerciseVolume(latest.exercise);
-      final previousVolume = _exerciseVolume(previous.exercise);
-      final latestBestSetVolume = _bestSetVolume(latest.exercise);
-      final previousBestSetVolume = _bestSetVolume(previous.exercise);
-      summaries.add(
-        _ExerciseProgressSummary(
-          name: latest.exercise.name,
-          latestDate: latest.session.endTime,
-          latestVolume: latestVolume,
-          previousVolume: previousVolume,
-          volumeDelta: latestVolume - previousVolume,
-          latestBestSetVolume: latestBestSetVolume,
-          previousBestSetVolume: previousBestSetVolume,
-          bestSetVolumeDelta: latestBestSetVolume - previousBestSetVolume,
-        ),
-      );
-    }
-
-    summaries.sort((a, b) {
-      if (a.isImproved != b.isImproved) {
-        return a.isImproved ? -1 : 1;
-      }
-      return b.volumeDelta.compareTo(a.volumeDelta);
-    });
-    return summaries;
-  }
+  List<HomeExerciseProgressSummary> _buildExerciseProgressSummaries() =>
+      HomeHistoryAnalytics(history).buildExerciseProgressSummaries();
 
   Widget _buildExerciseProgressCard(
-    List<_ExerciseProgressSummary> progressSummaries,
+    List<HomeExerciseProgressSummary> progressSummaries,
   ) {
     final theme = Theme.of(context);
     final colorScheme = Theme.of(context).colorScheme;
@@ -3555,9 +3367,9 @@ class _HomePageState extends State<HomePage> {
     updated.arm = parseDecimalInput(armController.text);
     updated.thigh = parseDecimalInput(thighController.text);
     updated.sleepHours = parseIntInput(sleepController.text);
-    updated.readiness = parseIntInput(readinessController.text)
-        ?.clamp(1, 10)
-        .toInt();
+    updated.readiness = parseIntInput(
+      readinessController.text,
+    )?.clamp(1, 10).toInt();
     updated.notes = notesController.text.trim();
     updated.photoPath = photoPath;
     updated.photoName = photoName;
@@ -3661,51 +3473,14 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  bool _sameDay(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
-  }
+  bool _sameDay(DateTime a, DateTime b) => HomeDashboardState.sameDay(a, b);
 
-  _PlannedWorkout? _nextPlannedWorkout() {
-    final activeSchedules = schedules
-        .where(
-          (schedule) => !schedule.isArchived && schedule.exercises.isNotEmpty,
-        )
-        .toList();
-    if (activeSchedules.isEmpty) {
-      return null;
-    }
+  HomePlannedWorkout? _nextPlannedWorkout() =>
+      HomeDashboardState.nextPlannedWorkout(schedules);
 
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    for (var offset = 0; offset <= 7; offset++) {
-      final date = today.add(Duration(days: offset));
-      for (final schedule in activeSchedules) {
-        if (schedule.isPlannedOn(date)) {
-          return _PlannedWorkout(schedule: schedule, date: date);
-        }
-      }
-    }
+  int _workoutsThisWeek() => HomeDashboardState.workoutsThisWeek(history);
 
-    return _PlannedWorkout(schedule: activeSchedules.first, date: today);
-  }
-
-  int _workoutsThisWeek() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
-    final endOfWeek = startOfWeek.add(const Duration(days: 7));
-    return history.where((session) {
-      return !session.endTime.isBefore(startOfWeek) &&
-          session.endTime.isBefore(endOfWeek);
-    }).length;
-  }
-
-  BodyLog? _latestBodyLog() {
-    if (bodyLogs.isEmpty) {
-      return null;
-    }
-    return bodyLogs.reduce((a, b) => a.date.isAfter(b.date) ? a : b);
-  }
+  BodyLog? _latestBodyLog() => HomeDashboardState.latestBodyLog(bodyLogs);
 
   Future<void> _startScheduleFromHome(Schedule schedule) async {
     if (schedule.exercises.isEmpty) {
@@ -4102,56 +3877,6 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
-}
-
-class _PlannedWorkout {
-  final Schedule schedule;
-  final DateTime date;
-
-  const _PlannedWorkout({required this.schedule, required this.date});
-}
-
-class _ExerciseOccurrence {
-  final WorkoutSession session;
-  final WorkoutExercise exercise;
-
-  const _ExerciseOccurrence({required this.session, required this.exercise});
-}
-
-class _ExerciseProgressSummary {
-  final String name;
-  final DateTime latestDate;
-  final double latestVolume;
-  final double previousVolume;
-  final double volumeDelta;
-  final double latestBestSetVolume;
-  final double previousBestSetVolume;
-  final double bestSetVolumeDelta;
-
-  const _ExerciseProgressSummary({
-    required this.name,
-    required this.latestDate,
-    required this.latestVolume,
-    required this.previousVolume,
-    required this.volumeDelta,
-    required this.latestBestSetVolume,
-    required this.previousBestSetVolume,
-    required this.bestSetVolumeDelta,
-  });
-
-  bool get isImproved => volumeDelta > 0 || bestSetVolumeDelta > 0;
-}
-
-class _PrSummary {
-  final String exerciseName;
-  final String scheduleTitle;
-  final DateTime date;
-
-  const _PrSummary({
-    required this.exerciseName,
-    required this.scheduleTitle,
-    required this.date,
-  });
 }
 
 class _BackupMergeResult {

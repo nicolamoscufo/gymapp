@@ -75,8 +75,7 @@ class StableWorkoutSetTextField extends StatefulWidget {
       _StableWorkoutSetTextFieldState();
 }
 
-class _StableWorkoutSetTextFieldState
-    extends State<StableWorkoutSetTextField> {
+class _StableWorkoutSetTextFieldState extends State<StableWorkoutSetTextField> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
 

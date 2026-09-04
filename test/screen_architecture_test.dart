@@ -12,49 +12,52 @@ import 'package:gymapp/ui/active_workout_input_components.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('workout focus controller resolves explicit and pending exercise focus', () {
-    final controller = ActiveWorkoutFocusController();
-    final completed = _workoutExercise(
-      id: 'bench',
-      name: 'Panca',
-      weight: 80,
-      completed: true,
-    );
-    final pending = _workoutExercise(
-      id: 'row',
-      name: 'Rematore',
-      weight: 70,
-      completed: false,
-    );
+  test(
+    'workout focus controller resolves explicit and pending exercise focus',
+    () {
+      final controller = ActiveWorkoutFocusController();
+      final completed = _workoutExercise(
+        id: 'bench',
+        name: 'Panca',
+        weight: 80,
+        completed: true,
+      );
+      final pending = _workoutExercise(
+        id: 'row',
+        name: 'Rematore',
+        weight: 70,
+        completed: false,
+      );
 
-    expect(
-      controller.effectiveFocusedExerciseId(
-        [completed, pending],
-        editCompletedSession: false,
-      ),
-      'row',
-    );
+      expect(
+        controller.effectiveFocusedExerciseId([
+          completed,
+          pending,
+        ], editCompletedSession: false),
+        'row',
+      );
 
-    controller.focusedExerciseId = 'bench';
-    expect(
-      controller.effectiveFocusedExerciseId(
-        [completed, pending],
-        editCompletedSession: false,
-      ),
-      'bench',
-    );
+      controller.focusedExerciseId = 'bench';
+      expect(
+        controller.effectiveFocusedExerciseId([
+          completed,
+          pending,
+        ], editCompletedSession: false),
+        'bench',
+      );
 
-    controller.removeExercise('bench');
-    expect(controller.focusedExerciseId, isNull);
-    expect(
-      controller.effectiveFocusedExerciseId(
-        [completed, pending],
-        editCompletedSession: true,
-      ),
-      isNull,
-    );
-    controller.dispose();
-  });
+      controller.removeExercise('bench');
+      expect(controller.focusedExerciseId, isNull);
+      expect(
+        controller.effectiveFocusedExerciseId([
+          completed,
+          pending,
+        ], editCompletedSession: true),
+        isNull,
+      );
+      controller.dispose();
+    },
+  );
 
   test('workout focus controller keeps stable anchor keys', () {
     final controller = ActiveWorkoutFocusController();
@@ -72,38 +75,39 @@ void main() {
     controller.dispose();
   });
 
-  test('home history analytics owns PR, filtering and progress calculations', () {
-    final first = _session(
-      DateTime(2026, 8, 1, 18),
-      [_workoutExercise(id: 'b1', name: 'Panca', weight: 80)],
-    );
-    final second = _session(
-      DateTime(2026, 8, 8, 18),
-      [_workoutExercise(id: 'b2', name: 'Panca', weight: 82.5)],
-    );
-    final analytics = HomeHistoryAnalytics([first, second]);
+  test(
+    'home history analytics owns PR, filtering and progress calculations',
+    () {
+      final first = _session(DateTime(2026, 8, 1, 18), [
+        _workoutExercise(id: 'b1', name: 'Panca', weight: 80),
+      ]);
+      final second = _session(DateTime(2026, 8, 8, 18), [
+        _workoutExercise(id: 'b2', name: 'Panca', weight: 82.5),
+      ]);
+      final analytics = HomeHistoryAnalytics([first, second]);
 
-    final progress = analytics.buildExerciseProgressSummaries();
-    expect(progress, hasLength(1));
-    expect(progress.single.name, 'Panca');
-    expect(progress.single.isImproved, isTrue);
-    expect(progress.single.volumeDelta, greaterThan(0));
+      final progress = analytics.buildExerciseProgressSummaries();
+      expect(progress, hasLength(1));
+      expect(progress.single.name, 'Panca');
+      expect(progress.single.isImproved, isTrue);
+      expect(progress.single.volumeDelta, greaterThan(0));
 
-    final prs = analytics.buildRecentPrSummaries();
-    expect(prs, hasLength(1));
-    expect(prs.single.exerciseName, 'Panca');
-    expect(analytics.sessionHasPr(first), isFalse);
-    expect(analytics.sessionHasPr(second), isTrue);
+      final prs = analytics.buildRecentPrSummaries();
+      expect(prs, hasLength(1));
+      expect(prs.single.exerciseName, 'Panca');
+      expect(analytics.sessionHasPr(first), isFalse);
+      expect(analytics.sessionHasPr(second), isTrue);
 
-    final filtered = analytics.filteredSessions(
-      [second, first],
-      range: HomeHistoryRangeFilter.last30,
-      query: 'panca',
-      onlyPr: true,
-      now: DateTime(2026, 8, 10),
-    );
-    expect(filtered, [second]);
-  });
+      final filtered = analytics.filteredSessions(
+        [second, first],
+        range: HomeHistoryRangeFilter.last30,
+        query: 'panca',
+        onlyPr: true,
+        now: DateTime(2026, 8, 10),
+      );
+      expect(filtered, [second]);
+    },
+  );
 
   test('home dashboard derived state is deterministic for a supplied date', () {
     final schedule = Schedule(
@@ -127,10 +131,7 @@ void main() {
     );
     final now = DateTime(2026, 9, 4, 12);
 
-    final planned = HomeDashboardState.nextPlannedWorkout(
-      [schedule],
-      now: now,
-    );
+    final planned = HomeDashboardState.nextPlannedWorkout([schedule], now: now);
     expect(planned, isNotNull);
     expect(planned!.schedule.id, 'schedule-1');
     expect(planned.date, DateTime(2026, 9, 7));
@@ -148,40 +149,41 @@ void main() {
     expect(HomeDashboardState.workoutsThisWeek(history, now: now), 1);
   });
 
-  testWidgets('stable set input preserves an active edit across parent rebuilds', (
-    tester,
-  ) async {
-    var modelText = '80';
-    late StateSetter rebuild;
+  testWidgets(
+    'stable set input preserves an active edit across parent rebuilds',
+    (tester) async {
+      var modelText = '80';
+      late StateSetter rebuild;
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: StatefulBuilder(
-            builder: (context, setState) {
-              rebuild = setState;
-              return StableWorkoutSetTextField(
-                text: modelText,
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                decoration: const InputDecoration(),
-                onChanged: (_) {},
-              );
-            },
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                rebuild = setState;
+                return StableWorkoutSetTextField(
+                  text: modelText,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(),
+                  onChanged: (_) {},
+                );
+              },
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    final field = find.byType(TextFormField);
-    await tester.tap(field);
-    await tester.enterText(field, '82.5');
-    modelText = '90';
-    rebuild(() {});
-    await tester.pump();
+      final field = find.byType(TextFormField);
+      await tester.tap(field);
+      await tester.enterText(field, '82.5');
+      modelText = '90';
+      rebuild(() {});
+      await tester.pump();
 
-    expect(find.text('82.5'), findsOneWidget);
-  });
+      expect(find.text('82.5'), findsOneWidget);
+    },
+  );
 
   testWidgets('exercise jump bar emits the stable exercise id', (tester) async {
     String? selected;
@@ -207,10 +209,7 @@ void main() {
   });
 }
 
-WorkoutSession _session(
-  DateTime start,
-  List<WorkoutExercise> exercises,
-) {
+WorkoutSession _session(DateTime start, List<WorkoutExercise> exercises) {
   return WorkoutSession(
     scheduleTitle: 'Workout',
     startTime: start,

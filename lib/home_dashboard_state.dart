@@ -41,10 +41,7 @@ class HomeDashboardState {
     return HomePlannedWorkout(schedule: activeSchedules.first, date: today);
   }
 
-  static int workoutsThisWeek(
-    List<WorkoutSession> history, {
-    DateTime? now,
-  }) {
+  static int workoutsThisWeek(List<WorkoutSession> history, {DateTime? now}) {
     final reference = now ?? DateTime.now();
     final today = DateTime(reference.year, reference.month, reference.day);
     final startOfWeek = today.subtract(Duration(days: today.weekday - 1));

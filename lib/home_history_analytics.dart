@@ -157,10 +157,12 @@ class HomeHistoryAnalytics {
     final reference = now ?? DateTime.now();
     final minDate = switch (range) {
       HomeHistoryRangeFilter.all => null,
-      HomeHistoryRangeFilter.last30 =>
-        reference.subtract(const Duration(days: 30)),
-      HomeHistoryRangeFilter.last90 =>
-        reference.subtract(const Duration(days: 90)),
+      HomeHistoryRangeFilter.last30 => reference.subtract(
+        const Duration(days: 30),
+      ),
+      HomeHistoryRangeFilter.last90 => reference.subtract(
+        const Duration(days: 90),
+      ),
     };
     final normalizedQuery = query.trim().toLowerCase();
 
@@ -212,9 +214,10 @@ class HomeHistoryAnalytics {
       for (final exercise in session.exercises) {
         if (completedWorkSets(exercise) == 0) continue;
         final key = normalizeExerciseName(exercise.name);
-        occurrencesByExercise
-            .putIfAbsent(key, () => [])
-            .add((session: session, exercise: exercise));
+        occurrencesByExercise.putIfAbsent(key, () => []).add((
+          session: session,
+          exercise: exercise,
+        ));
       }
     }
 

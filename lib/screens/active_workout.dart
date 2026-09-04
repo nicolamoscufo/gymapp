@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../active_workout_exercise_manager.dart';
+import '../active_workout_focus_controller.dart';
 import '../active_workout_insights.dart';
 import '../active_workout_rest_controller.dart';
 import '../active_workout_schedule_sync.dart';
@@ -22,6 +23,7 @@ import '../models/schedule.dart';
 import '../models/workout.dart';
 import '../number_input.dart';
 import '../top_set_backoff.dart' as top_set_backoff;
+import '../ui/active_workout_input_components.dart';
 import '../ui/workout_components.dart';
 import '../workout_fatigue_analytics.dart';
 import '../workout_plate_calculator.dart';
@@ -92,10 +94,11 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
   late List<BodyLog> _bodyLogs;
   Timer? _durationTimer;
   int _elapsedSeconds = 0;
-  final Map<String, GlobalKey> _exerciseCardKeys = {};
-  final Map<String, GlobalKey> _setRowKeys = {};
-  final ScrollController _workoutScrollController = ScrollController();
-  String? _focusedExerciseId;
+  final ActiveWorkoutFocusController _focusController =
+      ActiveWorkoutFocusController();
+  String? get _focusedExerciseId => _focusController.focusedExerciseId;
+  set _focusedExerciseId(String? value) =>
+      _focusController.focusedExerciseId = value;
   String? _handoffSetId;
   bool _handoffPulseEmphasis = false;
   Timer? _handoffPulseTimer;
@@ -124,26 +127,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     return accents[index % accents.length];
   }
 
-  GlobalKey _exerciseCardKey(String exerciseId) {
-    return _exerciseCardKeys.putIfAbsent(exerciseId, GlobalKey.new);
-  }
+  GlobalKey _exerciseCardKey(String exerciseId) =>
+      _focusController.exerciseCardKey(exerciseId);
 
-  GlobalKey _setRowKey(String setId) {
-    return _setRowKeys.putIfAbsent(setId, GlobalKey.new);
-  }
+  GlobalKey _setRowKey(String setId) => _focusController.setRowKey(setId);
 
-  String? _effectiveFocusedExerciseId() {
-    if (widget.editCompletedSession) return null;
-    final explicitId = _focusedExerciseId;
-    if (explicitId != null &&
-        session.exercises.any((exercise) => exercise.id == explicitId)) {
-      return explicitId;
-    }
-    for (final exercise in session.exercises) {
-      if (exercise.sets.any((set) => !set.isCompleted)) return exercise.id;
-    }
-    return session.exercises.isEmpty ? null : session.exercises.last.id;
-  }
+  String? _effectiveFocusedExerciseId() =>
+      _focusController.effectiveFocusedExerciseId(
+        session.exercises,
+        editCompletedSession: widget.editCompletedSession,
+      );
 
   bool _isExerciseComplete(WorkoutExercise exercise) =>
       exercise.sets.isNotEmpty && exercise.sets.every((set) => set.isCompleted);
@@ -190,90 +183,16 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     );
   }
 
-  Future<void> _scrollToSet(String exerciseId, String setId) async {
-    var setContext = _setRowKeys[setId]?.currentContext;
-    if (setContext != null && setContext.mounted) {
-      await Scrollable.ensureVisible(
-        setContext,
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-        alignment: 0.28,
-      );
-      return;
-    }
-
-    final exerciseContext = _exerciseCardKeys[exerciseId]?.currentContext;
-    if (exerciseContext != null) {
-      await Scrollable.ensureVisible(
-        exerciseContext,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-        alignment: 0.08,
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 24));
-      setContext = _setRowKeys[setId]?.currentContext;
-      if (setContext != null && setContext.mounted) {
-        await Scrollable.ensureVisible(
-          setContext,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-          alignment: 0.28,
-        );
-      }
-      return;
-    }
-
-    if (!_workoutScrollController.hasClients || session.exercises.isEmpty) {
-      return;
-    }
-    final exerciseIndex = session.exercises.indexWhere(
-      (exercise) => exercise.id == exerciseId,
-    );
-    if (exerciseIndex < 0) return;
-
-    final position = _workoutScrollController.position;
-    final fraction = session.exercises.length <= 1
-        ? 0.0
-        : exerciseIndex / (session.exercises.length - 1);
-    await _workoutScrollController.animateTo(
-      position.maxScrollExtent * fraction,
-      duration: const Duration(milliseconds: 280),
-      curve: Curves.easeOutCubic,
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 24));
-
-    final revealedExerciseContext =
-        _exerciseCardKeys[exerciseId]?.currentContext;
-    if (revealedExerciseContext != null && revealedExerciseContext.mounted) {
-      await Scrollable.ensureVisible(
-        revealedExerciseContext,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        alignment: 0.08,
-      );
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 24));
-    setContext = _setRowKeys[setId]?.currentContext;
-    if (setContext != null && setContext.mounted) {
-      await Scrollable.ensureVisible(
-        setContext,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        alignment: 0.28,
-      );
-    }
-  }
-
-  void _scrollToExercise(String exerciseId) {
-    final context = _exerciseCardKeys[exerciseId]?.currentContext;
-    if (context == null) return;
-    Scrollable.ensureVisible(
-      context,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-      alignment: 0.08,
+  Future<void> _scrollToSet(String exerciseId, String setId) {
+    return _focusController.scrollToSet(
+      exercises: session.exercises,
+      exerciseId: exerciseId,
+      setId: setId,
     );
   }
+
+  void _scrollToExercise(String exerciseId) =>
+      _focusController.scrollToExercise(exerciseId);
 
   void _selectExerciseFromJumpBar(String exerciseId) {
     _focusExercise(exerciseId);
@@ -1229,7 +1148,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     _handoffClearTimer = null;
     _restController.dispose();
     _durationTimer?.cancel();
-    _workoutScrollController.dispose();
+    _focusController.dispose();
     if (!widget.editCompletedSession) {
       WakelockPlus.disable();
     }
@@ -1373,7 +1292,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
         replacements.first,
       );
       if (replacement != null) {
-        _exerciseCardKeys.remove(exercise.id);
+        _focusController.removeExercise(exercise.id);
       }
     });
     if (replacement == null) return;
@@ -1420,7 +1339,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     setState(() {
       removal = _exerciseManager.removeExercise(exercise);
       if (removal != null) {
-        _exerciseCardKeys.remove(exercise.id);
+        _focusController.removeExercise(exercise.id);
       }
     });
     if (removal == null) return;
@@ -1687,7 +1606,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
 
                   if (sets < 1 || reps < 1 || weight < 0 || restSeconds < 0) {
                     setDialogState(() {
-                      validationMessage = 'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi.';
+                      validationMessage =
+                          'Usa valori validi: serie/reps almeno 1, kg e recupero non negativi.';
                     });
                     return;
                   }
@@ -2544,13 +2464,13 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
           ),
         ),
         body: ListView.builder(
-          controller: _workoutScrollController,
+          controller: _focusController.scrollController,
           padding: const EdgeInsets.only(bottom: 96),
           itemCount:
               session.exercises.length + (session.exercises.length > 1 ? 1 : 0),
           itemBuilder: (context, itemIndex) {
             if (session.exercises.length > 1 && itemIndex == 0) {
-              return _ExerciseJumpBar(
+              return WorkoutExerciseJumpBar(
                 exercises: session.exercises,
                 onSelected: _selectExerciseFromJumpBar,
               );
@@ -2579,10 +2499,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
             if (!isFocusedExercise) {
               return KeyedSubtree(
                 key: _exerciseCardKey(exercise.id),
-                child: _compactExerciseCard(
-                  exercise: exercise,
-                  accent: accent,
-                ),
+                child: _compactExerciseCard(exercise: exercise, accent: accent),
               );
             }
 
@@ -2764,7 +2681,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                               ),
                               avatar: const Icon(Icons.history, size: 16),
                               label: const Text('Usa precedenti'),
-                              tooltip: 'Carica kg e reps dell’ultima sessione nei set non completati',
+                              tooltip:
+                                  'Carica kg e reps dell’ultima sessione nei set non completati',
                               visualDensity: VisualDensity.compact,
                               onPressed: () =>
                                   _applyPreviousValuesForExercise(exercise),
@@ -2860,7 +2778,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                           ),
                           SizedBox(
                             width: 88,
-                            child: _StableSetTextField(
+                            child: StableWorkoutSetTextField(
                               key: ValueKey('rest-${exercise.id}'),
                               text: _restController
                                   .configuredSecondsFor(exercise)
@@ -3106,7 +3024,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 8.0,
                                         ),
-                                        child: _StableSetTextField(
+                                        child: StableWorkoutSetTextField(
                                           key: ValueKey('${exSet.id}-weight'),
                                           text: _formatWeight(exSet.weight),
                                           keyboardType:
@@ -3167,7 +3085,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 8.0,
                                         ),
-                                        child: _StableSetTextField(
+                                        child: StableWorkoutSetTextField(
                                           key: ValueKey('${exSet.id}-reps'),
                                           text: exSet.reps.toString(),
                                           keyboardType: TextInputType.number,
@@ -3586,8 +3504,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                 nextPrescription: restTarget == null
                     ? null
                     : '${_formatWeight(restTarget.set.weight)} kg × ${restTarget.set.reps}',
-                onMinusThirty: () =>
-                    _subtractThirtySeconds(activeRestExercise),
+                onMinusThirty: () => _subtractThirtySeconds(activeRestExercise),
                 onPlusThirty: () => _addThirtySeconds(activeRestExercise),
                 onSkip: () => _stopRestForExercise(activeRestExercise),
               ),
@@ -3599,126 +3516,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
               )
             : null,
       ),
-    );
-  }
-}
-
-class _ExerciseJumpBar extends StatelessWidget {
-  final List<WorkoutExercise> exercises;
-  final ValueChanged<String> onSelected;
-
-  const _ExerciseJumpBar({required this.exercises, required this.onSelected});
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: SizedBox(
-        height: 58,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          itemBuilder: (context, index) {
-            final exercise = exercises[index];
-            return ActionChip(
-              avatar: Icon(
-                Icons.keyboard_arrow_down,
-                color: colorScheme.primary,
-              ),
-              label: Text(exercise.name),
-              onPressed: () => onSelected(exercise.id),
-            );
-          },
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemCount: exercises.length,
-        ),
-      ),
-    );
-  }
-}
-
-class _StableSetTextField extends StatefulWidget {
-  final String text;
-  final TextInputType keyboardType;
-  final TextAlign textAlign;
-  final InputDecoration decoration;
-  final ValueChanged<String> onChanged;
-  final List<TextInputFormatter>? inputFormatters;
-  final TextInputAction textInputAction;
-  final ValueChanged<String>? onSubmitted;
-  final bool selectAllOnFocus;
-
-  const _StableSetTextField({
-    super.key,
-    required this.text,
-    required this.keyboardType,
-    required this.textAlign,
-    required this.decoration,
-    required this.onChanged,
-    this.inputFormatters,
-    this.textInputAction = TextInputAction.next,
-    this.onSubmitted,
-    this.selectAllOnFocus = false,
-  });
-
-  @override
-  State<_StableSetTextField> createState() => _StableSetTextFieldState();
-}
-
-class _StableSetTextFieldState extends State<_StableSetTextField> {
-  late final TextEditingController _controller;
-  late final FocusNode _focusNode;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.text);
-    _focusNode = FocusNode()..addListener(_handleFocusChanged);
-  }
-
-  void _handleFocusChanged() {
-    if (_focusNode.hasFocus && widget.selectAllOnFocus) {
-      _selectAll();
-    }
-  }
-
-  void _selectAll() {
-    _controller.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: _controller.text.length,
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _StableSetTextField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!_focusNode.hasFocus && _controller.text != widget.text) {
-      _controller.text = widget.text;
-    }
-  }
-
-  @override
-  void dispose() {
-    _focusNode.removeListener(_handleFocusChanged);
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TextFormField(
-      controller: _controller,
-      focusNode: _focusNode,
-      keyboardType: widget.keyboardType,
-      inputFormatters: widget.inputFormatters,
-      textInputAction: widget.textInputAction,
-      textAlign: widget.textAlign,
-      decoration: widget.decoration,
-      onTap: widget.selectAllOnFocus ? _selectAll : null,
-      onChanged: widget.onChanged,
-      onFieldSubmitted: widget.onSubmitted,
     );
   }
 }
