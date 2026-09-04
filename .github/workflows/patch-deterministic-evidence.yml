@@ -29,7 +29,9 @@ jobs:
         run: flutter pub get
 
       - name: Apply deterministic evidence patch
-        run: python3 tool/patch_deterministic_evidence.py
+        run: |
+          python3 tool/patch_deterministic_evidence.py
+          python3 tool/patch_verified_evidence_budget_fallback.py
 
       - name: Format
         run: dart format lib/ai_coach/ai_coach_verified_evidence.dart lib/ai_coach/training_context_builder.dart lib/ai_coach/ai_coach_context_router.dart lib/ai_coach/ai_coach_exercise_context.dart lib/ai_coach/ai_coach_context_budget.dart lib/ai_coach/local_ai_coach_service.dart lib/ai_coach/ai_coach_prompts.dart lib/ai_coach/ai_program_draft_service.dart test/ai_coach_verified_evidence_test.dart test/local_ai_coach_verified_evidence_test.dart
