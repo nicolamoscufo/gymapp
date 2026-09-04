@@ -24,37 +24,45 @@ void main() {
       }
     });
 
-    test('chat stays concise while Program Builder gets the largest budget', () {
-      expect(
-        AiCoachGenerationProfiles.chat.maxOutputTokens,
-        lessThan(AiCoachGenerationProfiles.structuredReport.maxOutputTokens),
-      );
-      expect(
-        AiCoachGenerationProfiles.programBuilder.maxOutputTokens,
-        greaterThan(AiCoachGenerationProfiles.structuredReport.maxOutputTokens),
-      );
-      expect(
-        AiCoachGenerationProfiles.programBuilder.maxOutputTokens,
-        greaterThanOrEqualTo(
-          AiCoachGenerationProfiles.visionStructured.maxOutputTokens,
-        ),
-      );
-    });
+    test(
+      'chat stays concise while Program Builder gets the largest budget',
+      () {
+        expect(
+          AiCoachGenerationProfiles.chat.maxOutputTokens,
+          lessThan(AiCoachGenerationProfiles.structuredReport.maxOutputTokens),
+        );
+        expect(
+          AiCoachGenerationProfiles.programBuilder.maxOutputTokens,
+          greaterThan(
+            AiCoachGenerationProfiles.structuredReport.maxOutputTokens,
+          ),
+        );
+        expect(
+          AiCoachGenerationProfiles.programBuilder.maxOutputTokens,
+          greaterThanOrEqualTo(
+            AiCoachGenerationProfiles.visionStructured.maxOutputTokens,
+          ),
+        );
+      },
+    );
 
-    test('structured generation is more deterministic than conversational chat', () {
-      expect(
-        AiCoachGenerationProfiles.structuredReport.temperature,
-        lessThan(AiCoachGenerationProfiles.chat.temperature),
-      );
-      expect(
-        AiCoachGenerationProfiles.visionStructured.temperature,
-        lessThan(AiCoachGenerationProfiles.chat.temperature),
-      );
-      expect(
-        AiCoachGenerationProfiles.structuredReport.topK,
-        lessThan(AiCoachGenerationProfiles.chat.topK),
-      );
-    });
+    test(
+      'structured generation is more deterministic than conversational chat',
+      () {
+        expect(
+          AiCoachGenerationProfiles.structuredReport.temperature,
+          lessThan(AiCoachGenerationProfiles.chat.temperature),
+        );
+        expect(
+          AiCoachGenerationProfiles.visionStructured.temperature,
+          lessThan(AiCoachGenerationProfiles.chat.temperature),
+        );
+        expect(
+          AiCoachGenerationProfiles.structuredReport.topK,
+          lessThan(AiCoachGenerationProfiles.chat.topK),
+        );
+      },
+    );
 
     test('Program Builder prompt selects the dedicated profile', () {
       final selected = AiCoachGenerationProfiles.forStructuredPrompt('''
