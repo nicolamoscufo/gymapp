@@ -1,0 +1,52 @@
+name: Patch AI exercise-aware context
+
+on:
+  push:
+    branches:
+      - feature/ai-exercise-aware-context
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/ai-exercise-aware-context
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.2
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Apply exercise-aware context patch
+        run: python3 tool/patch_ai_exercise_context.py
+
+      - name: Format
+        run: dart format lib/ai_coach/ai_coach_exercise_context.dart lib/ai_coach/local_ai_coach_service.dart lib/ai_coach/training_context_builder.dart test/ai_coach_exercise_context_test.dart test/local_ai_coach_exercise_focus_test.dart
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test exercise routing and AI evals
+        run: flutter test test/ai_coach_exercise_context_test.dart test/local_ai_coach_exercise_focus_test.dart test/ai_coach_evaluation_suite_test.dart
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/ai_coach/local_ai_coach_service.dart lib/ai_coach/training_context_builder.dart lib/ai_coach/ai_coach_exercise_context.dart test/ai_coach_exercise_context_test.dart test/local_ai_coach_exercise_focus_test.dart
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Wire exercise-aware AI Coach context"
+          git push origin HEAD:feature/ai-exercise-aware-context
