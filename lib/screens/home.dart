@@ -2384,7 +2384,8 @@ class _HomePageState extends State<HomePage> {
                         color: schedule.isArchived
                             ? colorScheme.surfaceContainerHighest
                             : null,
-                        child: Container(
+                        child: Material(
+                          type: MaterialType.transparency,
                           child: ListTile(
                             leading: Container(
                               width: 52,
@@ -2945,7 +2946,8 @@ class _HomePageState extends State<HomePage> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Container(
+      child: Material(
+        type: MaterialType.transparency,
         child: Theme(
           data: theme.copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
@@ -3057,7 +3059,8 @@ class _HomePageState extends State<HomePage> {
 
           return Card(
             margin: const EdgeInsets.only(bottom: 12),
-            child: Container(
+            child: Material(
+              type: MaterialType.transparency,
               child: Theme(
                 data: theme.copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
@@ -3591,7 +3594,8 @@ class _HomePageState extends State<HomePage> {
       padding: const EdgeInsets.all(16),
       children: [
         Card(
-          child: Container(
+          child: Material(
+            type: MaterialType.transparency,
             child: ListTile(
               leading: Container(
                 width: 48,

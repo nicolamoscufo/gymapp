@@ -1069,7 +1069,8 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                   ),
                   child: Card(
                     margin: const EdgeInsets.only(bottom: 10),
-                    child: Container(
+                    child: Material(
+                      type: MaterialType.transparency,
                       child: ListTile(
                         leading: Container(
                           width: 50,
