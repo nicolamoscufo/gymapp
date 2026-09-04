@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'models/exercise.dart';
 import 'models/workout.dart';
 
 enum HomeHistoryRangeFilter { all, last30, last90 }
