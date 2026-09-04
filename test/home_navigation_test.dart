@@ -57,16 +57,31 @@ void main() {
     expect(find.text('AI Coach'), findsOneWidget);
     expect(find.byIcon(Icons.home_rounded), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.list_alt));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Schede'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Schede'), findsWidgets);
     expect(find.text('Push A'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.calendar_month));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Allenati'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Allenati'), findsWidgets);
 
-    await tester.tap(find.byIcon(Icons.history));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Progressi'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Progressi'), findsWidgets);
     expect(find.text('Cronologia'), findsOneWidget);
