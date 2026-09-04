@@ -9,6 +9,7 @@ import 'ai_coach_memory_updater.dart';
 import 'ai_coach_user_profile.dart';
 import 'ai_program_draft_instance.dart';
 import 'ai_program_draft_service.dart';
+import 'ai_program_intent_gate.dart';
 import 'chat_conversation.dart';
 
 class AiProgramConversationResult {
@@ -29,11 +30,13 @@ class AiProgramConversationCoordinator {
   final AiProgramDraftService draftService;
   final AiActionProtocolService actionProtocolService;
   final AiCoachMemoryUpdater memoryUpdater;
+  final AiProgramIntentGate intentGate;
 
   const AiProgramConversationCoordinator({
     this.draftService = const AiProgramDraftService(),
     this.actionProtocolService = const AiActionProtocolService(),
     this.memoryUpdater = const AiCoachMemoryUpdater(),
+    this.intentGate = const AiProgramIntentGate(),
   });
 
   Future<AiProgramConversationResult> handle({
@@ -45,7 +48,7 @@ class AiProgramConversationCoordinator {
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
   }) async {
-    if (!looksLikeProgramActionIntent(userRequest)) {
+    if (!intentGate.isMutationRequest(userRequest)) {
       return const AiProgramConversationResult(isProgramActionIntent: false);
     }
 
