@@ -1,0 +1,56 @@
+name: Finalize Material wrappers
+
+on:
+  push:
+    branches:
+      - refactor/workout-ui-foundation
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: "!contains(github.event.head_commit.message, '[finalize-material-wrappers]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/workout-ui-foundation
+          fetch-depth: 0
+      - name: Replace empty containers with transparent Material
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          total = 0
+          for filename, expected in [
+              ('lib/screens/home.dart', 4),
+              ('lib/screens/schedule_detail.dart', 1),
+          ]:
+              path = Path(filename)
+              text = path.read_text()
+              pattern = re.compile(r'child: Container\(\n(?P<indent>\s*)child: (?P<widget>ListTile|Theme)\(')
+              def repl(match):
+                  indent = match.group('indent')
+                  widget = match.group('widget')
+                  return (
+                      'child: Material(\n'
+                      f'{indent}type: MaterialType.transparency,\n'
+                      f'{indent}child: {widget}('
+                  )
+              text, count = pattern.subn(repl, text)
+              if count != expected:
+                  raise SystemExit(f'{filename}: expected {expected} wrappers, found {count}')
+              path.write_text(text)
+              total += count
+          if total != 5:
+              raise SystemExit(f'Expected 5 replacements, got {total}')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "gymapp-refactor"
+          git config user.email "actions@users.noreply.github.com"
+          git add lib/screens/home.dart lib/screens/schedule_detail.dart
+          git commit -m "Use proper Material ancestors for UI tiles [finalize-material-wrappers]"
+          git push origin HEAD:refactor/workout-ui-foundation
