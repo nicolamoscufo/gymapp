@@ -31,17 +31,20 @@ void main() {
       expect(focus.matchedTerms, containsAll(['bench', 'flat']));
     });
 
-    test('generic family mention stays broad when multiple exercises match', () {
-      final focus = resolver.resolve(
-        query: 'Come sta andando la panca?',
-        candidates: const [
-          AiCoachExerciseCandidate(name: 'Panca piana'),
-          AiCoachExerciseCandidate(name: 'Panca inclinata manubri'),
-        ],
-      );
+    test(
+      'generic family mention stays broad when multiple exercises match',
+      () {
+        final focus = resolver.resolve(
+          query: 'Come sta andando la panca?',
+          candidates: const [
+            AiCoachExerciseCandidate(name: 'Panca piana'),
+            AiCoachExerciseCandidate(name: 'Panca inclinata manubri'),
+          ],
+        );
 
-      expect(focus, isNull);
-    });
+        expect(focus, isNull);
+      },
+    );
 
     test('single strong English alias can resolve an Italian exercise', () {
       final focus = resolver.resolve(
@@ -202,10 +205,7 @@ void main() {
 
       final analytics = result['deterministic_analytics'] as Map;
       expect((analytics['exercise_progress'] as Map).keys, ['Panca piana']);
-      expect(
-        (analytics['progression_recommendations'] as List),
-        hasLength(1),
-      );
+      expect((analytics['progression_recommendations'] as List), hasLength(1));
       final progress = analytics['progress_analytics'] as Map;
       expect(progress.containsKey('consistency'), isFalse);
       expect(progress['exercises'], hasLength(1));
@@ -218,30 +218,34 @@ void main() {
       expect(result['exercise_focus'], isA<Map<String, dynamic>>());
     });
 
-    test('program questions retain the complete active plan for trade-offs', () {
-      final context = <String, dynamic>{
-        'workouts': const [],
-        'active_plans': [
-          {
-            'title': 'Upper',
-            'exercises': [
-              {'id': 'bench-flat', 'name': 'Panca piana'},
-              {'id': 'row', 'name': 'Rematore'},
-            ],
-          },
-        ],
-      };
+    test(
+      'program questions retain the complete active plan for trade-offs',
+      () {
+        final context = <String, dynamic>{
+          'workouts': const [],
+          'active_plans': [
+            {
+              'title': 'Upper',
+              'exercises': [
+                {'id': 'bench-flat', 'name': 'Panca piana'},
+                {'id': 'row', 'name': 'Rematore'},
+              ],
+            },
+          ],
+        };
 
-      final result = filter.apply(
-        context,
-        focus: focus,
-        intent: AiCoachChatIntent.program,
-      );
+        final result = filter.apply(
+          context,
+          focus: focus,
+          intent: AiCoachChatIntent.program,
+        );
 
-      final exercises = ((result['active_plans'] as List).single as Map)['exercises']
-          as List;
-      expect(exercises, hasLength(2));
-      expect(result['exercise_focus'], isNotNull);
-    });
+        final exercises =
+            ((result['active_plans'] as List).single as Map)['exercises']
+                as List;
+        expect(exercises, hasLength(2));
+        expect(result['exercise_focus'], isNotNull);
+      },
+    );
   });
 }

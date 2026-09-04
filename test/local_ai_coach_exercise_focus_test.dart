@@ -14,33 +14,36 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('specific exercise question removes unrelated exercise evidence', () async {
-    final engine = _CapturingEngine();
-    final service = LocalAiCoachService(
-      engine: engine,
-      exerciseCatalogRetriever: ExerciseCatalogRetriever(
-        catalogLoader: () async => const [],
-      ),
-    );
-    final schedules = [_scheduleWithFlatBenchAndSquat()];
-    final history = [_sessionWithFlatBenchAndSquat()];
-
-    await service.generateChatResponse(
-      history: history,
-      schedules: schedules,
-      messages: [
-        ChatMessage(
-          role: 'user',
-          content: 'Come sta andando la mia panca piana?',
+  test(
+    'specific exercise question removes unrelated exercise evidence',
+    () async {
+      final engine = _CapturingEngine();
+      final service = LocalAiCoachService(
+        engine: engine,
+        exerciseCatalogRetriever: ExerciseCatalogRetriever(
+          catalogLoader: () async => const [],
         ),
-      ],
-    );
+      );
+      final schedules = [_scheduleWithFlatBenchAndSquat()];
+      final history = [_sessionWithFlatBenchAndSquat()];
 
-    expect(engine.lastSystemPrompt, contains('"exercise_focus"'));
-    expect(engine.lastSystemPrompt, contains('Panca piana'));
-    expect(engine.lastSystemPrompt, contains('bench-flat'));
-    expect(engine.lastSystemPrompt, isNot(contains('Squat')));
-  });
+      await service.generateChatResponse(
+        history: history,
+        schedules: schedules,
+        messages: [
+          ChatMessage(
+            role: 'user',
+            content: 'Come sta andando la mia panca piana?',
+          ),
+        ],
+      );
+
+      expect(engine.lastSystemPrompt, contains('"exercise_focus"'));
+      expect(engine.lastSystemPrompt, contains('Panca piana'));
+      expect(engine.lastSystemPrompt, contains('bench-flat'));
+      expect(engine.lastSystemPrompt, isNot(contains('Squat')));
+    },
+  );
 
   test('ambiguous exercise family keeps the broader context', () async {
     final engine = _CapturingEngine();
@@ -76,70 +79,60 @@ void main() {
 }
 
 Schedule _scheduleWithFlatBenchAndSquat() => Schedule(
-      id: 'upper',
-      title: 'Upper',
-      week: 1,
-      createdAt: DateTime(2026, 8, 1),
-      exercises: [
-        _exercise('bench-flat', 'Panca piana', catalogId: 'bench-catalog'),
-        _exercise('squat', 'Squat', catalogId: 'squat-catalog'),
-      ],
-    );
+  id: 'upper',
+  title: 'Upper',
+  week: 1,
+  createdAt: DateTime(2026, 8, 1),
+  exercises: [
+    _exercise('bench-flat', 'Panca piana', catalogId: 'bench-catalog'),
+    _exercise('squat', 'Squat', catalogId: 'squat-catalog'),
+  ],
+);
 
 Exercise _exercise(String id, String name, {String? catalogId}) => Exercise(
-      id: id,
-      catalogId: catalogId,
-      name: name,
-      reps: 8,
-      set: 3,
-      notes: '',
-      weight: name == 'Squat' ? 120 : 80,
-      muscleGroup:
-          name == 'Squat' ? MuscleGroup.quadriceps : MuscleGroup.chest,
-      technique: IntensityTechnique.none,
-    );
+  id: id,
+  catalogId: catalogId,
+  name: name,
+  reps: 8,
+  set: 3,
+  notes: '',
+  weight: name == 'Squat' ? 120 : 80,
+  muscleGroup: name == 'Squat' ? MuscleGroup.quadriceps : MuscleGroup.chest,
+  technique: IntensityTechnique.none,
+);
 
 WorkoutSession _sessionWithFlatBenchAndSquat() => WorkoutSession(
-      id: 'session-1',
-      scheduleId: 'upper',
-      scheduleTitle: 'Upper',
-      startTime: DateTime(2026, 9, 1, 18),
-      endTime: DateTime(2026, 9, 1, 19),
-      exercises: [
-        _workoutExercise(
-          'bench-flat',
-          'Panca piana',
-          80,
-          catalogId: 'bench-catalog',
-        ),
-        _workoutExercise(
-          'squat',
-          'Squat',
-          120,
-          catalogId: 'squat-catalog',
-        ),
-      ],
-    );
+  id: 'session-1',
+  scheduleId: 'upper',
+  scheduleTitle: 'Upper',
+  startTime: DateTime(2026, 9, 1, 18),
+  endTime: DateTime(2026, 9, 1, 19),
+  exercises: [
+    _workoutExercise(
+      'bench-flat',
+      'Panca piana',
+      80,
+      catalogId: 'bench-catalog',
+    ),
+    _workoutExercise('squat', 'Squat', 120, catalogId: 'squat-catalog'),
+  ],
+);
 
 WorkoutExercise _workoutExercise(
   String sourceId,
   String name,
   double weight, {
   String? catalogId,
-}) =>
-    WorkoutExercise(
-      id: 'runtime-$sourceId',
-      sourceExerciseId: sourceId,
-      catalogId: catalogId,
-      name: name,
-      notes: '',
-      muscleGroup:
-          name == 'Squat' ? MuscleGroup.quadriceps : MuscleGroup.chest,
-      technique: IntensityTechnique.none,
-      sets: [
-        ExerciseSet(weight: weight, reps: 8, isCompleted: true),
-      ],
-    );
+}) => WorkoutExercise(
+  id: 'runtime-$sourceId',
+  sourceExerciseId: sourceId,
+  catalogId: catalogId,
+  name: name,
+  notes: '',
+  muscleGroup: name == 'Squat' ? MuscleGroup.quadriceps : MuscleGroup.chest,
+  technique: IntensityTechnique.none,
+  sets: [ExerciseSet(weight: weight, reps: 8, isCompleted: true)],
+);
 
 class _CapturingEngine implements LocalLlmEngine {
   String lastSystemPrompt = '';

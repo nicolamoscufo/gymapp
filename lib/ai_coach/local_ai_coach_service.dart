@@ -4,6 +4,7 @@ import '../models/schedule_version.dart';
 import '../models/workout.dart';
 import 'ai_coach_context_budget.dart';
 import 'ai_coach_context_router.dart';
+import 'ai_coach_exercise_context.dart';
 import 'ai_coach_memory.dart';
 import 'ai_coach_memory_updater.dart';
 import 'ai_coach_models.dart';
@@ -46,6 +47,8 @@ class LocalAiCoachService {
   final TrainingContextBuilder contextBuilder;
   final ExerciseCatalogRetriever exerciseCatalogRetriever;
   final AiCoachContextRouter contextRouter;
+  final AiCoachExerciseContextResolver exerciseContextResolver;
+  final AiCoachExerciseContextFilter exerciseContextFilter;
   final AiCoachMemoryUpdater memoryUpdater;
 
   const LocalAiCoachService({
@@ -55,6 +58,8 @@ class LocalAiCoachService {
     this.contextBuilder = const TrainingContextBuilder(),
     this.exerciseCatalogRetriever = const ExerciseCatalogRetriever(),
     this.contextRouter = const AiCoachContextRouter(),
+    this.exerciseContextResolver = const AiCoachExerciseContextResolver(),
+    this.exerciseContextFilter = const AiCoachExerciseContextFilter(),
     this.memoryUpdater = const AiCoachMemoryUpdater(),
   });
 
@@ -301,6 +306,28 @@ class LocalAiCoachService {
       }
     }
 
+    final exerciseFocus = focusContext == null || focusContext.isEmpty
+        ? exerciseContextResolver.resolve(
+            query: latestUserQuery,
+            candidates: [
+              for (final schedule in schedules)
+                for (final exercise in schedule.exercises)
+                  AiCoachExerciseCandidate(
+                    name: exercise.name,
+                    sourceExerciseId: exercise.id,
+                    catalogId: exercise.catalogId,
+                  ),
+              for (final session in history)
+                for (final exercise in session.exercises)
+                  AiCoachExerciseCandidate(
+                    name: exercise.name,
+                    sourceExerciseId: exercise.sourceExerciseId,
+                    catalogId: exercise.catalogId,
+                  ),
+            ],
+          )
+        : null;
+
     final longitudinal = _looksLongitudinal(latestUserQuery);
     final intent = contextRouter.classify(latestUserQuery);
     final compactContext = _compactContext(
@@ -308,11 +335,18 @@ class LocalAiCoachService {
       keepProgramHistory: longitudinal,
       maxWorkouts: longitudinal ? 2 : 4,
     );
-    final routedContext = contextRouter.route(
+    var routedContext = contextRouter.route(
       compactContext,
       intent: intent,
       keepProgramHistory: longitudinal,
     );
+    if (exerciseFocus != null) {
+      routedContext = exerciseContextFilter.apply(
+        routedContext,
+        focus: exerciseFocus,
+        intent: intent,
+      );
+    }
     final contextJson = _encodeBoundedContext(
       routedContext,
       keepProgramHistory: longitudinal,
@@ -336,6 +370,7 @@ Response policy:
 - Give 1-4 prioritized actions rather than a long generic checklist.
 - If evidence is insufficient, say what is missing and give the safest useful next step.
 - Use focus_context first when present. Use program_history only when present.
+- When exercise_focus is present, treat it as the deterministic scope of the named exercise and do not use omitted exercises as evidence.
 - If exercise_catalog exists, use it only for exercise identity, target muscles, equipment, and execution instructions.''';
 
     final hasCurrentImages = latestUser.hasImages || newImages.isNotEmpty;

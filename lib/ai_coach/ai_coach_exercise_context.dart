@@ -28,17 +28,17 @@ class AiCoachExerciseFocus {
   String get primaryName => names.isEmpty ? '' : names.first;
 
   Map<String, dynamic> toJson() => {
-        'source': 'deterministic_exercise_mention_resolution',
-        'primary_name': primaryName,
-        'names': names,
-        'source_exercise_ids': sourceExerciseIds.toList()..sort(),
-        'catalog_ids': catalogIds.toList()..sort(),
-        'matched_terms': matchedTerms,
-        'contract': {
-          'scope_only_when_unambiguous': true,
-          'fallback_to_broad_context_when_ambiguous': true,
-        },
-      };
+    'source': 'deterministic_exercise_mention_resolution',
+    'primary_name': primaryName,
+    'names': names,
+    'source_exercise_ids': sourceExerciseIds.toList()..sort(),
+    'catalog_ids': catalogIds.toList()..sort(),
+    'matched_terms': matchedTerms,
+    'contract': {
+      'scope_only_when_unambiguous': true,
+      'fallback_to_broad_context_when_ambiguous': true,
+    },
+  };
 }
 
 class AiCoachExerciseContextResolver {
@@ -123,8 +123,8 @@ class AiCoachExerciseContextResolver {
       final key = catalogId != null && catalogId.isNotEmpty
           ? 'catalog:$catalogId'
           : sourceId != null && sourceId.isNotEmpty
-              ? 'source:$sourceId'
-              : 'name:${_normalize(name)}';
+          ? 'source:$sourceId'
+          : 'name:${_normalize(name)}';
       final builder = grouped.putIfAbsent(key, _ExerciseEntityBuilder.new);
       builder.names.add(name);
       if (catalogId != null && catalogId.isNotEmpty) {
@@ -238,7 +238,9 @@ class AiCoachExerciseContextFilter {
       if (item is! Map) continue;
       final workout = Map<String, dynamic>.from(item);
       final exercises = _list(workout['exercises'])
-          .where((exercise) => exercise is Map && _matchesExercise(exercise, focus))
+          .where(
+            (exercise) => exercise is Map && _matchesExercise(exercise, focus),
+          )
           .map((exercise) => Map<String, dynamic>.from(exercise as Map))
           .toList();
       if (exercises.isEmpty) continue;
@@ -254,7 +256,9 @@ class AiCoachExerciseContextFilter {
       if (item is! Map) continue;
       final plan = Map<String, dynamic>.from(item);
       final exercises = _list(plan['exercises'])
-          .where((exercise) => exercise is Map && _matchesExercise(exercise, focus))
+          .where(
+            (exercise) => exercise is Map && _matchesExercise(exercise, focus),
+          )
           .map((exercise) => Map<String, dynamic>.from(exercise as Map))
           .toList();
       if (exercises.isEmpty) continue;
@@ -288,16 +292,17 @@ class AiCoachExerciseContextFilter {
   }
 
   bool _matchesExercise(Map exercise, AiCoachExerciseFocus focus) {
-    final sourceId = (exercise['source_exercise_id'] ??
-            exercise['sourceExerciseId'] ??
-            exercise['id'])
-        ?.toString();
+    final sourceId =
+        (exercise['source_exercise_id'] ??
+                exercise['sourceExerciseId'] ??
+                exercise['id'])
+            ?.toString();
     if (sourceId != null && focus.sourceExerciseIds.contains(sourceId)) {
       return true;
     }
 
-    final catalogId =
-        (exercise['catalog_id'] ?? exercise['catalogId'])?.toString();
+    final catalogId = (exercise['catalog_id'] ?? exercise['catalogId'])
+        ?.toString();
     if (catalogId != null && focus.catalogIds.contains(catalogId)) {
       return true;
     }
@@ -361,11 +366,11 @@ class _ScoredEntity {
   });
 
   AiCoachExerciseFocus toFocus() => AiCoachExerciseFocus(
-        names: entity.names,
-        sourceExerciseIds: entity.sourceExerciseIds,
-        catalogIds: entity.catalogIds,
-        matchedTerms: matched.toList()..sort(),
-      );
+    names: entity.names,
+    sourceExerciseIds: entity.sourceExerciseIds,
+    catalogIds: entity.catalogIds,
+    matchedTerms: matched.toList()..sort(),
+  );
 }
 
 String _normalize(String value) {
