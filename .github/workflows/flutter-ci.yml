@@ -27,3 +27,24 @@ jobs:
 
       - name: Test
         run: flutter test
+
+  visual-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pinned Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Compare UI golden baselines
+        env:
+          GOLDEN_TESTS: '1'
+        run: flutter test test/ui_visual_golden_test.dart
