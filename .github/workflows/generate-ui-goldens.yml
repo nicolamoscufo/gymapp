@@ -1,0 +1,45 @@
+name: Generate UI golden baselines
+
+on:
+  push:
+    branches:
+      - test/ui-visual-regressions
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: test/ui-visual-regressions
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate golden baselines
+        env:
+          GOLDEN_TESTS: '1'
+        run: flutter test test/ui_visual_golden_test.dart --update-goldens
+
+      - name: Commit generated baselines
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add test/goldens/*.png
+          if git diff --cached --quiet; then
+            echo "No golden changes to commit"
+            exit 0
+          fi
+          git commit -m "Add UI visual golden baselines"
+          git push origin HEAD:test/ui-visual-regressions
