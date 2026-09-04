@@ -13,7 +13,7 @@ class AiCoachContextRouter {
   AiCoachChatIntent classify(String query) {
     final lower = query.toLowerCase();
 
-    if (_containsAny(lower, _recoveryMarkers)) {
+    if (_containsAny(lower, _recoveryMarkers) || _looksLikeRecovery(lower)) {
       return AiCoachChatIntent.recovery;
     }
     if (_containsAny(lower, _techniqueMarkers)) {
@@ -22,10 +22,13 @@ class AiCoachContextRouter {
     if (_containsAny(lower, _progressionMarkers)) {
       return AiCoachChatIntent.progression;
     }
+    if (_looksLikeTechnique(lower)) {
+      return AiCoachChatIntent.technique;
+    }
     if (_containsAny(lower, _programMarkers)) {
       return AiCoachChatIntent.program;
     }
-    if (_containsAny(lower, _progressMarkers)) {
+    if (_containsAny(lower, _progressMarkers) || _looksLikeProgress(lower)) {
       return AiCoachChatIntent.progress;
     }
     return AiCoachChatIntent.general;
@@ -160,6 +163,19 @@ class AiCoachContextRouter {
     }
   }
 
+  bool _looksLikeTechnique(String input) {
+    if (!_exerciseTerms.any(input.contains)) return false;
+    return _techniqueQuestionTerms.any(input.contains);
+  }
+
+  bool _looksLikeRecovery(String input) {
+    return _recoveryQuestionTerms.any(input.contains);
+  }
+
+  bool _looksLikeProgress(String input) {
+    return _progressQuestionTerms.any(input.contains);
+  }
+
   Map<String, dynamic> _analytics(Object? raw) {
     if (raw is! Map) return <String, dynamic>{};
     return Map<String, dynamic>.from(raw);
@@ -199,18 +215,56 @@ class AiCoachContextRouter {
     'come faccio questo esercizio',
   ];
 
+  static const List<String> _techniqueQuestionTerms = [
+    'come faccio',
+    'come devo',
+    'posizione',
+    'gomit',
+    'pied',
+    'bilanciere',
+    'corretta',
+    'corretto',
+    'troppo avanti',
+    'troppo larga',
+    'troppo stret',
+  ];
+
+  static const List<String> _exerciseTerms = [
+    'panca',
+    'squat',
+    'stacco',
+    'deadlift',
+    'rematore',
+    'row',
+    'military press',
+    'overhead press',
+    'press',
+    'trazioni',
+    'pull up',
+    'lat machine',
+    'curl',
+    'leg press',
+    'affondi',
+  ];
+
   static const List<String> _progressionMarkers = [
     'progressione',
+    'double progression',
     'aumentare il peso',
     'aumento il peso',
     'aumentare i kg',
     'aumento i kg',
+    'aumento di ',
+    'aggiungere una rep',
+    'aggiungo una rep',
     'più reps',
     'piu reps',
     'carico',
+    'fermo a ',
     'stallo',
     'stallando',
     'plateau',
+    'incremento',
     'rir',
     'rpe',
     'deload',
@@ -230,6 +284,17 @@ class AiCoachContextRouter {
     'fastidio',
   ];
 
+  static const List<String> _recoveryQuestionTerms = [
+    'mi fa male',
+    'notte in bianco',
+    'sono distrutt',
+    'gambe distrutt',
+    'mi gira la testa',
+    'giramenti di testa',
+    'affaticato',
+    'affaticata',
+  ];
+
   static const List<String> _progressMarkers = [
     'progressi',
     'migliorato',
@@ -245,6 +310,17 @@ class AiCoachContextRouter {
     'ultimo mese',
     'foto progressi',
     'progress photo',
+  ];
+
+  static const List<String> _progressQuestionTerms = [
+    'come sta andando',
+    'confronta questo mese',
+    'rispetto a un mese fa',
+    'rispetto al mese scorso',
+    'più forte rispetto',
+    'piu forte rispetto',
+    'si è mosso il volume',
+    'si e mosso il volume',
   ];
 
   static const List<String> _programMarkers = [
