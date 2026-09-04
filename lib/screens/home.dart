@@ -2386,20 +2386,9 @@ class _HomePageState extends State<HomePage> {
                             : null,
                         child: Container(
                           decoration: BoxDecoration(
-                            gradient: schedule.isArchived
-                                ? null
-                                : LinearGradient(
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                    colors: [
-                                      accent.withValues(
-                                        alpha: isDark ? 0.18 : 0.10,
-                                      ),
-                                      colorScheme.surface.withValues(
-                                        alpha: 0.0,
-                                      ),
-                                    ],
-                                  ),
+                            color: schedule.isArchived
+                                ? Colors.transparent
+                                : colorScheme.surfaceContainerLow,
                           ),
                           child: ListTile(
                             leading: Container(
@@ -2963,14 +2952,7 @@ class _HomePageState extends State<HomePage> {
       margin: const EdgeInsets.only(bottom: 12),
       child: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.tertiary.withValues(alpha: isDark ? 0.20 : 0.12),
-              Colors.transparent,
-            ],
-          ),
+          color: colorScheme.surfaceContainerLow,
         ),
         child: Theme(
           data: theme.copyWith(dividerColor: Colors.transparent),
@@ -3085,14 +3067,7 @@ class _HomePageState extends State<HomePage> {
             margin: const EdgeInsets.only(bottom: 12),
             child: Container(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    accent.withValues(alpha: isDark ? 0.18 : 0.10),
-                    Colors.transparent,
-                  ],
-                ),
+                color: colorScheme.surfaceContainerLow,
               ),
               child: Theme(
                 data: theme.copyWith(dividerColor: Colors.transparent),

@@ -24,6 +24,7 @@ void main() {
       title: 'Push',
       week: 1,
       createdAt: DateTime(2026),
+      deloadEveryWeeks: 0,
       exercises: [
         Exercise(
           id: 'exercise_1',

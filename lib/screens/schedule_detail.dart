@@ -1071,14 +1071,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                     margin: const EdgeInsets.only(bottom: 10),
                     child: Container(
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            accent.withValues(alpha: isDark ? 0.18 : 0.10),
-                            Colors.transparent,
-                          ],
-                        ),
+                        color: colorScheme.surfaceContainerLow,
                       ),
                       child: ListTile(
                         leading: Container(
