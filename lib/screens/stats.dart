@@ -322,14 +322,7 @@ class _MetricCard extends StatelessWidget {
     return Card(
       child: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.primary.withValues(alpha: isDark ? 0.18 : 0.10),
-              Colors.transparent,
-            ],
-          ),
+          color: colorScheme.surfaceContainerLow,
         ),
         padding: const EdgeInsets.all(12),
         child: Column(

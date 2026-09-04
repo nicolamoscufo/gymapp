@@ -24,6 +24,7 @@ void main() {
       title: 'Push',
       week: 1,
       createdAt: DateTime(2026),
+      deloadEveryWeeks: 0,
       exercises: [
         Exercise(
           id: 'exercise_1',
@@ -462,8 +463,8 @@ void main() {
 
     await tester.tap(
       find.descendant(
-        of: find.byType(BottomNavigationBar),
-        matching: find.byIcon(Icons.calendar_month),
+        of: find.byType(NavigationBar),
+        matching: find.text('Allenati'),
       ),
     );
     await tester.pumpAndSettle();
@@ -487,6 +488,7 @@ void main() {
       title: 'Push',
       week: 1,
       createdAt: DateTime(2026),
+      deloadEveryWeeks: 0,
       exercises: [
         Exercise(
           id: 'exercise_1',
@@ -1186,8 +1188,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(
       find.descendant(
-        of: find.byType(BottomNavigationBar),
-        matching: find.byIcon(Icons.history),
+        of: find.byType(NavigationBar),
+        matching: find.text('Progressi'),
       ),
     );
     await tester.pumpAndSettle();
@@ -1253,8 +1255,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(
       find.descendant(
-        of: find.byType(BottomNavigationBar),
-        matching: find.byIcon(Icons.history),
+        of: find.byType(NavigationBar),
+        matching: find.text('Progressi'),
       ),
     );
     await tester.pumpAndSettle();
@@ -1424,8 +1426,8 @@ void main() {
     expect(find.text('Push accessibile'), findsWidgets);
     expect(
       find.descendant(
-        of: find.byType(BottomNavigationBar),
-        matching: find.byIcon(Icons.calendar_month),
+        of: find.byType(NavigationBar),
+        matching: find.text('Allenati'),
       ),
       findsOneWidget,
     );
