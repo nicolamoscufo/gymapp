@@ -1,9 +1,8 @@
-import 'dart:convert';
-
 import '../models/body_log.dart';
 import '../models/schedule.dart';
 import '../models/schedule_version.dart';
 import '../models/workout.dart';
+import 'ai_coach_context_budget.dart';
 import 'ai_coach_context_router.dart';
 import 'ai_coach_memory.dart';
 import 'ai_coach_memory_updater.dart';
@@ -323,7 +322,8 @@ class LocalAiCoachService {
       currentMessage: latestUser,
     );
 
-    final systemPrompt = '''$systemCoachingPrompt
+    final systemPrompt =
+        '''$systemCoachingPrompt
 Coaching mode: ${intent.name}
 ${contextRouter.promptHint(intent)}
 
@@ -517,43 +517,11 @@ Response policy:
     Map<String, dynamic> original, {
     required bool keepProgramHistory,
   }) {
-    final context = Map<String, dynamic>.from(original);
-    var encoded = jsonEncode(context);
-    if (encoded.length <= _chatContextCharBudget) return encoded;
-
-    context['workouts'] = _tail(context['workouts'], 2);
-    context['body_logs'] = _tail(context['body_logs'], 4);
-    context['notes'] = _tail(context['notes'], 6);
-    encoded = jsonEncode(context);
-    if (encoded.length <= _chatContextCharBudget) return encoded;
-
-    final analytics = context['deterministic_analytics'];
-    if (analytics is Map) {
-      final compactAnalytics = Map<String, dynamic>.from(analytics);
-      compactAnalytics.remove('exercise_progress');
-      compactAnalytics.remove('progression_recommendations');
-      context['deterministic_analytics'] = compactAnalytics;
-    }
-    encoded = jsonEncode(context);
-    if (encoded.length <= _chatContextCharBudget) return encoded;
-
-    if (keepProgramHistory) {
-      context.remove('workouts');
-      context.remove('body_logs');
-      context.remove('notes');
-    } else {
-      context.remove('active_plans');
-    }
-    encoded = jsonEncode(context);
-    if (encoded.length <= _chatContextCharBudget) return encoded;
-
-    context.remove('program_change_effectiveness');
-    context.remove('program_history');
-    encoded = jsonEncode(context);
-    if (encoded.length <= _chatContextCharBudget) return encoded;
-
-    context.remove('deterministic_analytics');
-    return jsonEncode(context);
+    return AiCoachContextBudget.encode(
+      original,
+      charBudget: _chatContextCharBudget,
+      keepProgramHistory: keepProgramHistory,
+    );
   }
 
   String _conversationReference(
