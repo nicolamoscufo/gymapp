@@ -14,105 +14,117 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('chat prompt exposes deterministic verified evidence before interpretation', () async {
-    final engine = _CapturingEngine();
-    final service = LocalAiCoachService(
-      engine: engine,
-      exerciseCatalogRetriever: ExerciseCatalogRetriever(
-        catalogLoader: () async => const [],
-      ),
-    );
-
-    await service.generateChatResponse(
-      history: [_olderBenchSession(), _latestBenchSession()],
-      schedules: [_benchSchedule()],
-      messages: [
-        ChatMessage(
-          role: 'user',
-          content: 'Come stanno andando i miei progressi sulla panca piana?',
+  test(
+    'chat prompt exposes deterministic verified evidence before interpretation',
+    () async {
+      final engine = _CapturingEngine();
+      final service = LocalAiCoachService(
+        engine: engine,
+        exerciseCatalogRetriever: ExerciseCatalogRetriever(
+          catalogLoader: () async => const [],
         ),
-      ],
-    );
+      );
 
-    expect(engine.lastSystemPrompt, contains('"verified_evidence"'));
-    expect(
-      engine.lastSystemPrompt,
-      contains('"source":"deterministic_app_analytics"'),
-    );
-    expect(engine.lastSystemPrompt, contains('"model_role":"interpret_only"'));
-    expect(engine.lastSystemPrompt, contains('"latest_estimated_1rm"'));
-    expect(engine.lastSystemPrompt, contains('"estimated_1rm_trend_percent"'));
-    expect(engine.lastSystemPrompt, contains('Read verified_evidence before raw workouts'));
-  });
+      await service.generateChatResponse(
+        history: [_olderBenchSession(), _latestBenchSession()],
+        schedules: [_benchSchedule()],
+        messages: [
+          ChatMessage(
+            role: 'user',
+            content: 'Come stanno andando i miei progressi sulla panca piana?',
+          ),
+        ],
+      );
+
+      expect(engine.lastSystemPrompt, contains('"verified_evidence"'));
+      expect(
+        engine.lastSystemPrompt,
+        contains('"source":"deterministic_app_analytics"'),
+      );
+      expect(
+        engine.lastSystemPrompt,
+        contains('"model_role":"interpret_only"'),
+      );
+      expect(engine.lastSystemPrompt, contains('"latest_estimated_1rm"'));
+      expect(
+        engine.lastSystemPrompt,
+        contains('"estimated_1rm_trend_percent"'),
+      );
+      expect(
+        engine.lastSystemPrompt,
+        contains('Read verified_evidence before raw workouts'),
+      );
+    },
+  );
 }
 
 Schedule _benchSchedule() => Schedule(
-      id: 'push',
-      title: 'Push',
-      week: 1,
-      createdAt: DateTime(2026, 8, 1),
-      exercises: [
-        Exercise(
-          id: 'bench-flat',
-          catalogId: 'bench-catalog',
-          name: 'Panca piana',
-          reps: 8,
-          set: 3,
-          notes: '',
-          weight: 82.5,
-          muscleGroup: MuscleGroup.chest,
-          technique: IntensityTechnique.none,
-        ),
-      ],
-    );
+  id: 'push',
+  title: 'Push',
+  week: 1,
+  createdAt: DateTime(2026, 8, 1),
+  exercises: [
+    Exercise(
+      id: 'bench-flat',
+      catalogId: 'bench-catalog',
+      name: 'Panca piana',
+      reps: 8,
+      set: 3,
+      notes: '',
+      weight: 82.5,
+      muscleGroup: MuscleGroup.chest,
+      technique: IntensityTechnique.none,
+    ),
+  ],
+);
 
 WorkoutSession _olderBenchSession() => WorkoutSession(
-      id: 'old',
-      scheduleId: 'push',
-      scheduleTitle: 'Push',
-      startTime: DateTime(2026, 8, 28, 18),
-      endTime: DateTime(2026, 8, 28, 19),
-      exercises: [
-        WorkoutExercise(
-          id: 'runtime-old',
-          sourceExerciseId: 'bench-flat',
-          catalogId: 'bench-catalog',
-          name: 'Panca piana',
-          notes: '',
-          muscleGroup: MuscleGroup.chest,
-          technique: IntensityTechnique.none,
-          sets: [
-            ExerciseSet(weight: 77.5, reps: 8, isCompleted: true, rir: 2),
-            ExerciseSet(weight: 77.5, reps: 8, isCompleted: true, rir: 2),
-            ExerciseSet(weight: 77.5, reps: 8, isCompleted: true, rir: 2),
-          ],
-        ),
+  id: 'old',
+  scheduleId: 'push',
+  scheduleTitle: 'Push',
+  startTime: DateTime(2026, 8, 28, 18),
+  endTime: DateTime(2026, 8, 28, 19),
+  exercises: [
+    WorkoutExercise(
+      id: 'runtime-old',
+      sourceExerciseId: 'bench-flat',
+      catalogId: 'bench-catalog',
+      name: 'Panca piana',
+      notes: '',
+      muscleGroup: MuscleGroup.chest,
+      technique: IntensityTechnique.none,
+      sets: [
+        ExerciseSet(weight: 77.5, reps: 8, isCompleted: true, rir: 2),
+        ExerciseSet(weight: 77.5, reps: 8, isCompleted: true, rir: 2),
+        ExerciseSet(weight: 77.5, reps: 8, isCompleted: true, rir: 2),
       ],
-    );
+    ),
+  ],
+);
 
 WorkoutSession _latestBenchSession() => WorkoutSession(
-      id: 'latest',
-      scheduleId: 'push',
-      scheduleTitle: 'Push',
-      startTime: DateTime(2026, 9, 4, 18),
-      endTime: DateTime(2026, 9, 4, 19),
-      exercises: [
-        WorkoutExercise(
-          id: 'runtime-latest',
-          sourceExerciseId: 'bench-flat',
-          catalogId: 'bench-catalog',
-          name: 'Panca piana',
-          notes: '',
-          muscleGroup: MuscleGroup.chest,
-          technique: IntensityTechnique.none,
-          sets: [
-            ExerciseSet(weight: 82.5, reps: 8, isCompleted: true, rir: 2),
-            ExerciseSet(weight: 82.5, reps: 8, isCompleted: true, rir: 2),
-            ExerciseSet(weight: 82.5, reps: 8, isCompleted: true, rir: 2),
-          ],
-        ),
+  id: 'latest',
+  scheduleId: 'push',
+  scheduleTitle: 'Push',
+  startTime: DateTime(2026, 9, 4, 18),
+  endTime: DateTime(2026, 9, 4, 19),
+  exercises: [
+    WorkoutExercise(
+      id: 'runtime-latest',
+      sourceExerciseId: 'bench-flat',
+      catalogId: 'bench-catalog',
+      name: 'Panca piana',
+      notes: '',
+      muscleGroup: MuscleGroup.chest,
+      technique: IntensityTechnique.none,
+      sets: [
+        ExerciseSet(weight: 82.5, reps: 8, isCompleted: true, rir: 2),
+        ExerciseSet(weight: 82.5, reps: 8, isCompleted: true, rir: 2),
+        ExerciseSet(weight: 82.5, reps: 8, isCompleted: true, rir: 2),
       ],
-    );
+    ),
+  ],
+);
 
 class _CapturingEngine implements LocalLlmEngine {
   String lastSystemPrompt = '';

@@ -19,6 +19,10 @@ class AiCoachContextBudget {
     context['workouts'] = _tail(context['workouts'], 2);
     context['body_logs'] = _tail(context['body_logs'], 4);
     context['notes'] = _tail(context['notes'], 6);
+    final verifiedEvidence = context['verified_evidence'];
+    if (verifiedEvidence is Map) {
+      context['verified_evidence'] = _compactVerifiedEvidence(verifiedEvidence);
+    }
     encoded = jsonEncode(context);
     if (encoded.length <= charBudget) return encoded;
 
@@ -82,6 +86,52 @@ class AiCoachContextBudget {
     encoded = jsonEncode(context);
     if (encoded.length <= charBudget) return encoded;
 
+    // Derived training facts are more valuable than duplicated raw logs when
+    // the prompt is under severe pressure. Preserve the verified evidence
+    // contract before falling back to generic clipping.
+    final verified = context['verified_evidence'];
+    if (verified is Map) {
+      final evidenceOnly = <String, dynamic>{
+        'verified_evidence': _compactVerifiedEvidence(verified),
+      };
+      encoded = jsonEncode(evidenceOnly);
+      if (encoded.length <= charBudget) return encoded;
+
+      final compact = Map<String, dynamic>.from(
+        evidenceOnly['verified_evidence'] as Map,
+      );
+      for (final family in const [
+        'strength',
+        'volume_frequency',
+        'progression',
+        'readiness',
+      ]) {
+        compact.remove(family);
+        encoded = jsonEncode({'verified_evidence': compact});
+        if (encoded.length <= charBudget) return encoded;
+      }
+
+      final minimumEnvelope = <String, dynamic>{
+        'source': compact['source'],
+        'contract': compact['contract'],
+        'coverage': compact['coverage'],
+      }..removeWhere((_, value) => value == null);
+      encoded = jsonEncode({'verified_evidence': minimumEnvelope});
+      if (encoded.length <= charBudget) return encoded;
+
+      for (final stringLimit in const [256, 128, 64, 32]) {
+        final clippedEvidence = _clipValue(
+          {'verified_evidence': minimumEnvelope},
+          stringLimit: stringLimit,
+          listLimit: 3,
+          mapLimit: 16,
+          depth: 0,
+        );
+        encoded = jsonEncode(clippedEvidence);
+        if (encoded.length <= charBudget) return encoded;
+      }
+    }
+
     // Last-resort clipping keeps the payload valid JSON. This protects the
     // model context window even if a future field contains unexpectedly large
     // user text. The final fallback is deliberately tiny and explicit.
@@ -99,6 +149,30 @@ class AiCoachContextBudget {
 
     const fallback = '{"context_truncated":true}';
     return fallback.length <= charBudget ? fallback : '{}';
+  }
+
+  static Map<String, dynamic> _compactVerifiedEvidence(Map raw) {
+    final evidence = Map<String, dynamic>.from(raw);
+    final strength = evidence['strength'];
+    if (strength is Map) {
+      final compact = Map<String, dynamic>.from(strength);
+      compact['exercises'] = _head(compact['exercises'], 6);
+      compact['recent_prs'] = _head(compact['recent_prs'], 8);
+      evidence['strength'] = compact;
+    }
+    final volumeFrequency = evidence['volume_frequency'];
+    if (volumeFrequency is Map) {
+      final compact = Map<String, dynamic>.from(volumeFrequency);
+      compact['muscles'] = _head(compact['muscles'], 8);
+      evidence['volume_frequency'] = compact;
+    }
+    final progression = evidence['progression'];
+    if (progression is Map) {
+      final compact = Map<String, dynamic>.from(progression);
+      compact['recommendations'] = _head(compact['recommendations'], 8);
+      evidence['progression'] = compact;
+    }
+    return evidence;
   }
 
   static List<dynamic> _tail(Object? raw, int count) {

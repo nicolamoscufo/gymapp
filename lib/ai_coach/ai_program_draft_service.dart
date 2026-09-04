@@ -87,10 +87,7 @@ class AiProgramDraftService {
     }
   }
 
-  Future<String> _generate(
-    String prompt,
-    Map<String, dynamic> schema,
-  ) async {
+  Future<String> _generate(String prompt, Map<String, dynamic> schema) async {
     await engine.initialize();
     try {
       return await engine.generateStructuredJson(prompt, schema);
@@ -102,10 +99,7 @@ class AiProgramDraftService {
     }
   }
 
-  String _prompt(
-    Map<String, dynamic> context, {
-    required bool strictRetry,
-  }) {
+  String _prompt(Map<String, dynamic> context, {required bool strictRetry}) {
     final retry = strictRetry
         ? 'Previous output was invalid. Return ONLY one valid JSON object matching the schema exactly.'
         : 'Return ONLY one valid JSON object. No markdown and no prose outside JSON.';
@@ -129,7 +123,7 @@ Rules:
 - For a modified existing schedule, output the COMPLETE final exercise list for that schedule. Omitting an existing exercise means proposing its removal.
 - Do not archive or delete whole schedules in this protocol version. Only propose modified existing schedules and/or additional new schedules.
 - Respect user_profile preferences, equipment, available days, session duration and avoided exercises when provided.
-- Use program_history and deterministic_analytics as evidence. Do not contradict deterministic progression/recovery facts without explicitly preserving the uncertainty in rationale.
+- Use verified_evidence first for derived training facts, then program_history and deterministic_analytics for supporting detail. Never recalculate or contradict app-derived PR, e1RM, trend, volume, frequency, progression, or readiness values from raw sets.
 - If exercise_catalog exists, it is a retrieved shortlist from the app's local exercise dataset, not an exhaustive list. Prefer suitable catalog matches for new exercises.
 - When the user explicitly limits equipment, only use retrieved candidates compatible with that equipment unless the user explicitly permits alternatives.
 - When selecting a retrieved catalog exercise, copy its canonical name, muscle_group, equipment and movement_pattern exactly. Do not invent catalog metadata.
@@ -280,7 +274,10 @@ ${jsonEncode(context)}
           selectedVersions.add(versions.first);
           final remaining = maxVersions - 1;
           if (remaining > 0 && versions.length > 1) {
-            final start = (versions.length - remaining).clamp(1, versions.length);
+            final start = (versions.length - remaining).clamp(
+              1,
+              versions.length,
+            );
             selectedVersions.addAll(versions.sublist(start));
           }
         }
@@ -297,7 +294,10 @@ ${jsonEncode(context)}
     };
   }
 
-  Map<String, dynamic> _compactAnalytics(Object? raw, {required bool detailed}) {
+  Map<String, dynamic> _compactAnalytics(
+    Object? raw, {
+    required bool detailed,
+  }) {
     if (raw is! Map) return const {};
     final analytics = Map<String, dynamic>.from(raw);
     if (!detailed) {

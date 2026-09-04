@@ -6,34 +6,28 @@ class AiCoachVerifiedEvidenceBuilder {
     final progress = _map(deterministic['progress_analytics']);
     final metrics = _map(context['metrics']);
 
-    final exercises = _maps(progress['exercises'])
-        .map(_compactExercise)
-        .where((entry) => entry.isNotEmpty)
-        .toList();
+    final exercises = _maps(
+      progress['exercises'],
+    ).map(_compactExercise).where((entry) => entry.isNotEmpty).toList();
     final personalRecords = _maps(progress['personal_records'])
         .take(12)
         .map(_compactPersonalRecord)
         .where((entry) => entry.isNotEmpty)
         .toList();
-    final muscles = _maps(progress['muscles'])
-        .map(_compactMuscle)
-        .where((entry) => entry.isNotEmpty)
-        .toList();
-    final consistency = _pick(
-      _map(progress['consistency']),
-      const [
-        'workouts_30d',
-        'trained_days_30d',
-        'current_active_week_streak',
-        'longest_active_week_streak',
-        'average_workouts_per_week_8w',
-        'most_active_weekday',
-      ],
-    );
-    final progression = _maps(deterministic['progression_recommendations'])
-        .map(_compactProgression)
-        .where((entry) => entry.isNotEmpty)
-        .toList();
+    final muscles = _maps(
+      progress['muscles'],
+    ).map(_compactMuscle).where((entry) => entry.isNotEmpty).toList();
+    final consistency = _pick(_map(progress['consistency']), const [
+      'workouts_30d',
+      'trained_days_30d',
+      'current_active_week_streak',
+      'longest_active_week_streak',
+      'average_workouts_per_week_8w',
+      'most_active_weekday',
+    ]);
+    final progression = _maps(
+      deterministic['progression_recommendations'],
+    ).map(_compactProgression).where((entry) => entry.isNotEmpty).toList();
     final readiness = _compactReadiness(
       _map(deterministic['fatigue_readiness']),
     );
@@ -88,102 +82,87 @@ class AiCoachVerifiedEvidenceBuilder {
     return evidence;
   }
 
-  Map<String, dynamic> _compactExercise(Map<String, dynamic> input) => _pick(
-        input,
-        const [
-          'exercise',
-          'muscle_group',
-          'sessions',
-          'completed_sets',
-          'total_reps',
-          'total_volume',
-          'best_weight',
-          'best_reps',
-          'best_estimated_1rm',
-          'latest_estimated_1rm',
-          'estimated_1rm_trend_percent',
-          'last_trained_at',
-        ],
-      );
+  Map<String, dynamic> _compactExercise(Map<String, dynamic> input) =>
+      _pick(input, const [
+        'exercise',
+        'muscle_group',
+        'sessions',
+        'completed_sets',
+        'total_reps',
+        'total_volume',
+        'best_weight',
+        'best_reps',
+        'best_estimated_1rm',
+        'latest_estimated_1rm',
+        'estimated_1rm_trend_percent',
+        'last_trained_at',
+      ]);
 
   Map<String, dynamic> _compactPersonalRecord(Map<String, dynamic> input) =>
-      _pick(
-        input,
-        const [
-          'exercise',
-          'muscle_group',
-          'kind',
-          'date',
-          'value',
-          'weight',
-          'reps',
-        ],
-      );
+      _pick(input, const [
+        'exercise',
+        'muscle_group',
+        'kind',
+        'date',
+        'value',
+        'weight',
+        'reps',
+      ]);
 
-  Map<String, dynamic> _compactMuscle(Map<String, dynamic> input) => _pick(
-        input,
-        const [
-          'muscle_group',
-          'sets_7d',
-          'sets_30d',
-          'volume_7d',
-          'volume_30d',
-          'sessions_30d',
-          'set_share_30d',
-        ],
-      );
+  Map<String, dynamic> _compactMuscle(Map<String, dynamic> input) =>
+      _pick(input, const [
+        'muscle_group',
+        'sets_7d',
+        'sets_30d',
+        'volume_7d',
+        'volume_30d',
+        'sessions_30d',
+        'set_share_30d',
+      ]);
 
   Map<String, dynamic> _compactProgression(Map<String, dynamic> input) {
-    final output = _pick(
-      input,
-      const [
-        'exercise',
-        'action',
-        'confidence',
-        'reasons',
-        'suggested_weight_delta',
-        'suggested_rep_delta',
-        'suggested_weight_multiplier',
-        'current_estimated_1rm',
-        'estimated_1rm_change_percent',
-        'volume_change_percent',
-        'effective_rir',
-        'completed_work_sets',
-        'planned_work_sets',
-        'all_work_sets_completed',
-        'all_at_top',
-        'any_below_min',
-      ],
-    );
+    final output = _pick(input, const [
+      'exercise',
+      'action',
+      'confidence',
+      'reasons',
+      'suggested_weight_delta',
+      'suggested_rep_delta',
+      'suggested_weight_multiplier',
+      'current_estimated_1rm',
+      'estimated_1rm_change_percent',
+      'volume_change_percent',
+      'effective_rir',
+      'completed_work_sets',
+      'planned_work_sets',
+      'all_work_sets_completed',
+      'all_at_top',
+      'any_below_min',
+    ]);
     final readiness = _compactReadiness(_map(input['readiness']));
     if (readiness.isNotEmpty) output['readiness'] = readiness;
     return output;
   }
 
-  Map<String, dynamic> _compactReadiness(Map<String, dynamic> input) => _pick(
-        input,
-        const [
-          'score',
-          'status',
-          'adaptation',
-          'reasons',
-          'sessions_last_7_days',
-          'hours_since_last_stimulus',
-          'average_rir',
-          'average_rpe',
-          'acute_volume_ratio',
-          'estimated_1rm_trend_percent',
-          'self_readiness',
-          'sleep_hours',
-          'recommended_load_multiplier',
-          'recommended_set_reduction',
-        ],
-      );
+  Map<String, dynamic> _compactReadiness(Map<String, dynamic> input) =>
+      _pick(input, const [
+        'score',
+        'status',
+        'adaptation',
+        'reasons',
+        'sessions_last_7_days',
+        'hours_since_last_stimulus',
+        'average_rir',
+        'average_rpe',
+        'acute_volume_ratio',
+        'estimated_1rm_trend_percent',
+        'self_readiness',
+        'sleep_hours',
+        'recommended_load_multiplier',
+        'recommended_set_reduction',
+      ]);
 
-  Map<String, dynamic> _pick(
-    Map<String, dynamic> source,
-    List<String> keys,
-  ) {
+  Map<String, dynamic> _pick(Map<String, dynamic> source, List<String> keys) {
     final output = <String, dynamic>{};
     for (final key in keys) {
       if (source.containsKey(key) && source[key] != null) {

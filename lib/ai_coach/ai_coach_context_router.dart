@@ -41,6 +41,7 @@ class AiCoachContextRouter {
   }) {
     final result = Map<String, dynamic>.from(source);
     final analytics = _analytics(result['deterministic_analytics']);
+    final evidence = _evidence(result['verified_evidence']);
 
     switch (intent) {
       case AiCoachChatIntent.technique:
@@ -48,10 +49,11 @@ class AiCoachContextRouter {
         result['body_logs'] = const <dynamic>[];
         result.remove('metrics');
         result['notes'] = _tail(result['notes'], 6);
-        _keepAnalytics(
-          analytics,
-          const {'exercise_progress', 'progression_recommendations'},
-        );
+        _keepAnalytics(analytics, const {
+          'exercise_progress',
+          'progression_recommendations',
+        });
+        _keepEvidence(evidence, const {'strength', 'progression'});
         result.remove('program_history');
         result.remove('program_change_effectiveness');
         break;
@@ -59,15 +61,18 @@ class AiCoachContextRouter {
         result['workouts'] = _tail(result['workouts'], 4);
         result['body_logs'] = _tail(result['body_logs'], 4);
         result['notes'] = _tail(result['notes'], 8);
-        _keepAnalytics(
-          analytics,
-          const {
-            'exercise_progress',
-            'progression_recommendations',
-            'fatigue_readiness',
-            'latest_session_at',
-          },
-        );
+        _keepAnalytics(analytics, const {
+          'exercise_progress',
+          'progression_recommendations',
+          'fatigue_readiness',
+          'latest_session_at',
+        });
+        _keepEvidence(evidence, const {
+          'strength',
+          'volume_frequency',
+          'progression',
+          'readiness',
+        });
         result.remove('program_history');
         result.remove('program_change_effectiveness');
         break;
@@ -76,10 +81,12 @@ class AiCoachContextRouter {
         result['body_logs'] = _tail(result['body_logs'], 8);
         result['notes'] = _tail(result['notes'], 8);
         result['active_plans'] = _head(result['active_plans'], 1);
-        _keepAnalytics(
-          analytics,
-          const {'fatigue_readiness', 'latest_session_at', 'session_count'},
-        );
+        _keepAnalytics(analytics, const {
+          'fatigue_readiness',
+          'latest_session_at',
+          'session_count',
+        });
+        _keepEvidence(evidence, const {'volume_frequency', 'readiness'});
         result.remove('program_history');
         result.remove('program_change_effectiveness');
         break;
@@ -87,15 +94,13 @@ class AiCoachContextRouter {
         result['workouts'] = _tail(result['workouts'], 4);
         result['body_logs'] = _tail(result['body_logs'], 8);
         result['active_plans'] = _head(result['active_plans'], 2);
-        _keepAnalytics(
-          analytics,
-          const {
-            'progress_analytics',
-            'exercise_progress',
-            'latest_session_at',
-            'session_count',
-          },
-        );
+        _keepAnalytics(analytics, const {
+          'progress_analytics',
+          'exercise_progress',
+          'latest_session_at',
+          'session_count',
+        });
+        _keepEvidence(evidence, const {'strength', 'volume_frequency'});
         result.remove('program_history');
         result.remove('program_change_effectiveness');
         break;
@@ -103,15 +108,18 @@ class AiCoachContextRouter {
         result['workouts'] = _tail(result['workouts'], 2);
         result['body_logs'] = _tail(result['body_logs'], 4);
         result['notes'] = _tail(result['notes'], 6);
-        _keepAnalytics(
-          analytics,
-          const {
-            'progress_analytics',
-            'exercise_progress',
-            'fatigue_readiness',
-            'progression_recommendations',
-          },
-        );
+        _keepAnalytics(analytics, const {
+          'progress_analytics',
+          'exercise_progress',
+          'fatigue_readiness',
+          'progression_recommendations',
+        });
+        _keepEvidence(evidence, const {
+          'strength',
+          'volume_frequency',
+          'progression',
+          'readiness',
+        });
         if (!keepProgramHistory) {
           result.remove('program_history');
           result.remove('program_change_effectiveness');
@@ -122,15 +130,18 @@ class AiCoachContextRouter {
         result['body_logs'] = _tail(result['body_logs'], 4);
         result['notes'] = _tail(result['notes'], 6);
         result['active_plans'] = _head(result['active_plans'], 2);
-        _keepAnalytics(
-          analytics,
-          const {
-            'progress_analytics',
-            'fatigue_readiness',
-            'progression_recommendations',
-            'latest_session_at',
-          },
-        );
+        _keepAnalytics(analytics, const {
+          'progress_analytics',
+          'fatigue_readiness',
+          'progression_recommendations',
+          'latest_session_at',
+        });
+        _keepEvidence(evidence, const {
+          'strength',
+          'volume_frequency',
+          'progression',
+          'readiness',
+        });
         if (!keepProgramHistory) {
           result.remove('program_history');
           result.remove('program_change_effectiveness');
@@ -142,6 +153,11 @@ class AiCoachContextRouter {
       result.remove('deterministic_analytics');
     } else {
       result['deterministic_analytics'] = analytics;
+    }
+    if (evidence.isEmpty) {
+      result.remove('verified_evidence');
+    } else {
+      result['verified_evidence'] = evidence;
     }
     return result;
   }
@@ -179,6 +195,18 @@ class AiCoachContextRouter {
   Map<String, dynamic> _analytics(Object? raw) {
     if (raw is! Map) return <String, dynamic>{};
     return Map<String, dynamic>.from(raw);
+  }
+
+  Map<String, dynamic> _evidence(Object? raw) {
+    if (raw is! Map) return <String, dynamic>{};
+    return Map<String, dynamic>.from(raw);
+  }
+
+  void _keepEvidence(Map<String, dynamic> evidence, Set<String> allowed) {
+    const alwaysKeep = {'source', 'contract', 'coverage'};
+    evidence.removeWhere(
+      (key, _) => !alwaysKeep.contains(key) && !allowed.contains(key),
+    );
   }
 
   void _keepAnalytics(Map<String, dynamic> analytics, Set<String> allowed) {

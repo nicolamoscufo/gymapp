@@ -9,6 +9,7 @@ import 'ai_coach_memory.dart';
 import 'program_change_effectiveness.dart';
 import 'program_history_context.dart';
 import 'ai_coach_user_profile.dart';
+import 'ai_coach_verified_evidence.dart';
 
 class TrainingContextBuilder {
   final DateTime? now;
@@ -122,6 +123,42 @@ class TrainingContextBuilder {
     final exerciseVolume = _exerciseVolume(history);
     final muscleGroupVolume = _muscleGroupVolume(history);
     final notes = _collectNotes(history);
+    final metrics = <String, dynamic>{
+      'sessions': history.length,
+      'total_volume': totalVolume,
+      'exercise_volume': exerciseVolume,
+      'muscle_group_volume': muscleGroupVolume,
+    };
+    final progressAnalytics = buildProgressAnalytics(
+      history: analyticsHistory,
+      now: _now,
+    );
+    final fatigueReadiness = buildGlobalReadinessReport(
+      history: analyticsHistory,
+      bodyLogs: bodyLogs,
+      now: _now,
+    );
+    final progressionRecommendations = _progressionRecommendations(
+      analyticsHistory,
+      bodyLogs,
+    );
+    final deterministicAnalytics = <String, dynamic>{
+      'progress_analytics': progressAnalytics.toJson(),
+      'exercise_progress': _exerciseProgress(history),
+      'fatigue_readiness': fatigueReadiness.toJson(),
+      'progression_recommendations': progressionRecommendations,
+      'session_count': history.length,
+      'latest_session_at': history.isEmpty
+          ? null
+          : history
+                .map((e) => e.startTime)
+                .reduce((a, b) => a.isAfter(b) ? a : b)
+                .toIso8601String(),
+    };
+    final verifiedEvidence = const AiCoachVerifiedEvidenceBuilder().build({
+      'metrics': metrics,
+      'deterministic_analytics': deterministicAnalytics,
+    });
 
     return {
       'generated_at': _now.toIso8601String(),
@@ -140,35 +177,9 @@ class TrainingContextBuilder {
       'workouts': workouts,
       'body_logs': bodyLogs.map((entry) => entry.toJson()).toList(),
       'notes': notes,
-      'metrics': {
-        'sessions': history.length,
-        'total_volume': totalVolume,
-        'exercise_volume': exerciseVolume,
-        'muscle_group_volume': muscleGroupVolume,
-      },
-      'deterministic_analytics': {
-        'progress_analytics': buildProgressAnalytics(
-          history: analyticsHistory,
-          now: _now,
-        ).toJson(),
-        'exercise_progress': _exerciseProgress(history),
-        'fatigue_readiness': buildGlobalReadinessReport(
-          history: analyticsHistory,
-          bodyLogs: bodyLogs,
-          now: _now,
-        ).toJson(),
-        'progression_recommendations': _progressionRecommendations(
-          analyticsHistory,
-          bodyLogs,
-        ),
-        'session_count': history.length,
-        'latest_session_at': history.isEmpty
-            ? null
-            : history
-                  .map((e) => e.startTime)
-                  .reduce((a, b) => a.isAfter(b) ? a : b)
-                  .toIso8601String(),
-      },
+      'metrics': metrics,
+      'deterministic_analytics': deterministicAnalytics,
+      'verified_evidence': verifiedEvidence,
     };
   }
 
