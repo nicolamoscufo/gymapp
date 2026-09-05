@@ -1,0 +1,57 @@
+name: Validate persistence compatibility recovery
+
+on:
+  push:
+    branches:
+      - test/persistence-fault-injection
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: test/persistence-fault-injection
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Apply persistence hardening
+        run: |
+          python3 tool/patch_persistence_fault_injection.py
+          python3 tool/fix_persistence_compatibility.py
+
+      - name: Format
+        run: dart format lib/app_data_store.dart lib/app_preferences.dart lib/local_sqlite_store.dart lib/persistence_recovery.dart lib/screens/home.dart test/persistence_fault_injection_test.dart
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run persistence and affected UI tests
+        run: flutter test test/persistence_fault_injection_test.dart test/local_sqlite_store_test.dart test/schedule_version_history_test.dart test/home_undo_test.dart
+
+      - name: Run full functional suite
+        run: flutter test
+
+      - name: Commit permanent changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/app_data_store.dart lib/app_preferences.dart lib/local_sqlite_store.dart lib/persistence_recovery.dart lib/screens/home.dart test/persistence_fault_injection_test.dart
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Harden persistence recovery and atomic migrations"
+          git push origin HEAD:test/persistence-fault-injection
