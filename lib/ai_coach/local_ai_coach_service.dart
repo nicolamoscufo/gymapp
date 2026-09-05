@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+
+import '../app_data_store.dart';
 import '../models/body_log.dart';
 import '../models/schedule.dart';
 import '../models/schedule_version.dart';
@@ -191,6 +194,17 @@ class LocalAiCoachService {
     AiCoachUserProfile profile = const AiCoachUserProfile(),
     AiCoachMemory memory = const AiCoachMemory(),
   }) async {
+    final live = await _resolveLiveData(
+      history: history,
+      schedules: schedules,
+      scheduleVersions: scheduleVersions,
+      bodyLogs: bodyLogs,
+    );
+    history = live.history;
+    schedules = live.schedules;
+    scheduleVersions = live.scheduleVersions;
+    bodyLogs = live.bodyLogs;
+
     if (history.length < 2) {
       throw const AiCoachInsufficientDataException(
         'At least 2 workouts are required to suggest sensible adjustments.',
@@ -277,6 +291,18 @@ class LocalAiCoachService {
         'Scrivi una domanda prima di avviare il Coach.',
       );
     }
+
+    final live = await _resolveLiveData(
+      history: history,
+      schedules: schedules,
+      scheduleVersions: scheduleVersions,
+      bodyLogs: bodyLogs,
+    );
+    history = live.history;
+    schedules = live.schedules;
+    scheduleVersions = live.scheduleVersions;
+    bodyLogs = live.bodyLogs;
+
     final latestUserQuery = latestUser.content.trim();
     final resolvedMemory = await memoryUpdater.updateFromUserText(
       latestUserQuery,
@@ -455,6 +481,70 @@ Response policy:
     }
   }
 
+  Future<_CoachLiveData> _resolveLiveData({
+    required List<WorkoutSession> history,
+    required List<Schedule> schedules,
+    required List<ScheduleVersion> scheduleVersions,
+    required List<BodyLog> bodyLogs,
+  }) async {
+    final passed = _CoachLiveData(
+      history: history,
+      schedules: schedules,
+      scheduleVersions: scheduleVersions,
+      bodyLogs: bodyLogs,
+    );
+
+    // Unit/evaluation engines intentionally operate on explicit fixtures. Only
+    // the production FlutterGemma runtime refreshes persistence here, which
+    // keeps deterministic tests isolated while ensuring device inference reads
+    // the latest app snapshot rather than a route-time copy.
+    if (engine is! FlutterGemmaLocalLlmEngine) {
+      return passed;
+    }
+
+    try {
+      final bundle = await AppDataStore.loadBundle();
+      final hasPersistedUserData =
+          bundle.schedules.isNotEmpty ||
+          bundle.history.isNotEmpty ||
+          bundle.scheduleVersions.isNotEmpty ||
+          bundle.bodyLogs.isNotEmpty;
+      if (!hasPersistedUserData) {
+        if (kDebugMode) {
+          debugPrint(
+            '[AI_COACH_DATA] source=passed '
+            'schedules=${schedules.length} history=${history.length} '
+            'versions=${scheduleVersions.length} body_logs=${bodyLogs.length}',
+          );
+        }
+        return passed;
+      }
+
+      if (kDebugMode) {
+        debugPrint(
+          '[AI_COACH_DATA] source=persisted '
+          'schedules=${bundle.schedules.length} history=${bundle.history.length} '
+          'versions=${bundle.scheduleVersions.length} body_logs=${bundle.bodyLogs.length}',
+        );
+      }
+      return _CoachLiveData(
+        history: bundle.history,
+        schedules: bundle.schedules,
+        scheduleVersions: bundle.scheduleVersions,
+        bodyLogs: bundle.bodyLogs,
+      );
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint(
+          '[AI_COACH_DATA] source=passed refresh_error=$error '
+          'schedules=${schedules.length} history=${history.length} '
+          'versions=${scheduleVersions.length} body_logs=${bodyLogs.length}',
+        );
+      }
+      return passed;
+    }
+  }
+
   ChatMessage? _latestUserMessage(List<ChatMessage> messages) {
     for (final message in messages.reversed) {
       if (message.role == 'user') return message;
@@ -588,4 +678,18 @@ Response policy:
 
     return newestFirst.reversed.join().trim();
   }
+}
+
+class _CoachLiveData {
+  final List<WorkoutSession> history;
+  final List<Schedule> schedules;
+  final List<ScheduleVersion> scheduleVersions;
+  final List<BodyLog> bodyLogs;
+
+  const _CoachLiveData({
+    required this.history,
+    required this.schedules,
+    required this.scheduleVersions,
+    required this.bodyLogs,
+  });
 }
