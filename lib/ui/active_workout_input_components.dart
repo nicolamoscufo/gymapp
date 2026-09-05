@@ -16,22 +16,30 @@ class WorkoutExerciseJumpBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final largeText = MediaQuery.textScalerOf(context).scale(14) >= 21;
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: SizedBox(
-        height: 58,
+        height: largeText ? 82 : 58,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           itemBuilder: (context, index) {
             final exercise = exercises[index];
-            return ActionChip(
-              avatar: Icon(
-                Icons.keyboard_arrow_down,
-                color: colorScheme.primary,
+            return Semantics(
+              key: ValueKey('jump-semantics-${exercise.id}'),
+              button: true,
+              excludeSemantics: true,
+              label: 'Vai a ${exercise.name}',
+              onTap: () => onSelected(exercise.id),
+              child: ActionChip(
+                avatar: Icon(
+                  Icons.keyboard_arrow_down,
+                  color: colorScheme.primary,
+                ),
+                label: Text(exercise.name),
+                onPressed: () => onSelected(exercise.id),
               ),
-              label: Text(exercise.name),
-              onPressed: () => onSelected(exercise.id),
             );
           },
           separatorBuilder: (_, __) => const SizedBox(width: 8),
@@ -56,6 +64,7 @@ class StableWorkoutSetTextField extends StatefulWidget {
   final TextInputAction textInputAction;
   final ValueChanged<String>? onSubmitted;
   final bool selectAllOnFocus;
+  final String? semanticLabel;
 
   const StableWorkoutSetTextField({
     super.key,
@@ -68,6 +77,7 @@ class StableWorkoutSetTextField extends StatefulWidget {
     this.textInputAction = TextInputAction.next,
     this.onSubmitted,
     this.selectAllOnFocus = false,
+    this.semanticLabel,
   });
 
   @override
@@ -117,7 +127,7 @@ class _StableWorkoutSetTextFieldState extends State<StableWorkoutSetTextField> {
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
+    final field = TextFormField(
       controller: _controller,
       focusNode: _focusNode,
       keyboardType: widget.keyboardType,
@@ -129,5 +139,8 @@ class _StableWorkoutSetTextFieldState extends State<StableWorkoutSetTextField> {
       onChanged: widget.onChanged,
       onFieldSubmitted: widget.onSubmitted,
     );
+    final label = widget.semanticLabel?.trim();
+    if (label == null || label.isEmpty) return field;
+    return Semantics(label: label, textField: true, child: field);
   }
 }

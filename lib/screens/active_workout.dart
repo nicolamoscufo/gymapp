@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -2251,6 +2252,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final largeText = MediaQuery.textScalerOf(context).scale(14) >= 21;
     final compactInputBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
       borderSide: BorderSide(color: colorScheme.outlineVariant),
@@ -2324,18 +2326,20 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: 8),
-              _buildStatBadge(
-                icon: Icons.check_circle_outline,
-                value: '${stats.completedSets}/${stats.totalSets}',
-                colorScheme: colorScheme,
-              ),
-              const SizedBox(width: 6),
-              _buildStatBadge(
-                icon: Icons.timer,
-                value: _formatDuration(_elapsedSeconds),
-                colorScheme: colorScheme,
-              ),
+              if (!largeText) ...[
+                const SizedBox(width: 8),
+                _buildStatBadge(
+                  icon: Icons.check_circle_outline,
+                  value: '${stats.completedSets}/${stats.totalSets}',
+                  colorScheme: colorScheme,
+                ),
+                const SizedBox(width: 6),
+                _buildStatBadge(
+                  icon: Icons.timer,
+                  value: _formatDuration(_elapsedSeconds),
+                  colorScheme: colorScheme,
+                ),
+              ],
             ],
           ),
           actions: [
@@ -2448,13 +2452,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
             ),
           ],
           bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(22),
+            preferredSize: Size.fromHeight(largeText ? 44 : 22),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
                 child: Text(
                   '${_saveStatusLabel()} · Readiness ${workoutReadiness.score}/100 ${workoutReadiness.status.label}',
+                  maxLines: largeText ? 2 : 1,
+                  overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -2789,6 +2795,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                               ],
                               textInputAction: TextInputAction.done,
                               selectAllOnFocus: true,
+                              semanticLabel:
+                                  'Recupero ${exercise.name} in secondi',
                               onSubmitted: (_) =>
                                   FocusScope.of(context).unfocus(),
                               textAlign: TextAlign.center,
@@ -2888,564 +2896,614 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen>
                           exSet,
                           setIndex,
                         );
-                        return Dismissible(
-                          key: ValueKey(exSet.id),
-                          direction: DismissDirection.endToStart,
-                          onDismissed: (_) => _removeSet(exercise, setIndex),
-                          background: Container(
-                            margin: const EdgeInsets.symmetric(vertical: 3),
-                            decoration: BoxDecoration(
-                              color: colorScheme.errorContainer,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            alignment: Alignment.centerRight,
-                            padding: const EdgeInsets.only(right: 20),
-                            child: Icon(
-                              Icons.delete,
-                              color: colorScheme.onErrorContainer,
-                            ),
-                          ),
-                          child: AnimatedContainer(
-                            key: _setRowKey(exSet.id),
-                            duration: const Duration(milliseconds: 220),
-                            curve: Curves.easeInOut,
-                            transformAlignment: Alignment.center,
-                            transform: Matrix4.diagonal3Values(
-                              isHandoffSet && _handoffPulseEmphasis
-                                  ? 1.012
-                                  : 1.0,
-                              isHandoffSet && _handoffPulseEmphasis
-                                  ? 1.012
-                                  : 1.0,
-                              1.0,
-                            ),
-                            margin: const EdgeInsets.symmetric(vertical: 3),
-                            padding: const EdgeInsets.symmetric(vertical: 5.0),
-                            decoration: BoxDecoration(
-                              color: exSet.isCompleted
-                                  ? colorScheme.tertiaryContainer.withValues(
-                                      alpha: isDark ? 0.38 : 0.62,
-                                    )
-                                  : isHandoffSet
-                                  ? colorScheme.primaryContainer.withValues(
-                                      alpha: isDark
-                                          ? (_handoffPulseEmphasis
-                                                ? 0.58
-                                                : 0.36)
-                                          : (_handoffPulseEmphasis
-                                                ? 0.82
-                                                : 0.58),
-                                    )
-                                  : isCurrentSet
-                                  ? colorScheme.primaryContainer.withValues(
-                                      alpha: isDark ? 0.28 : 0.48,
-                                    )
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: exSet.isCompleted
-                                    ? colorScheme.tertiary.withValues(
-                                        alpha: 0.35,
-                                      )
-                                    : isHandoffSet || isCurrentSet
-                                    ? colorScheme.primary
-                                    : Colors.transparent,
-                                width: isHandoffSet
-                                    ? (_handoffPulseEmphasis ? 2.8 : 2.0)
-                                    : isCurrentSet
-                                    ? 1.6
-                                    : 1,
+                        return Semantics(
+                          key: ValueKey('set-semantics-${exSet.id}'),
+                          container: true,
+                          label: '${exercise.name}, set $displaySetLabel',
+                          customSemanticsActions: {
+                            CustomSemanticsAction(label: 'Elimina set'): () =>
+                                _removeSet(exercise, setIndex),
+                          },
+                          child: Dismissible(
+                            key: ValueKey(exSet.id),
+                            direction: DismissDirection.endToStart,
+                            onDismissed: (_) => _removeSet(exercise, setIndex),
+                            background: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 3),
+                              decoration: BoxDecoration(
+                                color: colorScheme.errorContainer,
+                                borderRadius: BorderRadius.circular(16),
                               ),
-                              boxShadow: isHandoffSet && _handoffPulseEmphasis
-                                  ? [
-                                      BoxShadow(
-                                        color: colorScheme.primary.withValues(
-                                          alpha: 0.24,
-                                        ),
-                                        blurRadius: 14,
-                                        spreadRadius: 1,
-                                      ),
-                                    ]
-                                  : null,
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              child: Icon(
+                                Icons.delete,
+                                color: colorScheme.onErrorContainer,
+                              ),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 72,
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            displaySetLabel,
-                                            textAlign: TextAlign.center,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          if (isCurrentSet)
-                                            Container(
-                                              key: ValueKey(
-                                                'current-set-${exSet.id}',
-                                              ),
-                                              margin: const EdgeInsets.only(
-                                                top: 2,
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 1,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: colorScheme.primary,
-                                                borderRadius:
-                                                    BorderRadius.circular(99),
-                                              ),
-                                              child: Text(
-                                                'ORA',
-                                                style: theme
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(
-                                                      color:
-                                                          colorScheme.onPrimary,
-                                                      fontWeight:
-                                                          FontWeight.w900,
-                                                    ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8.0,
-                                        ),
-                                        child: StableWorkoutSetTextField(
-                                          key: ValueKey('${exSet.id}-weight'),
-                                          text: _formatWeight(exSet.weight),
-                                          keyboardType:
-                                              const TextInputType.numberWithOptions(
-                                                decimal: true,
-                                              ),
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter.allow(
-                                              RegExp(r'[0-9.,]'),
-                                            ),
-                                          ],
-                                          textInputAction: TextInputAction.next,
-                                          selectAllOnFocus: true,
-                                          textAlign: TextAlign.center,
-                                          decoration: InputDecoration(
-                                            isDense: true,
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                  vertical: 8,
-                                                ),
-                                            border: compactInputBorder,
-                                            enabledBorder: compactInputBorder,
-                                            focusedBorder: compactInputBorder
-                                                .copyWith(
-                                                  borderSide: BorderSide(
-                                                    color: colorScheme.primary,
-                                                    width: 1.5,
-                                                  ),
-                                                ),
-                                          ),
-                                          onChanged: (value) {
-                                            final parsedWeight =
-                                                parseDecimalInput(value);
-                                            if (parsedWeight == null) {
-                                              return;
-                                            }
-                                            final normalizedWeight =
-                                                parsedWeight
-                                                    .clamp(0, 1000)
-                                                    .toDouble();
-                                            if (exercise.technique ==
-                                                    IntensityTechnique
-                                                        .topsetBackoff &&
-                                                setIndex == 0) {
-                                              setState(() {
-                                                exSet.weight = normalizedWeight;
-                                              });
-                                            } else {
-                                              exSet.weight = normalizedWeight;
-                                            }
-                                            _saveCurrentSessionSilently();
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8.0,
-                                        ),
-                                        child: StableWorkoutSetTextField(
-                                          key: ValueKey('${exSet.id}-reps'),
-                                          text: exSet.reps.toString(),
-                                          keyboardType: TextInputType.number,
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter
-                                                .digitsOnly,
-                                          ],
-                                          textInputAction: TextInputAction.done,
-                                          selectAllOnFocus: true,
-                                          onSubmitted: (value) =>
-                                              _submitSetFromKeyboard(
-                                                exercise,
-                                                exSet,
-                                                setIndex,
-                                                value,
-                                              ),
-                                          textAlign: TextAlign.center,
-                                          decoration: InputDecoration(
-                                            isDense: true,
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                  vertical: 8,
-                                                ),
-                                            border: compactInputBorder,
-                                            enabledBorder: compactInputBorder,
-                                            focusedBorder: compactInputBorder
-                                                .copyWith(
-                                                  borderSide: BorderSide(
-                                                    color: colorScheme.primary,
-                                                    width: 1.5,
-                                                  ),
-                                                ),
-                                          ),
-                                          onChanged: (value) {
-                                            final parsedReps = parseIntInput(
-                                              value,
-                                            );
-                                            if (parsedReps == null) {
-                                              return;
-                                            }
-                                            exSet.reps = parsedReps
-                                                .clamp(0, 200)
-                                                .toInt();
-                                            _saveCurrentSessionSilently();
-                                          },
-                                        ),
-                                      ),
-                                    ),
-                                    InkWell(
-                                      key: ValueKey('complete-${exSet.id}'),
-                                      onTap: () => _toggleSetCompleted(
-                                        exercise,
-                                        exSet,
-                                        setIndex,
-                                      ),
-                                      child: Container(
-                                        width: 40,
-                                        height: 36,
-                                        decoration: BoxDecoration(
-                                          color: exSet.isCompleted
-                                              ? colorScheme.tertiary
-                                              : colorScheme
-                                                    .surfaceContainerHighest,
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
-                                        ),
-                                        child: Icon(
-                                          Icons.check,
-                                          color: exSet.isCompleted
-                                              ? colorScheme.onTertiary
-                                              : colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      key: ValueKey('set-details-${exSet.id}'),
-                                      tooltip: 'RPE, RIR, tipo e note',
-                                      onPressed: () =>
-                                          _showSetDetailsDialog(exSet),
-                                      icon: const Icon(Icons.tune),
-                                    ),
-                                  ],
+                            child: AnimatedContainer(
+                              key: _setRowKey(exSet.id),
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeInOut,
+                              transformAlignment: Alignment.center,
+                              transform: Matrix4.diagonal3Values(
+                                isHandoffSet && _handoffPulseEmphasis
+                                    ? 1.012
+                                    : 1.0,
+                                isHandoffSet && _handoffPulseEmphasis
+                                    ? 1.012
+                                    : 1.0,
+                                1.0,
+                              ),
+                              margin: const EdgeInsets.symmetric(vertical: 3),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 5.0,
+                              ),
+                              decoration: BoxDecoration(
+                                color: exSet.isCompleted
+                                    ? colorScheme.tertiaryContainer.withValues(
+                                        alpha: isDark ? 0.38 : 0.62,
+                                      )
+                                    : isHandoffSet
+                                    ? colorScheme.primaryContainer.withValues(
+                                        alpha: isDark
+                                            ? (_handoffPulseEmphasis
+                                                  ? 0.58
+                                                  : 0.36)
+                                            : (_handoffPulseEmphasis
+                                                  ? 0.82
+                                                  : 0.58),
+                                      )
+                                    : isCurrentSet
+                                    ? colorScheme.primaryContainer.withValues(
+                                        alpha: isDark ? 0.28 : 0.48,
+                                      )
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: exSet.isCompleted
+                                      ? colorScheme.tertiary.withValues(
+                                          alpha: 0.35,
+                                        )
+                                      : isHandoffSet || isCurrentSet
+                                      ? colorScheme.primary
+                                      : Colors.transparent,
+                                  width: isHandoffSet
+                                      ? (_handoffPulseEmphasis ? 2.8 : 2.0)
+                                      : isCurrentSet
+                                      ? 1.6
+                                      : 1,
                                 ),
-                                if (isHandoffSet && !exSet.isCompleted)
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      72,
-                                      6,
-                                      8,
-                                      0,
-                                    ),
-                                    child: Container(
-                                      key: ValueKey('handoff-set-${exSet.id}'),
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 7,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: colorScheme.primary.withValues(
-                                          alpha: isDark ? 0.18 : 0.10,
-                                        ),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            Icons.bolt,
-                                            size: 17,
-                                            color: colorScheme.primary,
+                                boxShadow: isHandoffSet && _handoffPulseEmphasis
+                                    ? [
+                                        BoxShadow(
+                                          color: colorScheme.primary.withValues(
+                                            alpha: 0.24,
                                           ),
-                                          const SizedBox(width: 5),
-                                          Text(
-                                            'TOCCA A TE',
-                                            style: theme.textTheme.labelMedium
-                                                ?.copyWith(
-                                                  color: colorScheme.primary,
-                                                  fontWeight: FontWeight.w900,
-                                                  letterSpacing: 0.7,
+                                          blurRadius: 14,
+                                          spreadRadius: 1,
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 72,
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              displaySetLabel,
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            if (isCurrentSet)
+                                              Container(
+                                                key: ValueKey(
+                                                  'current-set-${exSet.id}',
                                                 ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                if (isCurrentSet && !exSet.isCompleted)
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      72,
-                                      6,
-                                      8,
-                                      0,
-                                    ),
-                                    child: SizedBox(
-                                      width: double.infinity,
-                                      child: FilledButton.icon(
-                                        key: ValueKey(
-                                          'thumb-complete-${exSet.id}',
+                                                margin: const EdgeInsets.only(
+                                                  top: 2,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 1,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: colorScheme.primary,
+                                                  borderRadius:
+                                                      BorderRadius.circular(99),
+                                                ),
+                                                child: Text(
+                                                  'ORA',
+                                                  style: theme
+                                                      .textTheme
+                                                      .labelSmall
+                                                      ?.copyWith(
+                                                        color: colorScheme
+                                                            .onPrimary,
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                      ),
+                                                ),
+                                              ),
+                                          ],
                                         ),
-                                        onPressed: () => _toggleSetCompleted(
+                                      ),
+                                      Expanded(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8.0,
+                                          ),
+                                          child: StableWorkoutSetTextField(
+                                            key: ValueKey('${exSet.id}-weight'),
+                                            text: _formatWeight(exSet.weight),
+                                            keyboardType:
+                                                const TextInputType.numberWithOptions(
+                                                  decimal: true,
+                                                ),
+                                            inputFormatters: [
+                                              FilteringTextInputFormatter.allow(
+                                                RegExp(r'[0-9.,]'),
+                                              ),
+                                            ],
+                                            textInputAction:
+                                                TextInputAction.next,
+                                            selectAllOnFocus: true,
+                                            semanticLabel:
+                                                '${exercise.name}, set $displaySetLabel, carico in kg',
+                                            textAlign: TextAlign.center,
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 8,
+                                                  ),
+                                              border: compactInputBorder,
+                                              enabledBorder: compactInputBorder,
+                                              focusedBorder: compactInputBorder
+                                                  .copyWith(
+                                                    borderSide: BorderSide(
+                                                      color:
+                                                          colorScheme.primary,
+                                                      width: 1.5,
+                                                    ),
+                                                  ),
+                                            ),
+                                            onChanged: (value) {
+                                              final parsedWeight =
+                                                  parseDecimalInput(value);
+                                              if (parsedWeight == null) {
+                                                return;
+                                              }
+                                              final normalizedWeight =
+                                                  parsedWeight
+                                                      .clamp(0, 1000)
+                                                      .toDouble();
+                                              if (exercise.technique ==
+                                                      IntensityTechnique
+                                                          .topsetBackoff &&
+                                                  setIndex == 0) {
+                                                setState(() {
+                                                  exSet.weight =
+                                                      normalizedWeight;
+                                                });
+                                              } else {
+                                                exSet.weight = normalizedWeight;
+                                              }
+                                              _saveCurrentSessionSilently();
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8.0,
+                                          ),
+                                          child: StableWorkoutSetTextField(
+                                            key: ValueKey('${exSet.id}-reps'),
+                                            text: exSet.reps.toString(),
+                                            keyboardType: TextInputType.number,
+                                            inputFormatters: [
+                                              FilteringTextInputFormatter
+                                                  .digitsOnly,
+                                            ],
+                                            textInputAction:
+                                                TextInputAction.done,
+                                            selectAllOnFocus: true,
+                                            semanticLabel:
+                                                '${exercise.name}, set $displaySetLabel, ripetizioni',
+                                            onSubmitted: (value) =>
+                                                _submitSetFromKeyboard(
+                                                  exercise,
+                                                  exSet,
+                                                  setIndex,
+                                                  value,
+                                                ),
+                                            textAlign: TextAlign.center,
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              contentPadding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 8,
+                                                  ),
+                                              border: compactInputBorder,
+                                              enabledBorder: compactInputBorder,
+                                              focusedBorder: compactInputBorder
+                                                  .copyWith(
+                                                    borderSide: BorderSide(
+                                                      color:
+                                                          colorScheme.primary,
+                                                      width: 1.5,
+                                                    ),
+                                                  ),
+                                            ),
+                                            onChanged: (value) {
+                                              final parsedReps = parseIntInput(
+                                                value,
+                                              );
+                                              if (parsedReps == null) {
+                                                return;
+                                              }
+                                              exSet.reps = parsedReps
+                                                  .clamp(0, 200)
+                                                  .toInt();
+                                              _saveCurrentSessionSilently();
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                      Semantics(
+                                        button: true,
+                                        checked: exSet.isCompleted,
+                                        excludeSemantics: true,
+                                        label:
+                                            '${exercise.name}, set $displaySetLabel: ${exSet.isCompleted ? 'set completato' : 'completa set'}',
+                                        onTap: () => _toggleSetCompleted(
                                           exercise,
                                           exSet,
                                           setIndex,
                                         ),
-                                        icon: const Icon(Icons.check_circle),
-                                        label: const Text('Completa set'),
-                                      ),
-                                    ),
-                                  ),
-                                if (previousSetLabel != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 72,
-                                      top: 4,
-                                    ),
-                                    child: ActionChip(
-                                      avatar: const Icon(
-                                        Icons.history,
-                                        size: 16,
-                                      ),
-                                      label: Text(previousSetLabel),
-                                      tooltip:
-                                          'Usa i valori dell’ultima sessione',
-                                      visualDensity: VisualDensity.compact,
-                                      onPressed: () => _applyPreviousSetValues(
-                                        exercise,
-                                        setIndex,
-                                      ),
-                                    ),
-                                  ),
-                                if (nextSetHint != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 72,
-                                      top: 2,
-                                    ),
-                                    child: Text(
-                                      nextSetHint,
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: colorScheme.primary,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                    ),
-                                  ),
-                                if (setVolumeDelta != null &&
-                                    setVolumeDelta > 0)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 72,
-                                      top: 4,
-                                    ),
-                                    child: Chip(
-                                      avatar: Icon(
-                                        Icons.emoji_events,
-                                        color: colorScheme.tertiary,
-                                        size: 18,
-                                      ),
-                                      label: Text(
-                                        'Volume +${_formatVolume(setVolumeDelta)} kg',
-                                      ),
-                                    ),
-                                  ),
-                                if (backoffHint != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 72,
-                                      top: 4,
-                                    ),
-                                    child: ActionChip(
-                                      avatar: const Icon(
-                                        Icons.touch_app,
-                                        size: 16,
-                                      ),
-                                      label: Text(backoffHint),
-                                      visualDensity: VisualDensity.compact,
-                                      onPressed: () =>
-                                          _applyRecommendedBackoffWeight(
+                                        child: InkWell(
+                                          key: ValueKey('complete-${exSet.id}'),
+                                          excludeFromSemantics: true,
+                                          onTap: () => _toggleSetCompleted(
                                             exercise,
+                                            exSet,
                                             setIndex,
                                           ),
-                                    ),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          child: Container(
+                                            width: 48,
+                                            height: 48,
+                                            decoration: BoxDecoration(
+                                              color: exSet.isCompleted
+                                                  ? colorScheme.tertiary
+                                                  : colorScheme
+                                                        .surfaceContainerHighest,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: Icon(
+                                              Icons.check,
+                                              color: exSet.isCompleted
+                                                  ? colorScheme.onTertiary
+                                                  : colorScheme
+                                                        .onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        key: ValueKey(
+                                          'set-details-${exSet.id}',
+                                        ),
+                                        tooltip: 'RPE, RIR, tipo e note',
+                                        onPressed: () =>
+                                            _showSetDetailsDialog(exSet),
+                                        icon: const Icon(Icons.tune),
+                                      ),
+                                    ],
                                   ),
-                                if (prLabels.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 72,
-                                      top: 4,
+                                  if (isHandoffSet && !exSet.isCompleted)
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        72,
+                                        6,
+                                        8,
+                                        0,
+                                      ),
+                                      child: Container(
+                                        key: ValueKey(
+                                          'handoff-set-${exSet.id}',
+                                        ),
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: colorScheme.primary.withValues(
+                                            alpha: isDark ? 0.18 : 0.10,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.bolt,
+                                              size: 17,
+                                              color: colorScheme.primary,
+                                            ),
+                                            const SizedBox(width: 5),
+                                            Text(
+                                              'TOCCA A TE',
+                                              style: theme.textTheme.labelMedium
+                                                  ?.copyWith(
+                                                    color: colorScheme.primary,
+                                                    fontWeight: FontWeight.w900,
+                                                    letterSpacing: 0.7,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
-                                    child: Wrap(
-                                      spacing: 6,
-                                      runSpacing: 4,
-                                      children: prLabels
-                                          .map(
-                                            (label) => Chip(
-                                              avatar: Icon(
-                                                Icons.emoji_events,
-                                                color: colorScheme.tertiary,
-                                                size: 18,
+                                  if (isCurrentSet && !exSet.isCompleted)
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        72,
+                                        6,
+                                        8,
+                                        0,
+                                      ),
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        child: FilledButton.icon(
+                                          key: ValueKey(
+                                            'thumb-complete-${exSet.id}',
+                                          ),
+                                          onPressed: () => _toggleSetCompleted(
+                                            exercise,
+                                            exSet,
+                                            setIndex,
+                                          ),
+                                          icon: const Icon(Icons.check_circle),
+                                          label: const Text('Completa set'),
+                                        ),
+                                      ),
+                                    ),
+                                  if (previousSetLabel != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 72,
+                                        top: 4,
+                                      ),
+                                      child: ActionChip(
+                                        avatar: const Icon(
+                                          Icons.history,
+                                          size: 16,
+                                        ),
+                                        label: Text(previousSetLabel),
+                                        tooltip:
+                                            'Usa i valori dell’ultima sessione',
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () =>
+                                            _applyPreviousSetValues(
+                                              exercise,
+                                              setIndex,
+                                            ),
+                                      ),
+                                    ),
+                                  if (nextSetHint != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 72,
+                                        top: 2,
+                                      ),
+                                      child: Text(
+                                        nextSetHint,
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: colorScheme.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ),
+                                  if (setVolumeDelta != null &&
+                                      setVolumeDelta > 0)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 72,
+                                        top: 4,
+                                      ),
+                                      child: Chip(
+                                        avatar: Icon(
+                                          Icons.emoji_events,
+                                          color: colorScheme.tertiary,
+                                          size: 18,
+                                        ),
+                                        label: Text(
+                                          'Volume +${_formatVolume(setVolumeDelta)} kg',
+                                        ),
+                                      ),
+                                    ),
+                                  if (backoffHint != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 72,
+                                        top: 4,
+                                      ),
+                                      child: ActionChip(
+                                        avatar: const Icon(
+                                          Icons.touch_app,
+                                          size: 16,
+                                        ),
+                                        label: Text(backoffHint),
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () =>
+                                            _applyRecommendedBackoffWeight(
+                                              exercise,
+                                              setIndex,
+                                            ),
+                                      ),
+                                    ),
+                                  if (prLabels.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 72,
+                                        top: 4,
+                                      ),
+                                      child: Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        children: prLabels
+                                            .map(
+                                              (label) => Chip(
+                                                avatar: Icon(
+                                                  Icons.emoji_events,
+                                                  color: colorScheme.tertiary,
+                                                  size: 18,
+                                                ),
+                                                label: Text(label),
+                                                visualDensity:
+                                                    VisualDensity.compact,
                                               ),
-                                              label: Text(label),
+                                            )
+                                            .toList(),
+                                      ),
+                                    ),
+                                  if (isCurrentSet)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 72,
+                                        top: 4,
+                                      ),
+                                      child: Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        children: [
+                                          PopupMenuButton<SetType>(
+                                            key: ValueKey(
+                                              'set-type-${exSet.id}',
+                                            ),
+                                            tooltip: 'Tipo di set',
+                                            onSelected: (type) {
+                                              setState(() => exSet.type = type);
+                                              _saveCurrentSession();
+                                            },
+                                            itemBuilder: (context) => SetType
+                                                .values
+                                                .map(
+                                                  (type) =>
+                                                      PopupMenuItem<SetType>(
+                                                        value: type,
+                                                        child: Text(type.label),
+                                                      ),
+                                                )
+                                                .toList(),
+                                            child: Chip(
+                                              avatar: Text(
+                                                exSet.type.shortLabel,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
+                                              label: Text(exSet.type.label),
                                               visualDensity:
                                                   VisualDensity.compact,
                                             ),
-                                          )
-                                          .toList(),
-                                    ),
-                                  ),
-                                if (isCurrentSet)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 72,
-                                      top: 4,
-                                    ),
-                                    child: Wrap(
-                                      spacing: 6,
-                                      runSpacing: 4,
-                                      crossAxisAlignment:
-                                          WrapCrossAlignment.center,
-                                      children: [
-                                        PopupMenuButton<SetType>(
-                                          key: ValueKey('set-type-${exSet.id}'),
-                                          tooltip: 'Tipo di set',
-                                          onSelected: (type) {
-                                            setState(() => exSet.type = type);
-                                            _saveCurrentSession();
-                                          },
-                                          itemBuilder: (context) => SetType
-                                              .values
-                                              .map(
-                                                (type) =>
-                                                    PopupMenuItem<SetType>(
-                                                      value: type,
-                                                      child: Text(type.label),
-                                                    ),
-                                              )
-                                              .toList(),
-                                          child: Chip(
-                                            avatar: Text(
-                                              exSet.type.shortLabel,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w900,
-                                              ),
+                                          ),
+                                          ActionChip(
+                                            key: ValueKey('rpe-${exSet.id}'),
+                                            label: Text(
+                                              exSet.rpe == null
+                                                  ? 'RPE —'
+                                                  : 'RPE ${_formatWeight(exSet.rpe!)}',
                                             ),
-                                            label: Text(exSet.type.label),
                                             visualDensity:
                                                 VisualDensity.compact,
+                                            onPressed: () => _pickRpe(exSet),
                                           ),
-                                        ),
-                                        ActionChip(
-                                          key: ValueKey('rpe-${exSet.id}'),
-                                          label: Text(
-                                            exSet.rpe == null
-                                                ? 'RPE —'
-                                                : 'RPE ${_formatWeight(exSet.rpe!)}',
+                                          ActionChip(
+                                            key: ValueKey('rir-${exSet.id}'),
+                                            label: Text(
+                                              exSet.rir == null
+                                                  ? 'RIR —'
+                                                  : 'RIR ${exSet.rir}',
+                                            ),
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            onPressed: () => _pickRir(exSet),
                                           ),
-                                          visualDensity: VisualDensity.compact,
-                                          onPressed: () => _pickRpe(exSet),
-                                        ),
-                                        ActionChip(
-                                          key: ValueKey('rir-${exSet.id}'),
-                                          label: Text(
-                                            exSet.rir == null
-                                                ? 'RIR —'
-                                                : 'RIR ${exSet.rir}',
-                                          ),
-                                          visualDensity: VisualDensity.compact,
-                                          onPressed: () => _pickRir(exSet),
-                                        ),
-                                        ActionChip(
-                                          key: ValueKey('plates-${exSet.id}'),
-                                          avatar: const Icon(
-                                            Icons.calculate,
-                                            size: 16,
-                                          ),
-                                          label: const Text('Piastre'),
-                                          tooltip: 'Plate calculator',
-                                          visualDensity: VisualDensity.compact,
-                                          onPressed: () =>
-                                              showWorkoutPlateCalculator(
-                                                context,
-                                                initialWeight: exSet.weight,
-                                              ),
-                                        ),
-                                        if (exSet.notes.trim().isNotEmpty)
-                                          Chip(
+                                          ActionChip(
+                                            key: ValueKey('plates-${exSet.id}'),
                                             avatar: const Icon(
-                                              Icons.notes,
+                                              Icons.calculate,
                                               size: 16,
                                             ),
-                                            label: Text(exSet.notes),
+                                            label: const Text('Piastre'),
+                                            tooltip: 'Plate calculator',
                                             visualDensity:
                                                 VisualDensity.compact,
+                                            onPressed: () =>
+                                                showWorkoutPlateCalculator(
+                                                  context,
+                                                  initialWeight: exSet.weight,
+                                                ),
                                           ),
-                                      ],
+                                          if (exSet.notes.trim().isNotEmpty)
+                                            Chip(
+                                              avatar: const Icon(
+                                                Icons.notes,
+                                                size: 16,
+                                              ),
+                                              label: Text(exSet.notes),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                            ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                if (!isCurrentSet && setMetadataSummary != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      left: 72,
-                                      top: 4,
-                                      right: 8,
+                                  if (!isCurrentSet &&
+                                      setMetadataSummary != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        left: 72,
+                                        top: 4,
+                                        right: 8,
+                                      ),
+                                      child: Text(
+                                        setMetadataSummary,
+                                        key: ValueKey('set-meta-${exSet.id}'),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color:
+                                                  colorScheme.onSurfaceVariant,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
                                     ),
-                                    child: Text(
-                                      setMetadataSummary,
-                                      key: ValueKey('set-meta-${exSet.id}'),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                    ),
-                                  ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         );
