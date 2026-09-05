@@ -212,6 +212,19 @@ abstract class AiCoachManagedModelInstaller implements AiCoachModelInstaller {
   Future<void> markInferenceFinished();
 }
 
+typedef AiModelInstallStateListener = void Function();
+
+/// Optional capability for installers whose download operation is scoped to
+/// the application rather than a particular route/widget instance.
+abstract class AiCoachObservableModelInstaller
+    implements AiCoachManagedModelInstaller {
+  bool get isInstallInProgress;
+  int? get currentInstallProgress;
+
+  void addInstallStateListener(AiModelInstallStateListener listener);
+  void removeInstallStateListener(AiModelInstallStateListener listener);
+}
+
 abstract class AiModelDeviceProbe {
   const AiModelDeviceProbe();
   Future<AiModelDeviceProfile> inspect();
@@ -323,7 +336,7 @@ class AiModelLifecycleStore {
 }
 
 class FlutterGemmaAiCoachModelInstaller
-    implements AiCoachManagedModelInstaller {
+    implements AiCoachObservableModelInstaller {
   final AiModelDeviceProbe deviceProbe;
   final AiModelLifecycleStore lifecycleStore;
 
@@ -331,6 +344,11 @@ class FlutterGemmaAiCoachModelInstaller
     this.deviceProbe = const PlatformAiModelDeviceProbe(),
     this.lifecycleStore = const AiModelLifecycleStore(),
   });
+
+  static Future<void>? _activeInstallFuture;
+  static int? _activeInstallProgress;
+  static final Set<AiModelInstallStateListener> _installStateListeners =
+      <AiModelInstallStateListener>{};
 
   static const int _gib = 1024 * 1024 * 1024;
   static const int _mib = 1024 * 1024;
@@ -362,6 +380,30 @@ class FlutterGemmaAiCoachModelInstaller
   String get modelSizeLabel => '~2.6 GB';
 
   int get requiredFreeStorageBytes => expectedSizeBytes + (768 * _mib);
+
+  @override
+  bool get isInstallInProgress => _activeInstallFuture != null;
+
+  @override
+  int? get currentInstallProgress => _activeInstallProgress;
+
+  @override
+  void addInstallStateListener(AiModelInstallStateListener listener) {
+    _installStateListeners.add(listener);
+  }
+
+  @override
+  void removeInstallStateListener(AiModelInstallStateListener listener) {
+    _installStateListeners.remove(listener);
+  }
+
+  static void _notifyInstallState() {
+    for (final listener in List<AiModelInstallStateListener>.from(
+      _installStateListeners,
+    )) {
+      listener();
+    }
+  }
 
   @protected
   Future<void> performRuntimeCleanup() => FlutterGemma.performCleanup();
@@ -436,8 +478,9 @@ class FlutterGemmaAiCoachModelInstaller
 
   @override
   Future<void> initialize() async {
-    // flutter_gemma keeps installation metadata and temporary download files.
-    // Cleanup is idempotent and is especially useful after process death.
+    // Route recreation is not process death. Never sweep downloader state
+    // while this Dart process still owns the application-scoped install.
+    if (_activeInstallFuture != null) return;
     await performRuntimeCleanup();
   }
 
@@ -502,6 +545,38 @@ class FlutterGemmaAiCoachModelInstaller
 
   @override
   Future<void> install({void Function(int progress)? onProgress}) async {
+    AiModelInstallStateListener? listener;
+    if (onProgress != null) {
+      listener = () {
+        final progress = _activeInstallProgress;
+        if (progress != null) onProgress(progress);
+      };
+      addInstallStateListener(listener);
+      final progress = _activeInstallProgress;
+      if (progress != null) onProgress(progress);
+    }
+
+    try {
+      _activeInstallProgress ??= 0;
+      _notifyInstallState();
+      _activeInstallFuture ??= _runInstallAndReset();
+      await _activeInstallFuture;
+    } finally {
+      if (listener != null) removeInstallStateListener(listener);
+    }
+  }
+
+  Future<void> _runInstallAndReset() async {
+    try {
+      await _performFreshInstall();
+    } finally {
+      _activeInstallFuture = null;
+      _activeInstallProgress = null;
+      _notifyInstallState();
+    }
+  }
+
+  Future<void> _performFreshInstall() async {
     final preflightReport = await preflight();
     if (!preflightReport.canInstall) {
       throw AiModelInstallException(
@@ -513,7 +588,12 @@ class FlutterGemmaAiCoachModelInstaller
     await lifecycleStore.setPhase('downloading');
     try {
       await performRuntimeCleanup();
-      await installRuntimeModel(onProgress: onProgress);
+      await installRuntimeModel(
+        onProgress: (progress) {
+          _activeInstallProgress = progress.clamp(0, 100);
+          _notifyInstallState();
+        },
+      );
 
       if (!await isInstalled()) {
         throw const AiModelInstallException(
@@ -527,8 +607,12 @@ class FlutterGemmaAiCoachModelInstaller
             expectedSizeBytes: expectedSizeBytes,
             expectedSha256: expectedSha256,
           )) {
+        await removeRuntimeModel();
+        await clearRuntimeInferenceIdentity();
+        await performRuntimeCleanup();
+        await lifecycleStore.clearManifest();
         throw const AiModelInstallException(
-          'Il file scaricato non supera il controllo SHA-256/dimensione. L’installazione è considerata corrotta e va reinstallata.',
+          'Il file scaricato non supera il controllo SHA-256/dimensione. L’artifact corrotto è stato rimosso: reinstalla il modello.',
           retryable: false,
         );
       }
@@ -563,12 +647,14 @@ class FlutterGemmaAiCoachModelInstaller
 
   @override
   Future<void> activateInstalledModel() async {
-    if (!await isInstalled()) {
-      throw StateError('$modelName is not installed.');
-    }
-    if (!await performRuntimeLoadCheck()) {
-      throw StateError('$modelName is installed but failed its runtime check.');
-    }
+    final health = await verifyInstallation();
+    final verifiedLegacy =
+        health.status == AiModelHealthStatus.legacyUnverified &&
+        health.artifactDigestVerified &&
+        health.runtimeLoadVerified;
+    if (health.status == AiModelHealthStatus.healthy || verifiedLegacy) return;
+
+    throw StateError('$modelName cannot be activated: ${health.message}');
   }
 
   @override
@@ -677,6 +763,13 @@ class FlutterGemmaAiCoachModelInstaller
 
   @override
   Future<AiModelRecoveryReport> recoverInterruptedState() async {
+    // Navigation can create a new installer while the same native download is
+    // still alive. That is not an interrupted download and must not trigger
+    // cleanup/cancellation.
+    if (_activeInstallFuture != null) {
+      return const AiModelRecoveryReport();
+    }
+
     final phase = await lifecycleStore.phase();
     if (phase == 'downloading') {
       await performRuntimeCleanup();
@@ -739,6 +832,12 @@ class FlutterGemmaAiCoachModelInstaller
 
   @override
   Future<void> uninstall() async {
+    if (_activeInstallFuture != null) {
+      throw const AiModelInstallException(
+        'Attendi il completamento del download prima di rimuovere il modello.',
+        retryable: false,
+      );
+    }
     await lifecycleStore.setPhase('uninstalling');
     try {
       await removeRuntimeModel();
@@ -753,6 +852,12 @@ class FlutterGemmaAiCoachModelInstaller
 
   @override
   Future<void> reinstall({void Function(int progress)? onProgress}) async {
+    if (_activeInstallFuture != null) {
+      throw const AiModelInstallException(
+        'Un download del modello è già in corso.',
+        retryable: false,
+      );
+    }
     if (await isInstalled()) {
       await uninstall();
     } else {
