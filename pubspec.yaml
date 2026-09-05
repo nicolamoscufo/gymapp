@@ -12,8 +12,12 @@ dependencies:
   fl_chart: ^1.2.0
   flutter:
     sdk: flutter
-  flutter_gemma: ^1.6.5
-  flutter_gemma_litertlm: ^1.5.2
+  # Keep the on-device inference stack pinned until LiteRT/Gemma upgrades are
+  # validated together on ARM64 hardware. These two packages are coupled to
+  # the shipped .litertlm model/runtime contract and must not drift through a
+  # routine dependency refresh.
+  flutter_gemma: 1.6.5
+  flutter_gemma_litertlm: 1.5.2
   flutter_local_notifications: ^19.5.0
   share_plus: ^12.0.2
   shared_preferences: ^2.5.5
