@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'local_sqlite_store.dart';
+import 'persistence_recovery.dart';
 import 'models/body_log.dart';
 import 'models/exercise.dart';
 import 'models/schedule.dart';
@@ -45,12 +46,50 @@ class AppDataBundle {
     this.favoriteExerciseIds = const <String>{},
     required this.recoveredFromCorruption,
   });
+
+  bool get hasAnyData =>
+      schedules.isNotEmpty ||
+      history.isNotEmpty ||
+      scheduleVersions.isNotEmpty ||
+      currentSession != null ||
+      bodyLogs.isNotEmpty ||
+      customExercises.isNotEmpty ||
+      favoriteExerciseIds.isNotEmpty;
+}
+
+class AppDataImportPayload {
+  final AppDataBundle bundle;
+  final bool includesCustomExercises;
+  final bool includesFavoriteExerciseIds;
+  final int? version;
+
+  const AppDataImportPayload({
+    required this.bundle,
+    required this.includesCustomExercises,
+    required this.includesFavoriteExerciseIds,
+    required this.version,
+  });
 }
 
 class AppDataStore {
   static LocalSqliteStore? _sqlite;
+  static bool? _sqliteSupportedOverride;
+
+  @visibleForTesting
+  static void configureSqliteForTesting(LocalSqliteStore store) {
+    _sqlite = store;
+    _sqliteSupportedOverride = true;
+  }
+
+  @visibleForTesting
+  static void resetSqliteForTesting() {
+    _sqlite = null;
+    _sqliteSupportedOverride = null;
+  }
 
   static bool get _sqliteSupported {
+    final override = _sqliteSupportedOverride;
+    if (override != null) return override;
     if (kIsWeb) return false;
     return defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS ||
@@ -59,15 +98,24 @@ class AppDataStore {
 
   static LocalSqliteStore get _sqliteStore => _sqlite ??= LocalSqliteStore();
 
+  static Object? _safePreferenceValue(SharedPreferences prefs, String key) {
+    try {
+      return prefs.get(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static dynamic _decodeJsonOr(
     SharedPreferences prefs,
     String key,
     dynamic fallback,
   ) {
-    final raw = prefs.getString(key);
-    if (raw == null || raw.trim().isEmpty) return fallback;
+    final value = _safePreferenceValue(prefs, key);
+    if (value == null) return fallback;
+    if (value is! String || value.trim().isEmpty) return fallback;
     try {
-      return jsonDecode(raw);
+      return jsonDecode(value);
     } catch (_) {
       return fallback;
     }
@@ -78,124 +126,126 @@ class AppDataStore {
     String key,
     T Function(Map<String, dynamic>) fromJson,
   ) {
-    final raw = prefs.getString(key);
-    if (raw == null || raw.trim().isEmpty) return [];
+    final value = _safePreferenceValue(prefs, key);
+    if (value == null) return [];
+    if (value is! String || value.trim().isEmpty) return [];
     try {
-      return (jsonDecode(raw) as List<dynamic>)
-          .whereType<Map>()
-          .map((entry) => fromJson(Map<String, dynamic>.from(entry)))
-          .toList();
+      final decoded = jsonDecode(value);
+      if (decoded is! List) return [];
+      final result = <T>[];
+      for (final entry in decoded) {
+        if (entry is! Map) continue;
+        try {
+          result.add(fromJson(Map<String, dynamic>.from(entry)));
+        } catch (_) {
+          // A single broken legacy row must not erase valid siblings.
+        }
+      }
+      return result;
     } catch (_) {
       return [];
     }
   }
 
   static Set<String> _legacyFavoriteIds(SharedPreferences prefs) {
-    final raw = prefs.getString(AppDataKeys.favoriteExerciseIds);
-    if (raw == null || raw.trim().isEmpty) return <String>{};
+    final value = _safePreferenceValue(prefs, AppDataKeys.favoriteExerciseIds);
+    if (value == null) return <String>{};
+    if (value is! String || value.trim().isEmpty) return <String>{};
     try {
-      return (jsonDecode(raw) as List<dynamic>)
-          .map((e) => e.toString())
+      final decoded = jsonDecode(value);
+      if (decoded is! List) return <String>{};
+      return decoded
+          .whereType<String>()
+          .map((entry) => entry.trim())
+          .where((entry) => entry.isNotEmpty)
           .toSet();
     } catch (_) {
       return <String>{};
     }
   }
 
-  static AppDataBundle _loadLegacyBundle(SharedPreferences prefs) {
-    var recovered = false;
-
-    List<T> checkedList<T>(
-      String key,
-      T Function(Map<String, dynamic>) parser,
-    ) {
-      final raw = prefs.getString(key);
-      if (raw == null || raw.trim().isEmpty) return [];
-      try {
-        return (jsonDecode(raw) as List<dynamic>)
-            .whereType<Map>()
-            .map((entry) => parser(Map<String, dynamic>.from(entry)))
-            .toList();
-      } catch (_) {
-        recovered = true;
-        return [];
-      }
-    }
-
-    WorkoutSession? current;
-    final rawCurrent = prefs.getString(AppDataKeys.currentSession);
-    if (rawCurrent != null && rawCurrent.trim().isNotEmpty) {
-      try {
-        current = WorkoutSession.fromJson(
-          Map<String, dynamic>.from(jsonDecode(rawCurrent) as Map),
-        );
-      } catch (_) {
-        recovered = true;
-      }
-    }
-
-    final bundle = AppDataBundle(
-      schedules: checkedList(AppDataKeys.schedules, Schedule.fromJson),
-      history: checkedList(AppDataKeys.history, WorkoutSession.fromJson),
-      scheduleVersions: checkedList(
-        AppDataKeys.scheduleVersions,
-        ScheduleVersion.fromJson,
-      ),
-      currentSession: current,
-      bodyLogs: checkedList(AppDataKeys.bodyLogs, BodyLog.fromJson),
-      customExercises: checkedList(
-        AppDataKeys.customExercises,
-        Exercise.fromJson,
-      ),
-      favoriteExerciseIds: _legacyFavoriteIds(prefs),
-      recoveredFromCorruption: recovered,
+  static AppDataBundle _bundleFromSnapshot(
+    PersistenceRecoverySnapshot snapshot, {
+    bool forceRecovered = false,
+  }) {
+    return AppDataBundle(
+      schedules: snapshot.schedules,
+      history: snapshot.history,
+      scheduleVersions: snapshot.scheduleVersions,
+      currentSession: snapshot.currentSession,
+      bodyLogs: snapshot.bodyLogs,
+      customExercises: snapshot.customExercises,
+      favoriteExerciseIds: snapshot.favoriteExerciseIds,
+      recoveredFromCorruption:
+          forceRecovered || snapshot.recoveredFromCorruption,
     );
-    if (!recovered) return bundle;
-    return _bundleFromAutoBackup(prefs) ?? bundle;
+  }
+
+  static AppDataBundle _markRecovered(AppDataBundle bundle) {
+    if (bundle.recoveredFromCorruption) return bundle;
+    return AppDataBundle(
+      schedules: bundle.schedules,
+      history: bundle.history,
+      scheduleVersions: bundle.scheduleVersions,
+      currentSession: bundle.currentSession,
+      bodyLogs: bundle.bodyLogs,
+      customExercises: bundle.customExercises,
+      favoriteExerciseIds: bundle.favoriteExerciseIds,
+      recoveredFromCorruption: true,
+    );
+  }
+
+  static AppDataImportPayload parseBackupText(String rawText) {
+    final snapshot = PersistenceRecoveryDecoder.decodeBackupText(rawText);
+    return AppDataImportPayload(
+      bundle: _bundleFromSnapshot(snapshot),
+      includesCustomExercises: snapshot.includesCustomExercises,
+      includesFavoriteExerciseIds: snapshot.includesFavoriteExerciseIds,
+      version: snapshot.version,
+    );
+  }
+
+  static AppDataBundle _loadLegacyBundle(SharedPreferences prefs) {
+    final values = <String, Object?>{
+      AppDataKeys.schedules: _safePreferenceValue(prefs, AppDataKeys.schedules),
+      AppDataKeys.scheduleVersions: _safePreferenceValue(
+        prefs,
+        AppDataKeys.scheduleVersions,
+      ),
+      AppDataKeys.history: _safePreferenceValue(prefs, AppDataKeys.history),
+      AppDataKeys.currentSession: _safePreferenceValue(
+        prefs,
+        AppDataKeys.currentSession,
+      ),
+      AppDataKeys.bodyLogs: _safePreferenceValue(prefs, AppDataKeys.bodyLogs),
+      AppDataKeys.customExercises: _safePreferenceValue(
+        prefs,
+        AppDataKeys.customExercises,
+      ),
+      AppDataKeys.favoriteExerciseIds: _safePreferenceValue(
+        prefs,
+        AppDataKeys.favoriteExerciseIds,
+      ),
+    };
+    final snapshot = PersistenceRecoveryDecoder.decodeLegacyStorage(values);
+    final bundle = _bundleFromSnapshot(snapshot);
+
+    // A malformed top-level preference can mean a torn/corrupted write. Prefer
+    // the last coherent auto-backup in that case. Entry-level corruption is
+    // salvaged in place so one bad row does not roll back all newer data.
+    if (snapshot.rootCorruption) {
+      final backup = _bundleFromAutoBackup(prefs);
+      if (backup != null) return backup;
+    }
+    return bundle;
   }
 
   static AppDataBundle? _bundleFromAutoBackup(SharedPreferences prefs) {
-    final rawBackup = prefs.getString(AppDataKeys.autoBackupJson);
-    if (rawBackup == null || rawBackup.trim().isEmpty) return null;
+    final value = _safePreferenceValue(prefs, AppDataKeys.autoBackupJson);
+    if (value is! String || value.trim().isEmpty) return null;
     try {
-      final backupMap = Map<String, dynamic>.from(jsonDecode(rawBackup) as Map);
-      return AppDataBundle(
-        schedules: (backupMap['schedules'] as List? ?? [])
-            .whereType<Map>()
-            .map((entry) => Schedule.fromJson(Map<String, dynamic>.from(entry)))
-            .toList(),
-        scheduleVersions: (backupMap['scheduleVersions'] as List? ?? [])
-            .whereType<Map>()
-            .map(
-              (entry) =>
-                  ScheduleVersion.fromJson(Map<String, dynamic>.from(entry)),
-            )
-            .toList(),
-        history: (backupMap['history'] as List? ?? [])
-            .whereType<Map>()
-            .map(
-              (entry) =>
-                  WorkoutSession.fromJson(Map<String, dynamic>.from(entry)),
-            )
-            .toList(),
-        currentSession: backupMap['currentSession'] == null
-            ? null
-            : WorkoutSession.fromJson(
-                Map<String, dynamic>.from(backupMap['currentSession'] as Map),
-              ),
-        bodyLogs: (backupMap['bodyLogs'] as List? ?? [])
-            .whereType<Map>()
-            .map((entry) => BodyLog.fromJson(Map<String, dynamic>.from(entry)))
-            .toList(),
-        customExercises: (backupMap['customExercises'] as List? ?? [])
-            .whereType<Map>()
-            .map((entry) => Exercise.fromJson(Map<String, dynamic>.from(entry)))
-            .toList(),
-        favoriteExerciseIds: (backupMap['favoriteExerciseIds'] as List? ?? [])
-            .map((entry) => entry.toString())
-            .toSet(),
-        recoveredFromCorruption: true,
-      );
+      final snapshot = PersistenceRecoveryDecoder.decodeBackupText(value);
+      return _bundleFromSnapshot(snapshot, forceRecovered: true);
     } catch (_) {
       return null;
     }
@@ -272,12 +322,19 @@ class AppDataStore {
   static Future<void> _ensureSqliteMigration() async {
     final store = _sqliteStore;
     if (await store.migrationComplete) return;
-    if (await store.hasAnyData) {
+
+    final prefs = await SharedPreferences.getInstance();
+    final legacy = _loadLegacyBundle(prefs);
+    final sqliteHasData = await store.hasAnyData;
+
+    // Older builds could leave a partial SQLite graph before the migration
+    // marker was written. If a coherent legacy/backup snapshot still exists,
+    // rerun the now-atomic migration instead of blessing the partial DB.
+    if (sqliteHasData && !legacy.hasAnyData) {
       await store.markMigrationComplete();
       return;
     }
-    final prefs = await SharedPreferences.getInstance();
-    final legacy = _loadLegacyBundle(prefs);
+
     await store.migrateLegacyData(
       schedules: legacy.schedules,
       history: legacy.history,
@@ -287,6 +344,14 @@ class AppDataStore {
       customExercises: legacy.customExercises,
       favoriteExerciseIds: legacy.favoriteExerciseIds,
     );
+  }
+
+  static bool _looksLikeStoredDataCorruption(Object error) {
+    if (error is FormatException || error is TypeError) return true;
+    final message = error.toString().toLowerCase();
+    return message.contains('database disk image is malformed') ||
+        message.contains('file is not a database') ||
+        message.contains('malformed database');
   }
 
   static Future<AppDataBundle> loadBundle() async {
@@ -305,11 +370,16 @@ class AppDataStore {
           recoveredFromCorruption: false,
         );
         return await _backfillScheduleHistory(bundle, persistSqlite: true);
-      } catch (_) {
+      } catch (error) {
         final prefs = await SharedPreferences.getInstance();
         final fallback =
             _bundleFromAutoBackup(prefs) ?? _loadLegacyBundle(prefs);
-        return _backfillScheduleHistory(fallback, persistSqlite: false);
+        return _backfillScheduleHistory(
+          _looksLikeStoredDataCorruption(error)
+              ? _markRecovered(fallback)
+              : fallback,
+          persistSqlite: false,
+        );
       }
     }
     final prefs = await SharedPreferences.getInstance();
