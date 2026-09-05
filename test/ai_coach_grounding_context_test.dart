@@ -30,6 +30,23 @@ void main() {
       expect((exercises.first as Map)['name'], 'Panca piana');
     });
 
+    test('exposes exactly what survived the context budget', () {
+      final encoded = AiCoachContextBudget.encode(
+        _largeGroundedContext(),
+        charBudget: 7000,
+        keepProgramHistory: false,
+      );
+      final diagnostics = AiCoachContextBudget.lastDiagnostics;
+
+      expect(diagnostics, isNotNull);
+      expect(diagnostics!.encodedChars, encoded.length);
+      expect(diagnostics.budgetChars, 3600);
+      expect(diagnostics.activePlanCount, greaterThan(0));
+      expect(diagnostics.planTitles, contains('Petto'));
+      expect(diagnostics.exerciseNames, contains('Panca piana'));
+      expect(diagnostics.topLevelKeys, contains('active_plans'));
+    });
+
     test('drops bulky catalog metadata before dropping the user plan', () {
       final source = <String, dynamic>{
         'generated_at': '2026-09-05T19:00:00.000',
