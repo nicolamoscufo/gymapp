@@ -1,7 +1,49 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
+class AiCoachContextDiagnostics {
+  final int encodedChars;
+  final int budgetChars;
+  final int activePlanCount;
+  final int workoutCount;
+  final int bodyLogCount;
+  final bool hasVerifiedEvidence;
+  final bool truncated;
+  final List<String> topLevelKeys;
+  final List<String> planTitles;
+  final List<String> exerciseNames;
+
+  const AiCoachContextDiagnostics({
+    required this.encodedChars,
+    required this.budgetChars,
+    required this.activePlanCount,
+    required this.workoutCount,
+    required this.bodyLogCount,
+    required this.hasVerifiedEvidence,
+    required this.truncated,
+    required this.topLevelKeys,
+    required this.planTitles,
+    required this.exerciseNames,
+  });
+
+  String toLogLine() {
+    final titles = planTitles.isEmpty ? '-' : planTitles.join('|');
+    final exercises = exerciseNames.isEmpty ? '-' : exerciseNames.join('|');
+    return 'chars=$encodedChars/$budgetChars '
+        'plans=$activePlanCount workouts=$workoutCount body_logs=$bodyLogCount '
+        'verified=$hasVerifiedEvidence truncated=$truncated '
+        'plan_titles=$titles exercises=$exercises '
+        'keys=${topLevelKeys.join('|')}';
+  }
+}
+
 class AiCoachContextBudget {
   const AiCoachContextBudget._();
+
+  /// Last bounded payload observed in this process. This is developer
+  /// diagnostics only; it is never persisted and never sent back into the LLM.
+  static AiCoachContextDiagnostics? lastDiagnostics;
 
   /// Keep enough headroom for the stable system contract, the current user
   /// turn and the generated reply inside Gemma's 4096-token KV cache.
@@ -35,7 +77,7 @@ class AiCoachContextBudget {
     );
 
     String encoded = jsonEncode(context);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     context['workouts'] = _tail(context['workouts'], 2);
     context['body_logs'] = _tail(context['body_logs'], 4);
@@ -45,19 +87,19 @@ class AiCoachContextBudget {
       context['verified_evidence'] = _compactVerifiedEvidence(verifiedEvidence);
     }
     encoded = jsonEncode(context);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     // Exercise catalog rows are useful metadata, but they are lower priority
     // than actual user history, active plans and verified derived evidence.
     context.remove('exercise_catalog');
     encoded = jsonEncode(context);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     if (!keepProgramHistory) {
       context.remove('program_change_effectiveness');
       context.remove('program_history');
       encoded = jsonEncode(context);
-      if (encoded.length <= budget) return encoded;
+      if (encoded.length <= budget) return _finish(encoded, budget: budget);
     }
 
     final analytics = context['deterministic_analytics'];
@@ -68,7 +110,7 @@ class AiCoachContextBudget {
       context['deterministic_analytics'] = compactAnalytics;
     }
     encoded = jsonEncode(context);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     context['active_plans'] = _compactActivePlans(
       context['active_plans'],
@@ -76,20 +118,20 @@ class AiCoachContextBudget {
       maxExercises: 8,
     );
     encoded = jsonEncode(context);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     // Prefer concise verified evidence over duplicated long-form raw payloads.
     context.remove('notes');
     encoded = jsonEncode(context);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     context.remove('body_logs');
     encoded = jsonEncode(context);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     context['workouts'] = _tail(context['workouts'], 1);
     encoded = jsonEncode(context);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     // When longitudinal history is explicitly requested, sacrifice raw workout
     // details before removing program history. Otherwise program history has
@@ -97,24 +139,24 @@ class AiCoachContextBudget {
     if (keepProgramHistory) {
       context.remove('workouts');
       encoded = jsonEncode(context);
-      if (encoded.length <= budget) return encoded;
+      if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
       context.remove('program_change_effectiveness');
       encoded = jsonEncode(context);
-      if (encoded.length <= budget) return encoded;
+      if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
       context.remove('program_history');
       encoded = jsonEncode(context);
-      if (encoded.length <= budget) return encoded;
+      if (encoded.length <= budget) return _finish(encoded, budget: budget);
     } else {
       context.remove('workouts');
       encoded = jsonEncode(context);
-      if (encoded.length <= budget) return encoded;
+      if (encoded.length <= budget) return _finish(encoded, budget: budget);
     }
 
     context.remove('deterministic_analytics');
     encoded = jsonEncode(context);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     // Build a high-signal grounding core before generic clipping. The key
     // invariant is that a non-empty active plan is not silently discarded just
@@ -132,14 +174,14 @@ class AiCoachContextBudget {
     }..removeWhere((_, value) => value == null);
 
     encoded = jsonEncode(groundingCore);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     final verified = groundingCore['verified_evidence'];
     if (verified is Map) {
       final compact = _compactVerifiedEvidence(verified);
       groundingCore['verified_evidence'] = compact;
       encoded = jsonEncode(groundingCore);
-      if (encoded.length <= budget) return encoded;
+      if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
       for (final family in const [
         'strength',
@@ -149,7 +191,7 @@ class AiCoachContextBudget {
       ]) {
         compact.remove(family);
         encoded = jsonEncode(groundingCore);
-        if (encoded.length <= budget) return encoded;
+        if (encoded.length <= budget) return _finish(encoded, budget: budget);
       }
     }
 
@@ -159,15 +201,15 @@ class AiCoachContextBudget {
       maxExercises: 4,
     );
     encoded = jsonEncode(groundingCore);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     groundingCore.remove('user_profile');
     encoded = jsonEncode(groundingCore);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     groundingCore.remove('memory');
     encoded = jsonEncode(groundingCore);
-    if (encoded.length <= budget) return encoded;
+    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
     // If there is an active plan, preserve at least a compact plan snapshot so
     // questions such as "riesci a vedere la mia scheda?" cannot degrade into a
@@ -182,7 +224,7 @@ class AiCoachContextBudget {
     };
     if ((planOnly['active_plans'] as List).isNotEmpty) {
       encoded = jsonEncode(planOnly);
-      if (encoded.length <= budget) return encoded;
+      if (encoded.length <= budget) return _finish(encoded, budget: budget);
     }
 
     // Last-resort clipping keeps the payload valid JSON. This protects the
@@ -197,11 +239,70 @@ class AiCoachContextBudget {
         depth: 0,
       );
       encoded = jsonEncode(clipped);
-      if (encoded.length <= budget) return encoded;
+      if (encoded.length <= budget) return _finish(encoded, budget: budget);
     }
 
     const fallback = '{"context_truncated":true}';
-    return fallback.length <= budget ? fallback : '{}';
+    final result = fallback.length <= budget ? fallback : '{}';
+    return _finish(result, budget: budget);
+  }
+
+  static String _finish(String encoded, {required int budget}) {
+    AiCoachContextDiagnostics diagnostics;
+    try {
+      final raw = jsonDecode(encoded);
+      final decoded = raw is Map
+          ? Map<String, dynamic>.from(raw)
+          : <String, dynamic>{};
+      final plans = (decoded['active_plans'] as List? ?? const <dynamic>[])
+          .whereType<Map>()
+          .toList();
+      final workouts = decoded['workouts'] as List? ?? const <dynamic>[];
+      final bodyLogs = decoded['body_logs'] as List? ?? const <dynamic>[];
+      final planTitles = <String>[];
+      final exerciseNames = <String>[];
+      for (final rawPlan in plans.take(4)) {
+        final plan = Map<String, dynamic>.from(rawPlan);
+        final title = plan['title']?.toString().trim() ?? '';
+        if (title.isNotEmpty) planTitles.add(title);
+        final exercises = plan['exercises'] as List? ?? const <dynamic>[];
+        for (final rawExercise in exercises.whereType<Map>().take(12)) {
+          final name = rawExercise['name']?.toString().trim() ?? '';
+          if (name.isNotEmpty) exerciseNames.add(name);
+        }
+      }
+      diagnostics = AiCoachContextDiagnostics(
+        encodedChars: encoded.length,
+        budgetChars: budget,
+        activePlanCount: plans.length,
+        workoutCount: workouts.length,
+        bodyLogCount: bodyLogs.length,
+        hasVerifiedEvidence: decoded['verified_evidence'] is Map,
+        truncated: decoded['context_truncated'] == true,
+        topLevelKeys: decoded.keys.toList(growable: false),
+        planTitles: planTitles,
+        exerciseNames: exerciseNames,
+      );
+    } catch (_) {
+      diagnostics = AiCoachContextDiagnostics(
+        encodedChars: encoded.length,
+        budgetChars: budget,
+        activePlanCount: 0,
+        workoutCount: 0,
+        bodyLogCount: 0,
+        hasVerifiedEvidence: false,
+        truncated: true,
+        topLevelKeys: const [],
+        planTitles: const [],
+        exerciseNames: const [],
+      );
+    }
+
+    lastDiagnostics = diagnostics;
+    if (kDebugMode) {
+      debugPrint('[AI_COACH_CONTEXT] ${diagnostics.toLogLine()}');
+    }
+    return encoded;
   }
 
   static Map<String, dynamic> _compactVerifiedEvidence(Map raw) {
