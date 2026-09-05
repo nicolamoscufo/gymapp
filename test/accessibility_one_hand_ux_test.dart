@@ -41,7 +41,6 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
 
     final set = ExerciseSet(id: 'set_accessible', weight: 80, reps: 8);
     final exercise = _exercise('Panca', [set]);
@@ -56,30 +55,27 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final compactComplete = find.byKey(const ValueKey('complete-set_accessible'));
+    final compactComplete = find.byKey(
+      const ValueKey('complete-set_accessible'),
+    );
     await tester.ensureVisible(compactComplete);
     await tester.pumpAndSettle();
 
     final size = tester.getSize(compactComplete);
     expect(size.width, greaterThanOrEqualTo(48));
     expect(size.height, greaterThanOrEqualTo(48));
-    expect(
-      find.bySemanticsLabel('Panca, set 1, carico in kg'),
-      findsOneWidget,
-    );
-    expect(
-      find.bySemanticsLabel('Panca, set 1, ripetizioni'),
-      findsOneWidget,
-    );
-    expect(
-      find.bySemanticsLabel('Panca, set 1: completa set'),
-      findsOneWidget,
-    );
+    expect(find.bySemanticsLabel('Panca, set 1, carico in kg'), findsOneWidget);
+    expect(find.bySemanticsLabel('Panca, set 1, ripetizioni'), findsOneWidget);
+    expect(find.bySemanticsLabel('Panca, set 1: completa set'), findsOneWidget);
 
     final rowSemantics = tester.getSemantics(
       find.byKey(const ValueKey('set-semantics-set_accessible')),
     );
-    expect(rowSemantics.getSemanticsData().customSemanticsActionIds, isNotEmpty);
+    expect(
+      rowSemantics.getSemanticsData().customSemanticsActionIds,
+      isNotEmpty,
+    );
+    semantics.dispose();
   });
 
   testWidgets('active workout supports 200 percent text on a narrow phone', (
@@ -129,7 +125,6 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -164,61 +159,66 @@ void main() {
       findsOneWidget,
     );
     expect(find.bySemanticsLabel('Salta il recupero'), findsOneWidget);
+    semantics.dispose();
   });
 
-  testWidgets('exercise navigation and compact card remain usable at 200 percent', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(320, 720);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
-    final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
+  testWidgets(
+    'exercise navigation and compact card remain usable at 200 percent',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 720);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final semantics = tester.ensureSemantics();
 
-    final first = _exercise('Panca piana con bilanciere', [
-      ExerciseSet(weight: 80, reps: 8),
-    ]);
-    final second = _exercise('Rematore con manubrio', [
-      ExerciseSet(weight: 40, reps: 10),
-    ]);
+      final first = _exercise('Panca piana con bilanciere', [
+        ExerciseSet(weight: 80, reps: 8),
+      ]);
+      final second = _exercise('Rematore con manubrio', [
+        ExerciseSet(weight: 40, reps: 10),
+      ]);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: MediaQuery(
-          data: const MediaQueryData(textScaler: TextScaler.linear(2.0)),
-          child: Scaffold(
-            body: ListView(
-              children: [
-                WorkoutExerciseJumpBar(
-                  exercises: [first, second],
-                  onSelected: (_) {},
-                ),
-                WorkoutCompactExerciseCard(
-                  exerciseId: second.id,
-                  name: second.name,
-                  completedSets: 1,
-                  totalSets: 3,
-                  nextPrescription: '40 kg × 10',
-                  isComplete: false,
-                  accent: Colors.blue,
-                  onTap: () {},
-                ),
-              ],
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2.0)),
+            child: Scaffold(
+              body: ListView(
+                children: [
+                  WorkoutExerciseJumpBar(
+                    exercises: [first, second],
+                    onSelected: (_) {},
+                  ),
+                  WorkoutCompactExerciseCard(
+                    exerciseId: second.id,
+                    name: second.name,
+                    completedSets: 1,
+                    totalSets: 3,
+                    nextPrescription: '40 kg × 10',
+                    isComplete: false,
+                    accent: Colors.blue,
+                    onTap: () {},
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(tester.takeException(), isNull);
-    expect(find.bySemanticsLabel('Vai a Rematore con manubrio'), findsOneWidget);
-    expect(
-      find.bySemanticsLabel(
-        'Rematore con manubrio. 1/3 set · prossimo 40 kg × 10. Tocca per aprire.',
-      ),
-      findsOneWidget,
-    );
-  });
+      expect(tester.takeException(), isNull);
+      expect(
+        find.bySemanticsLabel('Vai a Panca piana con bilanciere'),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(
+          'Rematore con manubrio. 1/3 set · prossimo 40 kg × 10. Tocca per aprire.',
+        ),
+        findsOneWidget,
+      );
+      semantics.dispose();
+    },
+  );
 }
