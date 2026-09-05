@@ -7,27 +7,21 @@ import 'package:gymapp/ai_coach/ai_coach_generation_profile.dart';
 void main() {
   group('AI Coach grounding context', () {
     test('keeps the active program under severe context pressure', () {
-      final source = _largeGroundedContext();
-
       final encoded = AiCoachContextBudget.encode(
-        source,
+        _largeGroundedContext(),
         charBudget: 7000,
         keepProgramHistory: false,
       );
 
-      // The public service still asks for a 7000-char budget, but the encoder
-      // must enforce a substantially smaller model-safe payload for Gemma's
-      // 4096-token total context window.
-      expect(encoded.length, lessThanOrEqualTo(3600));
+      expect(encoded.length, lessThanOrEqualTo(2600));
 
       final decoded = jsonDecode(encoded) as Map<String, dynamic>;
-      final plans = decoded['active_plans'] as List? ?? const <dynamic>[];
-      expect(plans, isNotEmpty);
-      expect((plans.first as Map)['title'], 'Petto');
-
-      final exercises = (plans.first as Map)['exercises'] as List? ?? const [];
-      expect(exercises, isNotEmpty);
-      expect((exercises.first as Map)['name'], 'Panca piana');
+      expect(decoded['context_format'], 'mobile_capsule_v1');
+      expect(decoded['user_data_available'], isTrue);
+      final capsule = decoded['capsule'] as String;
+      expect(capsule, contains('USER_DATA_AVAILABLE=true'));
+      expect(capsule, contains('PLAN Petto'));
+      expect(capsule, contains('EX Panca piana'));
     });
 
     test('exposes exactly what survived the context budget', () {
@@ -40,23 +34,26 @@ void main() {
 
       expect(diagnostics, isNotNull);
       expect(diagnostics!.encodedChars, encoded.length);
-      expect(diagnostics.budgetChars, 3600);
+      expect(diagnostics.budgetChars, 2600);
       expect(diagnostics.activePlanCount, greaterThan(0));
       expect(diagnostics.planTitles, contains('Petto'));
       expect(diagnostics.exerciseNames, contains('Panca piana'));
-      expect(diagnostics.topLevelKeys, contains('active_plans'));
+      expect(diagnostics.topLevelKeys, contains('capsule'));
+      expect(diagnostics.topLevelKeys, contains('context_format'));
     });
 
-    test('drops bulky catalog metadata before dropping the user plan', () {
+    test('bulky reference metadata cannot displace the user plan', () {
       final source = <String, dynamic>{
         'generated_at': '2026-09-05T19:00:00.000',
         'active_plans': [_chestPlan()],
         'exercise_catalog': {
-          'items': List.generate(
+          'source': 'local_exercise_catalog',
+          'matches': List.generate(
             50,
             (index) => {
+              'catalog_id': 'catalog-$index',
               'name': 'Catalog exercise $index',
-              'instructions': _repeat('catalog metadata ', 40),
+              'instructions': [_repeat('catalog metadata ', 40)],
             },
           ),
         },
@@ -68,12 +65,13 @@ void main() {
         keepProgramHistory: false,
       );
       final decoded = jsonDecode(encoded) as Map<String, dynamic>;
+      final capsule = decoded['capsule'] as String;
 
       expect(encoded.length, lessThanOrEqualTo(1800));
-      expect(decoded.containsKey('exercise_catalog'), isFalse);
-      final plans = decoded['active_plans'] as List? ?? const <dynamic>[];
-      expect(plans, isNotEmpty);
-      expect((plans.first as Map)['title'], 'Petto');
+      expect(decoded['context_format'], 'mobile_capsule_v1');
+      expect(capsule, contains('PLAN Petto'));
+      expect(capsule, contains('EX Panca piana'));
+      expect(capsule.length, lessThan(1700));
     });
 
     test('generation profiles do not reserve a quarter of the KV cache', () {
@@ -105,6 +103,7 @@ Map<String, dynamic> _largeGroundedContext() {
       (sessionIndex) => {
         'id': 'session-$sessionIndex',
         'name': 'Sessione $sessionIndex',
+        'start_time': '2026-08-${(sessionIndex + 1).toString().padLeft(2, '0')}T18:00:00',
         'notes': _repeat('nota allenamento ', 50),
         'exercises': List.generate(
           8,
@@ -116,6 +115,7 @@ Map<String, dynamic> _largeGroundedContext() {
                 'weight': 80 + setIndex,
                 'reps': 8,
                 'completed': true,
+                'warmup': false,
                 'notes': _repeat('set note ', 20),
               },
             ),
@@ -126,6 +126,7 @@ Map<String, dynamic> _largeGroundedContext() {
     'body_logs': List.generate(
       10,
       (index) => {
+        'date': '2026-08-${(index + 1).toString().padLeft(2, '0')}',
         'bodyWeight': 78.0 + (index / 10),
         'notes': _repeat('body note ', 30),
       },
@@ -182,11 +183,13 @@ Map<String, dynamic> _largeGroundedContext() {
       },
     },
     'exercise_catalog': {
-      'items': List.generate(
+      'source': 'local_exercise_catalog',
+      'matches': List.generate(
         40,
         (index) => {
+          'catalog_id': 'catalog-$index',
           'name': 'Catalog $index',
-          'instructions': _repeat('catalog instructions ', 35),
+          'instructions': [_repeat('catalog instructions ', 35)],
         },
       ),
     },
