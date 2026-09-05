@@ -1,5 +1,7 @@
 from pathlib import Path
 
+# Fix the one-shot patcher's method matching so it only rewrites the Gemma
+# runtime and handles generateText's one-line signature.
 path = Path('tool/patch_ai_model_fault_injection.py')
 text = path.read_text()
 
@@ -68,5 +70,24 @@ if text.count(old_branch) != 1:
         f'expected one method-branch anchor, found {text.count(old_branch)}'
     )
 text = text.replace(old_branch, new_branch, 1)
-
 path.write_text(text)
+
+# Keep the model-management status switch exhaustive after introducing the
+# integrityMismatch and integrityUnverified states.
+ui_path = Path('lib/screens/ai_model_management.dart')
+ui = ui_path.read_text()
+old_labels = """      AiModelHealthStatus.legacyUnverified => 'Legacy / non verificato',
+      AiModelHealthStatus.versionMismatch => 'Versione diversa',
+      AiModelHealthStatus.runtimeBroken => 'Runtime non valido',
+"""
+new_labels = """      AiModelHealthStatus.legacyUnverified => 'Legacy / non verificato',
+      AiModelHealthStatus.versionMismatch => 'Versione diversa',
+      AiModelHealthStatus.integrityMismatch => 'File corrotto',
+      AiModelHealthStatus.integrityUnverified => 'Integrità non verificata',
+      AiModelHealthStatus.runtimeBroken => 'Runtime non valido',
+"""
+if ui.count(old_labels) != 1:
+    raise RuntimeError(
+        f'expected one health-label switch anchor, found {ui.count(old_labels)}'
+    )
+ui_path.write_text(ui.replace(old_labels, new_labels, 1))
