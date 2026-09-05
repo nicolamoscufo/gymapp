@@ -12,6 +12,8 @@ enum AiModelHealthStatus {
   healthy,
   legacyUnverified,
   versionMismatch,
+  integrityMismatch,
+  integrityUnverified,
   runtimeBroken,
 }
 
@@ -92,6 +94,9 @@ class AiModelHealthReport {
   final String message;
   final String modelVersion;
   final String expectedSha256;
+  final String actualSha256;
+  final int? actualSizeBytes;
+  final bool artifactDigestVerified;
   final bool runtimeLoadVerified;
 
   const AiModelHealthReport({
@@ -99,6 +104,9 @@ class AiModelHealthReport {
     required this.message,
     this.modelVersion = '',
     this.expectedSha256 = '',
+    this.actualSha256 = '',
+    this.actualSizeBytes,
+    this.artifactDigestVerified = false,
     this.runtimeLoadVerified = false,
   });
 
@@ -108,6 +116,49 @@ class AiModelHealthReport {
     status: AiModelHealthStatus.notInstalled,
     message: 'Modello non installato.',
   );
+}
+
+class AiModelArtifactInspection {
+  final bool available;
+  final bool exists;
+  final int? sizeBytes;
+  final String sha256;
+  final String? error;
+
+  const AiModelArtifactInspection({
+    required this.available,
+    this.exists = false,
+    this.sizeBytes,
+    this.sha256 = '',
+    this.error,
+  });
+
+  const AiModelArtifactInspection.unavailable([String? reason])
+    : available = false,
+      exists = false,
+      sizeBytes = null,
+      sha256 = '',
+      error = reason;
+
+  factory AiModelArtifactInspection.fromMap(Map<dynamic, dynamic> map) {
+    return AiModelArtifactInspection(
+      available: true,
+      exists: map['exists'] == true,
+      sizeBytes: (map['sizeBytes'] as num?)?.toInt(),
+      sha256: map['sha256']?.toString().toLowerCase() ?? '',
+      error: map['error']?.toString(),
+    );
+  }
+
+  bool matches({
+    required int expectedSizeBytes,
+    required String expectedSha256,
+  }) {
+    return available &&
+        exists &&
+        sizeBytes == expectedSizeBytes &&
+        sha256 == expectedSha256.toLowerCase();
+  }
 }
 
 class AiModelRecoveryReport {
@@ -161,6 +212,19 @@ abstract class AiCoachManagedModelInstaller implements AiCoachModelInstaller {
   Future<void> markInferenceFinished();
 }
 
+typedef AiModelInstallStateListener = void Function();
+
+/// Optional capability for installers whose download operation is scoped to
+/// the application rather than a particular route/widget instance.
+abstract class AiCoachObservableModelInstaller
+    implements AiCoachManagedModelInstaller {
+  bool get isInstallInProgress;
+  int? get currentInstallProgress;
+
+  void addInstallStateListener(AiModelInstallStateListener listener);
+  void removeInstallStateListener(AiModelInstallStateListener listener);
+}
+
 abstract class AiModelDeviceProbe {
   const AiModelDeviceProbe();
   Future<AiModelDeviceProfile> inspect();
@@ -199,6 +263,7 @@ class AiModelLifecycleStore {
   static const _sizeKey = 'ai_model_lifecycle_size_v1';
   static const _installedAtKey = 'ai_model_lifecycle_installed_at_v1';
   static const _lastFailureKey = 'ai_model_lifecycle_last_failure_v1';
+  static const _digestVerifiedKey = 'ai_model_lifecycle_digest_verified_v1';
 
   Future<String> phase() async {
     final prefs = await SharedPreferences.getInstance();
@@ -214,14 +279,26 @@ class AiModelLifecycleStore {
     required String version,
     required String sha256,
     required int sizeBytes,
+    bool digestVerified = false,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_versionKey, version);
     await prefs.setString(_shaKey, sha256);
     await prefs.setInt(_sizeKey, sizeBytes);
+    await prefs.setBool(_digestVerifiedKey, digestVerified);
     await prefs.setString(_installedAtKey, DateTime.now().toIso8601String());
     await prefs.remove(_lastFailureKey);
     await prefs.setString(_phaseKey, 'idle');
+  }
+
+  Future<bool> digestVerified() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_digestVerifiedKey) ?? false;
+  }
+
+  Future<void> setDigestVerified(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_digestVerifiedKey, value);
   }
 
   Future<void> recordFailure(Object error) async {
@@ -253,12 +330,13 @@ class AiModelLifecycleStore {
     await prefs.remove(_sizeKey);
     await prefs.remove(_installedAtKey);
     await prefs.remove(_lastFailureKey);
+    await prefs.remove(_digestVerifiedKey);
     await prefs.setString(_phaseKey, 'idle');
   }
 }
 
 class FlutterGemmaAiCoachModelInstaller
-    implements AiCoachManagedModelInstaller {
+    implements AiCoachObservableModelInstaller {
   final AiModelDeviceProbe deviceProbe;
   final AiModelLifecycleStore lifecycleStore;
 
@@ -267,8 +345,14 @@ class FlutterGemmaAiCoachModelInstaller
     this.lifecycleStore = const AiModelLifecycleStore(),
   });
 
+  static Future<void>? _activeInstallFuture;
+  static int? _activeInstallProgress;
+  static final Set<AiModelInstallStateListener> _installStateListeners =
+      <AiModelInstallStateListener>{};
+
   static const int _gib = 1024 * 1024 * 1024;
   static const int _mib = 1024 * 1024;
+  static const _deviceChannel = MethodChannel('gymapp/ai_model_device');
 
   @override
   String get modelName => 'Gemma 4 E2B';
@@ -298,14 +382,110 @@ class FlutterGemmaAiCoachModelInstaller
   int get requiredFreeStorageBytes => expectedSizeBytes + (768 * _mib);
 
   @override
-  Future<void> initialize() async {
-    // flutter_gemma keeps installation metadata and temporary download files.
-    // Cleanup is idempotent and is especially useful after process death.
-    await FlutterGemma.performCleanup();
+  bool get isInstallInProgress => _activeInstallFuture != null;
+
+  @override
+  int? get currentInstallProgress => _activeInstallProgress;
+
+  @override
+  void addInstallStateListener(AiModelInstallStateListener listener) {
+    _installStateListeners.add(listener);
   }
 
   @override
-  Future<bool> isInstalled() => FlutterGemma.isModelInstalled(modelFileName);
+  void removeInstallStateListener(AiModelInstallStateListener listener) {
+    _installStateListeners.remove(listener);
+  }
+
+  static void _notifyInstallState() {
+    for (final listener in List<AiModelInstallStateListener>.from(
+      _installStateListeners,
+    )) {
+      listener();
+    }
+  }
+
+  @protected
+  Future<void> performRuntimeCleanup() => FlutterGemma.performCleanup();
+
+  @protected
+  Future<bool> queryRuntimeInstallation() =>
+      FlutterGemma.isModelInstalled(modelFileName);
+
+  @protected
+  Future<void> installRuntimeModel({
+    void Function(int progress)? onProgress,
+  }) async {
+    final installer = FlutterGemma.installModel(
+      modelType: ModelType.gemma4,
+      fileType: ModelFileType.litertlm,
+    ).fromNetwork(modelUrl, foreground: true);
+
+    if (onProgress != null) {
+      await installer.withProgress(onProgress).install();
+    } else {
+      await installer.install();
+    }
+  }
+
+  @protected
+  Future<AiModelArtifactInspection> inspectInstalledArtifact() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return const AiModelArtifactInspection.unavailable(
+        'Byte-level SHA-256 inspection is currently available on Android only.',
+      );
+    }
+    try {
+      final path = await FlutterGemma.getModelPath(modelFileName);
+      final result = await _deviceChannel.invokeMethod<Map<dynamic, dynamic>>(
+        'inspectModelArtifact',
+        {'path': path},
+      );
+      if (result == null) {
+        return const AiModelArtifactInspection.unavailable(
+          'Native artifact inspection returned no result.',
+        );
+      }
+      return AiModelArtifactInspection.fromMap(result);
+    } on MissingPluginException catch (error) {
+      return AiModelArtifactInspection.unavailable(error.toString());
+    } on PlatformException catch (error) {
+      return AiModelArtifactInspection.unavailable(error.message);
+    }
+  }
+
+  @protected
+  Future<bool> performRuntimeLoadCheck() async {
+    try {
+      final model = await FlutterGemma.getActiveModel(
+        maxTokens: 1024,
+        supportImage: false,
+      );
+      await model.close();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @protected
+  Future<void> removeRuntimeModel() =>
+      FlutterGemma.uninstallModel(modelFileName);
+
+  @protected
+  Future<void> clearRuntimeInferenceIdentity() =>
+      FlutterGemma.clearActiveInferenceIdentity();
+
+  @override
+  Future<void> initialize() async {
+    // Route recreation is not process death. Never sweep downloader state
+    // while this Dart process still owns the application-scoped install.
+    if (_activeInstallFuture != null) return;
+    await performRuntimeCleanup();
+  }
+
+  @override
+  Future<bool> isInstalled() => queryRuntimeInstallation();
 
   @override
   Future<AiModelPreflightReport> preflight() async {
@@ -365,6 +545,38 @@ class FlutterGemmaAiCoachModelInstaller
 
   @override
   Future<void> install({void Function(int progress)? onProgress}) async {
+    AiModelInstallStateListener? listener;
+    if (onProgress != null) {
+      listener = () {
+        final progress = _activeInstallProgress;
+        if (progress != null) onProgress(progress);
+      };
+      addInstallStateListener(listener);
+      final progress = _activeInstallProgress;
+      if (progress != null) onProgress(progress);
+    }
+
+    try {
+      _activeInstallProgress ??= 0;
+      _notifyInstallState();
+      _activeInstallFuture ??= _runInstallAndReset();
+      await _activeInstallFuture;
+    } finally {
+      if (listener != null) removeInstallStateListener(listener);
+    }
+  }
+
+  Future<void> _runInstallAndReset() async {
+    try {
+      await _performFreshInstall();
+    } finally {
+      _activeInstallFuture = null;
+      _activeInstallProgress = null;
+      _notifyInstallState();
+    }
+  }
+
+  Future<void> _performFreshInstall() async {
     final preflightReport = await preflight();
     if (!preflightReport.canInstall) {
       throw AiModelInstallException(
@@ -375,17 +587,13 @@ class FlutterGemmaAiCoachModelInstaller
 
     await lifecycleStore.setPhase('downloading');
     try {
-      await FlutterGemma.performCleanup();
-      final installer = FlutterGemma.installModel(
-        modelType: ModelType.gemma4,
-        fileType: ModelFileType.litertlm,
-      ).fromNetwork(modelUrl, foreground: true);
-
-      if (onProgress != null) {
-        await installer.withProgress(onProgress).install();
-      } else {
-        await installer.install();
-      }
+      await performRuntimeCleanup();
+      await installRuntimeModel(
+        onProgress: (progress) {
+          _activeInstallProgress = progress.clamp(0, 100);
+          _notifyInstallState();
+        },
+      );
 
       if (!await isInstalled()) {
         throw const AiModelInstallException(
@@ -393,7 +601,23 @@ class FlutterGemmaAiCoachModelInstaller
         );
       }
 
-      final runtimeHealthy = await _runtimeLoadCheck();
+      final artifact = await inspectInstalledArtifact();
+      if (artifact.available &&
+          !artifact.matches(
+            expectedSizeBytes: expectedSizeBytes,
+            expectedSha256: expectedSha256,
+          )) {
+        await removeRuntimeModel();
+        await clearRuntimeInferenceIdentity();
+        await performRuntimeCleanup();
+        await lifecycleStore.clearManifest();
+        throw const AiModelInstallException(
+          'Il file scaricato non supera il controllo SHA-256/dimensione. L’artifact corrotto è stato rimosso: reinstalla il modello.',
+          retryable: false,
+        );
+      }
+
+      final runtimeHealthy = await performRuntimeLoadCheck();
       if (!runtimeHealthy) {
         throw const AiModelInstallException(
           'Il file è installato ma il runtime non riesce a caricarlo. Usa “Reinstalla modello”.',
@@ -404,6 +628,10 @@ class FlutterGemmaAiCoachModelInstaller
         version: modelVersion,
         sha256: expectedSha256,
         sizeBytes: expectedSizeBytes,
+        digestVerified: artifact.matches(
+          expectedSizeBytes: expectedSizeBytes,
+          expectedSha256: expectedSha256,
+        ),
       );
     } on DownloadException catch (error) {
       await lifecycleStore.recordFailure(error);
@@ -419,25 +647,50 @@ class FlutterGemmaAiCoachModelInstaller
 
   @override
   Future<void> activateInstalledModel() async {
-    if (!await isInstalled()) {
-      throw StateError('$modelName is not installed.');
-    }
-    if (!await _runtimeLoadCheck()) {
-      throw StateError('$modelName is installed but failed its runtime check.');
-    }
+    final health = await verifyInstallation();
+    final verifiedLegacy =
+        health.status == AiModelHealthStatus.legacyUnverified &&
+        health.artifactDigestVerified &&
+        health.runtimeLoadVerified;
+    if (health.status == AiModelHealthStatus.healthy || verifiedLegacy) return;
+
+    throw StateError('$modelName cannot be activated: ${health.message}');
   }
 
   @override
   Future<AiModelHealthReport> verifyInstallation() async {
     if (!await isInstalled()) return AiModelHealthReport.notInstalled();
 
-    final runtimeHealthy = await _runtimeLoadCheck();
+    final artifact = await inspectInstalledArtifact();
+    final artifactMatches = artifact.matches(
+      expectedSizeBytes: expectedSizeBytes,
+      expectedSha256: expectedSha256,
+    );
+    if (artifact.available && !artifactMatches) {
+      return AiModelHealthReport(
+        status: AiModelHealthStatus.integrityMismatch,
+        message:
+            'Il file installato non corrisponde al SHA-256 o alla dimensione attesi. Non usarlo: reinstalla il modello.',
+        modelVersion: modelVersion,
+        expectedSha256: expectedSha256,
+        actualSha256: artifact.sha256,
+        actualSizeBytes: artifact.sizeBytes,
+        artifactDigestVerified: false,
+        runtimeLoadVerified: false,
+      );
+    }
+
+    final runtimeHealthy = await performRuntimeLoadCheck();
     if (!runtimeHealthy) {
       return AiModelHealthReport(
         status: AiModelHealthStatus.runtimeBroken,
-        message: 'Il modello è presente ma non supera il test di caricamento LiteRT-LM. Reinstallalo.',
+        message:
+            'Il modello è presente ma non supera il test di caricamento LiteRT-LM. Reinstallalo.',
         modelVersion: modelVersion,
         expectedSha256: expectedSha256,
+        actualSha256: artifact.sha256,
+        actualSizeBytes: artifact.sizeBytes,
+        artifactDigestVerified: artifactMatches,
         runtimeLoadVerified: false,
       );
     }
@@ -446,9 +699,13 @@ class FlutterGemmaAiCoachModelInstaller
     if (!hasManifest) {
       return AiModelHealthReport(
         status: AiModelHealthStatus.legacyUnverified,
-        message: 'Installazione precedente rilevata e caricabile, ma senza manifest di versione/integrità. Reinstalla una volta per renderla verificata e riproducibile.',
+        message:
+            'Installazione precedente rilevata e caricabile, ma senza manifest di versione. Verificala/reinstallala una volta per renderla riproducibile.',
         modelVersion: modelVersion,
         expectedSha256: expectedSha256,
+        actualSha256: artifact.sha256,
+        actualSizeBytes: artifact.sizeBytes,
+        artifactDigestVerified: artifactMatches,
         runtimeLoadVerified: true,
       );
     }
@@ -461,39 +718,93 @@ class FlutterGemmaAiCoachModelInstaller
     if (!manifestMatches) {
       return AiModelHealthReport(
         status: AiModelHealthStatus.versionMismatch,
-        message: 'La versione installata non corrisponde all’artifact Gemma 4 E2B fissato dall’app. È consigliata la reinstallazione.',
+        message:
+            'La versione installata non corrisponde all’artifact Gemma 4 E2B fissato dall’app. È consigliata la reinstallazione.',
         modelVersion: modelVersion,
         expectedSha256: expectedSha256,
+        actualSha256: artifact.sha256,
+        actualSizeBytes: artifact.sizeBytes,
+        artifactDigestVerified: artifactMatches,
+        runtimeLoadVerified: true,
+      );
+    }
+
+    if (artifactMatches) {
+      await lifecycleStore.setDigestVerified(true);
+    }
+    final digestVerified =
+        artifactMatches || await lifecycleStore.digestVerified();
+    if (!digestVerified) {
+      return AiModelHealthReport(
+        status: AiModelHealthStatus.integrityUnverified,
+        message:
+            'Versione e runtime sono coerenti, ma questo dispositivo non ha ancora una verifica SHA-256 persistita per i byte installati.',
+        modelVersion: modelVersion,
+        expectedSha256: expectedSha256,
+        actualSha256: artifact.sha256,
+        actualSizeBytes: artifact.sizeBytes,
+        artifactDigestVerified: false,
         runtimeLoadVerified: true,
       );
     }
 
     return AiModelHealthReport(
       status: AiModelHealthStatus.healthy,
-      message: 'Installazione verificata: versione/manifest corretti e test di caricamento LiteRT-LM superato.',
+      message:
+          'Installazione verificata: SHA-256/dimensione, manifest e caricamento LiteRT-LM sono coerenti.',
       modelVersion: modelVersion,
       expectedSha256: expectedSha256,
+      actualSha256: artifact.sha256,
+      actualSizeBytes: artifact.sizeBytes,
+      artifactDigestVerified: true,
       runtimeLoadVerified: true,
     );
   }
 
   @override
   Future<AiModelRecoveryReport> recoverInterruptedState() async {
+    // Navigation can create a new installer while the same native download is
+    // still alive. That is not an interrupted download and must not trigger
+    // cleanup/cancellation.
+    if (_activeInstallFuture != null) {
+      return const AiModelRecoveryReport();
+    }
+
     final phase = await lifecycleStore.phase();
     if (phase == 'downloading') {
-      await FlutterGemma.performCleanup();
+      await performRuntimeCleanup();
       if (await isInstalled()) {
-        final runtimeHealthy = await _runtimeLoadCheck();
+        final artifact = await inspectInstalledArtifact();
+        final artifactMatches = artifact.matches(
+          expectedSizeBytes: expectedSizeBytes,
+          expectedSha256: expectedSha256,
+        );
+        if (artifact.available && !artifactMatches) {
+          await lifecycleStore.recordFailure(
+            'Interrupted download left an integrity-mismatched artifact.',
+          );
+          return const AiModelRecoveryReport(
+            interruptedOperation: AiModelInterruptedOperation.download,
+            cleanupPerformed: true,
+            userMessage:
+                'Il download interrotto ha lasciato un file non valido. Reinstalla il modello prima di usare il Coach.',
+          );
+        }
+
+        final runtimeHealthy = await performRuntimeLoadCheck();
         if (runtimeHealthy) {
           await lifecycleStore.recordInstalled(
             version: modelVersion,
             sha256: expectedSha256,
             sizeBytes: expectedSizeBytes,
+            digestVerified: artifactMatches,
           );
-          return const AiModelRecoveryReport(
+          return AiModelRecoveryReport(
             interruptedOperation: AiModelInterruptedOperation.download,
             cleanupPerformed: true,
-            userMessage: 'Il download era stato interrotto, ma il modello risultava già completo: installazione recuperata e verificata.',
+            userMessage: artifactMatches
+                ? 'Il download era stato interrotto, ma il file è completo: SHA-256, dimensione e runtime sono stati verificati.'
+                : 'Il download era stato interrotto, ma il runtime riesce a caricare il modello. La verifica byte-level non è disponibile su questa piattaforma.',
           );
         }
       }
@@ -501,7 +812,8 @@ class FlutterGemmaAiCoachModelInstaller
       return const AiModelRecoveryReport(
         interruptedOperation: AiModelInterruptedOperation.download,
         cleanupPerformed: true,
-        userMessage: 'Il download precedente è stato interrotto. I file temporanei sono stati ripuliti: puoi riprovare in sicurezza. Il server Hugging Face può richiedere di ricominciare il trasferimento.',
+        userMessage:
+            'Il download precedente è stato interrotto. I file temporanei sono stati ripuliti: puoi riprovare in sicurezza. Il server Hugging Face può richiedere di ricominciare il trasferimento.',
       );
     }
 
@@ -510,7 +822,8 @@ class FlutterGemmaAiCoachModelInstaller
       return const AiModelRecoveryReport(
         interruptedOperation: AiModelInterruptedOperation.inference,
         cleanupPerformed: false,
-        userMessage: 'La risposta AI precedente è stata interrotta dalla chiusura dell’app. Il modello non è stato modificato: puoi inviare di nuovo la richiesta.',
+        userMessage:
+            'La risposta AI precedente è stata interrotta dalla chiusura dell’app. Il modello non è stato modificato: puoi inviare di nuovo la richiesta.',
       );
     }
 
@@ -519,11 +832,17 @@ class FlutterGemmaAiCoachModelInstaller
 
   @override
   Future<void> uninstall() async {
+    if (_activeInstallFuture != null) {
+      throw const AiModelInstallException(
+        'Attendi il completamento del download prima di rimuovere il modello.',
+        retryable: false,
+      );
+    }
     await lifecycleStore.setPhase('uninstalling');
     try {
-      await FlutterGemma.uninstallModel(modelFileName);
-      await FlutterGemma.clearActiveInferenceIdentity();
-      await FlutterGemma.performCleanup();
+      await removeRuntimeModel();
+      await clearRuntimeInferenceIdentity();
+      await performRuntimeCleanup();
       await lifecycleStore.clearManifest();
     } catch (error) {
       await lifecycleStore.recordFailure(error);
@@ -533,11 +852,17 @@ class FlutterGemmaAiCoachModelInstaller
 
   @override
   Future<void> reinstall({void Function(int progress)? onProgress}) async {
+    if (_activeInstallFuture != null) {
+      throw const AiModelInstallException(
+        'Un download del modello è già in corso.',
+        retryable: false,
+      );
+    }
     if (await isInstalled()) {
       await uninstall();
     } else {
       await lifecycleStore.clearManifest();
-      await FlutterGemma.performCleanup();
+      await performRuntimeCleanup();
     }
     await install(onProgress: onProgress);
   }
@@ -549,19 +874,6 @@ class FlutterGemmaAiCoachModelInstaller
   Future<void> markInferenceFinished() async {
     if (await lifecycleStore.phase() == 'inference') {
       await lifecycleStore.setPhase('idle');
-    }
-  }
-
-  Future<bool> _runtimeLoadCheck() async {
-    try {
-      final model = await FlutterGemma.getActiveModel(
-        maxTokens: 1024,
-        supportImage: false,
-      );
-      await model.close();
-      return true;
-    } catch (_) {
-      return false;
     }
   }
 
