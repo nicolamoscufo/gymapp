@@ -57,12 +57,19 @@ class AppPreferences {
         .toDouble();
   }
 
+  static Object? _safeValue(SharedPreferences prefs, String key) {
+    try {
+      return prefs.get(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<double> loadDefaultBackoffReductionPercent() async {
     final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getDouble(defaultBackoffReductionPercentKey);
-    return normalizeBackoffReductionPercent(
-      value ?? defaultBackoffReductionPercent,
-    );
+    final raw = _safeValue(prefs, defaultBackoffReductionPercentKey);
+    final value = raw is num ? raw.toDouble() : defaultBackoffReductionPercent;
+    return normalizeBackoffReductionPercent(value);
   }
 
   static Future<void> saveDefaultBackoffReductionPercent(double value) async {
@@ -75,14 +82,16 @@ class AppPreferences {
 
   static Future<WorkoutReminderSettings> loadWorkoutReminderSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    final rawEnabled = _safeValue(prefs, workoutRemindersEnabledKey);
+    final rawHour = _safeValue(prefs, workoutReminderHourKey);
+    final rawMinute = _safeValue(prefs, workoutReminderMinuteKey);
     return WorkoutReminderSettings(
-      enabled: prefs.getBool(workoutRemindersEnabledKey) ?? false,
-      hour: (prefs.getInt(workoutReminderHourKey) ?? defaultWorkoutReminderHour)
+      enabled: rawEnabled is bool ? rawEnabled : false,
+      hour: (rawHour is num ? rawHour.toInt() : defaultWorkoutReminderHour)
           .clamp(0, 23)
           .toInt(),
       minute:
-          (prefs.getInt(workoutReminderMinuteKey) ??
-                  defaultWorkoutReminderMinute)
+          (rawMinute is num ? rawMinute.toInt() : defaultWorkoutReminderMinute)
               .clamp(0, 59)
               .toInt(),
     );
