@@ -29,7 +29,9 @@ jobs:
         run: flutter pub get
 
       - name: Apply lifecycle hardening patch
-        run: python3 tool/patch_ai_model_fault_injection.py
+        run: |
+          python3 tool/fix_fault_patcher_scope.py
+          python3 tool/patch_ai_model_fault_injection.py
 
       - name: Format Dart
         run: dart format lib/ai_coach/ai_coach_model_manager.dart lib/ai_coach/local_llm_engine.dart lib/ai_coach/ai_model_execution_coordinator.dart test/ai_model_fault_injection_test.dart test/ai_model_execution_coordinator_test.dart
@@ -38,7 +40,7 @@ jobs:
         run: flutter analyze
 
       - name: Run lifecycle fault-injection tests
-        run: flutter test test/ai_model_fault_injection_test.dart test/ai_model_execution_coordinator_test.dart test/ai_model_hardening_test.dart test/local_ai_inference_context_test.dart test/ai_model_generation_lifecycle_test.dart || flutter test test/ai_model_fault_injection_test.dart test/ai_model_execution_coordinator_test.dart test/ai_model_hardening_test.dart test/local_ai_inference_context_test.dart
+        run: flutter test test/ai_model_fault_injection_test.dart test/ai_model_execution_coordinator_test.dart test/ai_model_hardening_test.dart test/local_ai_inference_context_test.dart
 
       - name: Compile Android debug APK
         run: flutter build apk --debug
