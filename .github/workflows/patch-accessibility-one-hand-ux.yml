@@ -29,7 +29,9 @@ jobs:
         run: flutter pub get
 
       - name: Apply accessibility patch
-        run: python3 tool/patch_accessibility_one_hand_ux.py
+        run: |
+          python3 tool/fix_accessibility_patch_helper.py
+          python3 tool/patch_accessibility_one_hand_ux.py
 
       - name: Format
         run: dart format lib/screens/active_workout.dart lib/ui/active_workout_input_components.dart lib/ui/workout_components.dart test/accessibility_one_hand_ux_test.dart
