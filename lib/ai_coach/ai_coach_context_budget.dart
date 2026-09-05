@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import 'ai_coach_context_capsule.dart';
+import 'ai_coach_context_router.dart';
+
 class AiCoachContextDiagnostics {
   final int encodedChars;
   final int budgetChars;
@@ -38,266 +41,118 @@ class AiCoachContextDiagnostics {
   }
 }
 
+/// Final prompt-budget boundary for the on-device coach.
+///
+/// Instead of trying to preserve a large JSON tree until the very last byte,
+/// this layer always distills routed data into a deterministic mobile capsule.
+/// The capsule is dense plain text generated only from app state and
+/// deterministic analytics; no second LLM is involved in compression.
 class AiCoachContextBudget {
   const AiCoachContextBudget._();
 
-  /// Last bounded payload observed in this process. This is developer
-  /// diagnostics only; it is never persisted and never sent back into the LLM.
   static AiCoachContextDiagnostics? lastDiagnostics;
 
-  /// Keep enough headroom for the stable system contract, the current user
-  /// turn and the generated reply inside Gemma's 4096-token KV cache.
-  ///
-  /// The previous 7000-character JSON allowance was only a character cap, not
-  /// a token cap. Dense JSON can consume substantially more tokens than plain
-  /// prose, so the model could lose the earliest grounding instructions/context
-  /// and then answer as if it had no access to the user's data.
-  static const int _modelSafeCharBudget = 3600;
+  /// Gemma runs with a 4096-token context window. Dense JSON has a poor
+  /// token/character ratio, so keep the final context envelope small even when
+  /// callers request the historical 7000-character allowance.
+  static const int _modelSafeCharBudget = 2600;
+  static const int _capsuleMaxChars = 2200;
 
   static String encode(
     Map<String, dynamic> source, {
     required int charBudget,
     required bool keepProgramHistory,
   }) {
-    if (charBudget < 32) {
-      return '{}';
-    }
+    if (charBudget < 64) return '{}';
 
     final budget = charBudget > _modelSafeCharBudget
         ? _modelSafeCharBudget
         : charBudget;
-    final context = Map<String, dynamic>.from(source);
-
-    // Active plans are one of the highest-value grounding sources for a coach.
-    // Compact them immediately instead of dropping them later under pressure.
-    context['active_plans'] = _compactActivePlans(
-      context['active_plans'],
-      maxPlans: 2,
-      maxExercises: 10,
-    );
-
-    String encoded = jsonEncode(context);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-    context['workouts'] = _tail(context['workouts'], 2);
-    context['body_logs'] = _tail(context['body_logs'], 4);
-    context['notes'] = _tail(context['notes'], 6);
-    final verifiedEvidence = context['verified_evidence'];
-    if (verifiedEvidence is Map) {
-      context['verified_evidence'] = _compactVerifiedEvidence(verifiedEvidence);
+    if (budget < 180) {
+      const fallback = '{"context_truncated":true}';
+      return fallback.length <= budget ? fallback : '{}';
     }
-    encoded = jsonEncode(context);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
-    // Exercise catalog rows are useful metadata, but they are lower priority
-    // than actual user history, active plans and verified derived evidence.
-    context.remove('exercise_catalog');
-    encoded = jsonEncode(context);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
+    final routed = Map<String, dynamic>.from(source);
     if (!keepProgramHistory) {
-      context.remove('program_change_effectiveness');
-      context.remove('program_history');
-      encoded = jsonEncode(context);
-      if (encoded.length <= budget) return _finish(encoded, budget: budget);
+      routed.remove('program_history');
+      routed.remove('program_change_effectiveness');
     }
+    final inferredIntent = _inferRoutedIntent(routed);
 
-    final analytics = context['deterministic_analytics'];
-    if (analytics is Map) {
-      final compactAnalytics = Map<String, dynamic>.from(analytics);
-      compactAnalytics.remove('exercise_progress');
-      compactAnalytics.remove('progression_recommendations');
-      context['deterministic_analytics'] = compactAnalytics;
-    }
-    encoded = jsonEncode(context);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-    context['active_plans'] = _compactActivePlans(
-      context['active_plans'],
-      maxPlans: 1,
-      maxExercises: 8,
+    // Reserve space for JSON envelope keys/escaping. A second pass below
+    // handles unusually escape-heavy strings deterministically.
+    var capsuleBudget = (budget - 360).clamp(160, _capsuleMaxChars).toInt();
+    var capsule = const AiCoachContextCapsuleBuilder().build(
+      context: routed,
+      intent: inferredIntent,
+      charBudget: capsuleBudget,
     );
-    encoded = jsonEncode(context);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
-    // Prefer concise verified evidence over duplicated long-form raw payloads.
-    context.remove('notes');
-    encoded = jsonEncode(context);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-    context.remove('body_logs');
-    encoded = jsonEncode(context);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-    context['workouts'] = _tail(context['workouts'], 1);
-    encoded = jsonEncode(context);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-    // When longitudinal history is explicitly requested, sacrifice raw workout
-    // details before removing program history. Otherwise program history has
-    // already been removed above.
+    String? longitudinal;
     if (keepProgramHistory) {
-      context.remove('workouts');
-      encoded = jsonEncode(context);
-      if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-      context.remove('program_change_effectiveness');
-      encoded = jsonEncode(context);
-      if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-      context.remove('program_history');
-      encoded = jsonEncode(context);
-      if (encoded.length <= budget) return _finish(encoded, budget: budget);
-    } else {
-      context.remove('workouts');
-      encoded = jsonEncode(context);
-      if (encoded.length <= budget) return _finish(encoded, budget: budget);
+      longitudinal = _longitudinalCapsule(routed, maxChars: 320);
     }
 
-    context.remove('deterministic_analytics');
-    encoded = jsonEncode(context);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-    // Build a high-signal grounding core before generic clipping. The key
-    // invariant is that a non-empty active plan is not silently discarded just
-    // because another payload is verbose.
-    final groundingCore = <String, dynamic>{
-      'generated_at': context['generated_at'],
-      'user_profile': context['user_profile'],
-      'memory': context['memory'],
-      'active_plans': _compactActivePlans(
-        context['active_plans'],
-        maxPlans: 1,
-        maxExercises: 6,
-      ),
-      'verified_evidence': context['verified_evidence'],
-    }..removeWhere((_, value) => value == null);
-
-    encoded = jsonEncode(groundingCore);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-    final verified = groundingCore['verified_evidence'];
-    if (verified is Map) {
-      final compact = _compactVerifiedEvidence(verified);
-      groundingCore['verified_evidence'] = compact;
-      encoded = jsonEncode(groundingCore);
-      if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-      for (final family in const [
-        'strength',
-        'volume_frequency',
-        'progression',
-        'readiness',
-      ]) {
-        compact.remove(family);
-        encoded = jsonEncode(groundingCore);
-        if (encoded.length <= budget) return _finish(encoded, budget: budget);
-      }
-    }
-
-    groundingCore['active_plans'] = _compactActivePlans(
-      groundingCore['active_plans'],
-      maxPlans: 1,
-      maxExercises: 4,
+    var encoded = _encodeEnvelope(
+      capsule: capsule,
+      longitudinal: longitudinal,
+      source: routed,
     );
-    encoded = jsonEncode(groundingCore);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
 
-    groundingCore.remove('user_profile');
-    encoded = jsonEncode(groundingCore);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-    groundingCore.remove('memory');
-    encoded = jsonEncode(groundingCore);
-    if (encoded.length <= budget) return _finish(encoded, budget: budget);
-
-    // If there is an active plan, preserve at least a compact plan snapshot so
-    // questions such as "riesci a vedere la mia scheda?" cannot degrade into a
-    // false no-data answer solely because the broader context was too large.
-    final planOnly = <String, dynamic>{
-      'context_truncated': true,
-      'active_plans': _compactActivePlans(
-        groundingCore['active_plans'],
-        maxPlans: 1,
-        maxExercises: 3,
-      ),
-    };
-    if ((planOnly['active_plans'] as List).isNotEmpty) {
-      encoded = jsonEncode(planOnly);
-      if (encoded.length <= budget) return _finish(encoded, budget: budget);
-    }
-
-    // Last-resort clipping keeps the payload valid JSON. This protects the
-    // model context window even if a future field contains unexpectedly large
-    // user text.
-    for (final stringLimit in const [256, 128, 64, 32]) {
-      final clipped = _clipValue(
-        groundingCore,
-        stringLimit: stringLimit,
-        listLimit: stringLimit >= 128 ? 4 : 2,
-        mapLimit: stringLimit >= 128 ? 20 : 10,
-        depth: 0,
+    if (encoded.length > budget) {
+      final overflow = encoded.length - budget;
+      capsuleBudget = (capsuleBudget - overflow - 48)
+          .clamp(160, capsuleBudget)
+          .toInt();
+      capsule = const AiCoachContextCapsuleBuilder().build(
+        context: routed,
+        intent: inferredIntent,
+        charBudget: capsuleBudget,
       );
-      encoded = jsonEncode(clipped);
-      if (encoded.length <= budget) return _finish(encoded, budget: budget);
-    }
-
-    const fallback = '{"context_truncated":true}';
-    final result = fallback.length <= budget ? fallback : '{}';
-    return _finish(result, budget: budget);
-  }
-
-  static String _finish(String encoded, {required int budget}) {
-    AiCoachContextDiagnostics diagnostics;
-    try {
-      final raw = jsonDecode(encoded);
-      final decoded = raw is Map
-          ? Map<String, dynamic>.from(raw)
-          : <String, dynamic>{};
-      final plans = (decoded['active_plans'] as List? ?? const <dynamic>[])
-          .whereType<Map>()
-          .toList();
-      final workouts = decoded['workouts'] as List? ?? const <dynamic>[];
-      final bodyLogs = decoded['body_logs'] as List? ?? const <dynamic>[];
-      final planTitles = <String>[];
-      final exerciseNames = <String>[];
-      for (final rawPlan in plans.take(4)) {
-        final plan = Map<String, dynamic>.from(rawPlan);
-        final title = plan['title']?.toString().trim() ?? '';
-        if (title.isNotEmpty) planTitles.add(title);
-        final exercises = plan['exercises'] as List? ?? const <dynamic>[];
-        for (final rawExercise in exercises.whereType<Map>().take(12)) {
-          final name = rawExercise['name']?.toString().trim() ?? '';
-          if (name.isNotEmpty) exerciseNames.add(name);
-        }
+      if (longitudinal != null && longitudinal.length > 160) {
+        longitudinal = _clip(longitudinal, 160);
       }
-      diagnostics = AiCoachContextDiagnostics(
-        encodedChars: encoded.length,
-        budgetChars: budget,
-        activePlanCount: plans.length,
-        workoutCount: workouts.length,
-        bodyLogCount: bodyLogs.length,
-        hasVerifiedEvidence: decoded['verified_evidence'] is Map,
-        truncated: decoded['context_truncated'] == true,
-        topLevelKeys: decoded.keys.toList(growable: false),
-        planTitles: planTitles,
-        exerciseNames: exerciseNames,
-      );
-    } catch (_) {
-      diagnostics = AiCoachContextDiagnostics(
-        encodedChars: encoded.length,
-        budgetChars: budget,
-        activePlanCount: 0,
-        workoutCount: 0,
-        bodyLogCount: 0,
-        hasVerifiedEvidence: false,
-        truncated: true,
-        topLevelKeys: const [],
-        planTitles: const [],
-        exerciseNames: const [],
+      encoded = _encodeEnvelope(
+        capsule: capsule,
+        longitudinal: longitudinal,
+        source: routed,
       );
     }
 
+    if (encoded.length > budget) {
+      longitudinal = null;
+      encoded = _encodeEnvelope(
+        capsule: capsule,
+        longitudinal: null,
+        source: routed,
+      );
+    }
+
+    if (encoded.length > budget && capsule.isNotEmpty) {
+      final desired = capsule.length - (encoded.length - budget) - 24;
+      final minAllowed = capsule.length < 80 ? capsule.length : 80;
+      final allowedCapsule = desired
+          .clamp(minAllowed, capsule.length)
+          .toInt();
+      capsule = _clip(capsule, allowedCapsule);
+      encoded = _encodeEnvelope(
+        capsule: capsule,
+        longitudinal: null,
+        source: routed,
+      );
+    }
+
+    if (encoded.length > budget) {
+      const fallback = '{"context_truncated":true}';
+      encoded = fallback.length <= budget ? fallback : '{}';
+    }
+
+    final diagnostics = _buildDiagnostics(
+      encoded: encoded,
+      budget: budget,
+      source: routed,
+    );
     lastDiagnostics = diagnostics;
     if (kDebugMode) {
       debugPrint('[AI_COACH_CONTEXT] ${diagnostics.toLogLine()}');
@@ -305,140 +160,180 @@ class AiCoachContextBudget {
     return encoded;
   }
 
-  static Map<String, dynamic> _compactVerifiedEvidence(Map raw) {
-    final evidence = Map<String, dynamic>.from(raw);
-    final strength = evidence['strength'];
-    if (strength is Map) {
-      final compact = Map<String, dynamic>.from(strength);
-      compact['exercises'] = _head(compact['exercises'], 6);
-      compact['recent_prs'] = _head(compact['recent_prs'], 8);
-      evidence['strength'] = compact;
+  /// The context router has already removed families that are irrelevant to
+  /// the current query. Infer the routed intent from that shape so the capsule
+  /// builder can preserve the right ordering without widening the public
+  /// budget API or duplicating the query string.
+  static AiCoachChatIntent _inferRoutedIntent(Map<String, dynamic> source) {
+    final analytics = source['deterministic_analytics'];
+    final keys = analytics is Map
+        ? analytics.keys.map((key) => key.toString()).toSet()
+        : const <String>{};
+    final hasCatalog =
+        source['exercise_catalog'] is Map &&
+        (source['exercise_catalog'] as Map).isNotEmpty;
+    final bodyLogs = source['body_logs'];
+    final bodyLogsEmpty = bodyLogs is List && bodyLogs.isEmpty;
+
+    if (hasCatalog && bodyLogsEmpty && !source.containsKey('metrics')) {
+      return AiCoachChatIntent.technique;
     }
-    final volumeFrequency = evidence['volume_frequency'];
-    if (volumeFrequency is Map) {
-      final compact = Map<String, dynamic>.from(volumeFrequency);
-      compact['muscles'] = _head(compact['muscles'], 8);
-      evidence['volume_frequency'] = compact;
+    if (keys.contains('fatigue_readiness') &&
+        keys.contains('session_count') &&
+        !keys.contains('exercise_progress') &&
+        !keys.contains('progress_analytics')) {
+      return AiCoachChatIntent.recovery;
     }
-    final progression = evidence['progression'];
-    if (progression is Map) {
-      final compact = Map<String, dynamic>.from(progression);
-      compact['recommendations'] = _head(compact['recommendations'], 8);
-      evidence['progression'] = compact;
+    if (keys.contains('progression_recommendations') &&
+        keys.contains('exercise_progress') &&
+        !keys.contains('progress_analytics')) {
+      return AiCoachChatIntent.progression;
     }
-    return evidence;
+    if (keys.contains('progress_analytics') &&
+        keys.contains('exercise_progress') &&
+        !keys.contains('progression_recommendations')) {
+      return AiCoachChatIntent.progress;
+    }
+    if (source.containsKey('program_history') ||
+        source.containsKey('program_change_effectiveness')) {
+      return AiCoachChatIntent.program;
+    }
+    return AiCoachChatIntent.general;
   }
 
-  static List<dynamic> _compactActivePlans(
-    Object? raw, {
-    required int maxPlans,
-    required int maxExercises,
+  static String _encodeEnvelope({
+    required String capsule,
+    required String? longitudinal,
+    required Map<String, dynamic> source,
   }) {
-    final plans = raw is List ? raw : const <dynamic>[];
-    return plans.whereType<Map>().take(maxPlans).map((rawPlan) {
-      final plan = Map<String, dynamic>.from(rawPlan);
-      final exercises = (plan['exercises'] as List? ?? const <dynamic>[])
-          .whereType<Map>()
-          .take(maxExercises)
-          .map((rawExercise) {
-            final exercise = Map<String, dynamic>.from(rawExercise);
-            final result = <String, dynamic>{};
-            for (final key in const [
-              'id',
-              'catalogId',
-              'name',
-              'set',
-              'reps',
-              'weight',
-              'targetMinReps',
-              'targetMaxReps',
-              'technique',
-              'backoffReps',
-              'backoffReductionPercent',
-              'restSeconds',
-              'progressionKgStep',
-              'progressionRepStep',
-              'progressionScheme',
-            ]) {
-              if (exercise.containsKey(key)) {
-                result[key] = exercise[key];
-              }
-            }
-            return result;
-          })
-          .toList();
-
-      final result = <String, dynamic>{};
-      for (final key in const [
-        'id',
-        'title',
-        'week',
-        'goal',
-        'programBlock',
-        'cycleNumber',
-        'currentVersionId',
-        'currentVersionNumber',
-      ]) {
-        if (plan.containsKey(key)) {
-          result[key] = plan[key];
-        }
-      }
-      result['exercises'] = exercises;
-      return result;
-    }).toList();
+    final capsuleDiagnostics = AiCoachContextCapsuleBuilder.lastDiagnostics;
+    return jsonEncode({
+      'context_format': 'mobile_capsule_v1',
+      'contract':
+          'FACT/AN are app-calculated; PLAN/EX/SESSION/DO are app-grounded; never invent omitted values',
+      'user_data_available':
+          capsuleDiagnostics?.userDataAvailable ?? _hasUserData(source),
+      'reference_data_available':
+          capsuleDiagnostics?.referenceDataAvailable ??
+          (source['exercise_catalog'] is Map &&
+              (source['exercise_catalog'] as Map).isNotEmpty),
+      'capsule': capsule,
+      if (longitudinal != null && longitudinal.isNotEmpty)
+        'longitudinal': longitudinal,
+    });
   }
 
-  static List<dynamic> _tail(Object? raw, int count) {
-    final list = raw is List ? raw : const <dynamic>[];
-    if (list.length <= count) return List<dynamic>.from(list);
-    return List<dynamic>.from(list.sublist(list.length - count));
+  static bool _hasUserData(Map<String, dynamic> source) {
+    bool nonEmptyList(String key) =>
+        source[key] is List && (source[key] as List).isNotEmpty;
+    bool nonEmptyMap(String key) =>
+        source[key] is Map && (source[key] as Map).isNotEmpty;
+    return nonEmptyList('active_plans') ||
+        nonEmptyList('workouts') ||
+        nonEmptyList('body_logs') ||
+        nonEmptyMap('focus_context') ||
+        nonEmptyMap('verified_evidence') ||
+        nonEmptyMap('deterministic_analytics') ||
+        nonEmptyMap('user_profile') ||
+        nonEmptyMap('memory');
   }
 
-  static List<dynamic> _head(Object? raw, int count) {
-    final list = raw is List ? raw : const <dynamic>[];
-    if (list.length <= count) return List<dynamic>.from(list);
-    return List<dynamic>.from(list.take(count));
-  }
-
-  static Object? _clipValue(
-    Object? value, {
-    required int stringLimit,
-    required int listLimit,
-    required int mapLimit,
-    required int depth,
+  static String? _longitudinalCapsule(
+    Map<String, dynamic> source, {
+    required int maxChars,
   }) {
-    if (depth >= 8) return '<truncated>';
-    if (value is String) {
-      if (value.length <= stringLimit) return value;
-      return '${value.substring(0, stringLimit)}…';
+    final parts = <String>[];
+    final history = source['program_history'];
+    if (history != null) {
+      parts.add('PROGRAM_HISTORY=${_compactJson(history)}');
     }
+    final effectiveness = source['program_change_effectiveness'];
+    if (effectiveness != null) {
+      parts.add('CHANGE_EFFECT=${_compactJson(effectiveness)}');
+    }
+    if (parts.isEmpty) return null;
+    return _clip(parts.join('\n'), maxChars);
+  }
+
+  static String _compactJson(Object? value) {
+    return jsonEncode(_clipValue(value, depth: 0));
+  }
+
+  static Object? _clipValue(Object? value, {required int depth}) {
+    if (depth >= 4) return '<cut>';
+    if (value is String) return _clip(value, 72);
     if (value is List) {
       return value
-          .take(listLimit)
-          .map(
-            (entry) => _clipValue(
-              entry,
-              stringLimit: stringLimit,
-              listLimit: listLimit,
-              mapLimit: mapLimit,
-              depth: depth + 1,
-            ),
-          )
+          .take(3)
+          .map((entry) => _clipValue(entry, depth: depth + 1))
           .toList();
     }
     if (value is Map) {
       final result = <String, dynamic>{};
-      for (final entry in value.entries.take(mapLimit)) {
+      for (final entry in value.entries.take(10)) {
         result[entry.key.toString()] = _clipValue(
           entry.value,
-          stringLimit: stringLimit,
-          listLimit: listLimit,
-          mapLimit: mapLimit,
           depth: depth + 1,
         );
       }
       return result;
     }
     return value;
+  }
+
+  static AiCoachContextDiagnostics _buildDiagnostics({
+    required String encoded,
+    required int budget,
+    required Map<String, dynamic> source,
+  }) {
+    final plans = (source['active_plans'] as List? ?? const <dynamic>[])
+        .whereType<Map>()
+        .toList();
+    final planTitles = <String>[];
+    final exerciseNames = <String>[];
+    for (final rawPlan in plans.take(3)) {
+      final plan = Map<String, dynamic>.from(rawPlan);
+      final title = plan['title']?.toString().trim() ?? '';
+      if (title.isNotEmpty) planTitles.add(title);
+      for (final rawExercise
+          in (plan['exercises'] as List? ?? const <dynamic>[]).whereType<Map>()) {
+        final name = rawExercise['name']?.toString().trim() ?? '';
+        if (name.isNotEmpty && exerciseNames.length < 16) {
+          exerciseNames.add(name);
+        }
+      }
+    }
+
+    final decoded = _tryDecode(encoded);
+    return AiCoachContextDiagnostics(
+      encodedChars: encoded.length,
+      budgetChars: budget,
+      activePlanCount: plans.length,
+      workoutCount: (source['workouts'] as List? ?? const <dynamic>[]).length,
+      bodyLogCount: (source['body_logs'] as List? ?? const <dynamic>[]).length,
+      hasVerifiedEvidence:
+          source['verified_evidence'] is Map &&
+          (source['verified_evidence'] as Map).isNotEmpty,
+      truncated: decoded['context_truncated'] == true,
+      topLevelKeys: decoded.keys.toList(),
+      planTitles: planTitles,
+      exerciseNames: exerciseNames,
+    );
+  }
+
+  static Map<String, dynamic> _tryDecode(String encoded) {
+    try {
+      final decoded = jsonDecode(encoded);
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : const {};
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  static String _clip(String value, int limit) {
+    if (limit <= 0) return '';
+    if (value.length <= limit) return value;
+    if (limit == 1) return value.substring(0, 1);
+    return '${value.substring(0, limit - 1)}…';
   }
 }
