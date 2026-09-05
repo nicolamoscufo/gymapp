@@ -1398,7 +1398,9 @@ class _HomePageState extends State<HomePage> {
       }
 
       final rawText = await _readPickedTextFile(pickedFile);
-      final decoded = jsonDecode(_normalizeText(rawText));
+      final parsedBackup = AppDataStore.parseBackupText(
+        _normalizeText(rawText),
+      );
       final previousSchedules = _cloneSchedules(schedules);
       final previousHistory = _cloneHistory(history);
       final previousBodyLogs = _cloneBodyLogs(bodyLogs);
@@ -1411,62 +1413,22 @@ class _HomePageState extends State<HomePage> {
       final previousFavoriteExerciseIds =
           await AppDataStore.loadFavoriteExerciseIds();
 
-      List<Schedule> restoredSchedules = [];
-      List<ScheduleVersion> restoredScheduleVersions = [];
-      List<WorkoutSession> restoredHistory = [];
-      List<BodyLog> restoredBodyLogs = [];
-      List<Exercise>? restoredCustomExercises;
-      Set<String>? restoredFavoriteExerciseIds;
-      WorkoutSession? restoredCurrentSession;
-
-      if (decoded is Map) {
-        final backupMap = Map<String, dynamic>.from(decoded);
-        restoredSchedules = (backupMap['schedules'] as List? ?? [])
-            .map((e) => Schedule.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-        restoredScheduleVersions =
-            (backupMap['scheduleVersions'] as List? ?? [])
-                .whereType<Map>()
-                .map(
-                  (e) => ScheduleVersion.fromJson(Map<String, dynamic>.from(e)),
-                )
-                .toList();
-        restoredHistory = (backupMap['history'] as List? ?? [])
-            .map(
-              (e) =>
-                  WorkoutSession.fromJson(Map<String, dynamic>.from(e as Map)),
-            )
-            .toList();
-        restoredBodyLogs = (backupMap['bodyLogs'] as List? ?? [])
-            .map((e) => BodyLog.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-        if (backupMap.containsKey('customExercises')) {
-          restoredCustomExercises =
-              (backupMap['customExercises'] as List? ?? [])
-                  .map(
-                    (e) =>
-                        Exercise.fromJson(Map<String, dynamic>.from(e as Map)),
-                  )
-                  .toList();
-        }
-        if (backupMap.containsKey('favoriteExerciseIds')) {
-          restoredFavoriteExerciseIds =
-              (backupMap['favoriteExerciseIds'] as List? ?? [])
-                  .map((entry) => entry.toString())
-                  .toSet();
-        }
-        restoredCurrentSession = backupMap['currentSession'] == null
-            ? null
-            : WorkoutSession.fromJson(
-                Map<String, dynamic>.from(backupMap['currentSession'] as Map),
-              );
-      } else if (decoded is List) {
-        restoredSchedules = decoded
-            .map((e) => Schedule.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-      } else {
-        throw Exception('Formato backup non supportato.');
-      }
+      final restoredSchedules = parsedBackup.bundle.schedules;
+      final restoredScheduleVersions = parsedBackup.bundle.scheduleVersions;
+      final restoredHistory = parsedBackup.bundle.history;
+      final restoredBodyLogs = parsedBackup.bundle.bodyLogs;
+      final restoredCurrentSession = parsedBackup.bundle.currentSession;
+      final List<Exercise>? restoredCustomExercises =
+          parsedBackup.includesCustomExercises
+          ? parsedBackup.bundle.customExercises
+          : null;
+      final Set<String>? restoredFavoriteExerciseIds =
+          parsedBackup.includesFavoriteExerciseIds
+          ? parsedBackup.bundle.favoriteExerciseIds
+          : null;
+      final recoveryNotice = parsedBackup.bundle.recoveredFromCorruption
+          ? 'Attenzione: alcuni record invalidi o duplicati sono stati ignorati durante il recupero.\n\n'
+          : '';
 
       if (!mounted) {
         return;
@@ -1484,7 +1446,7 @@ class _HomePageState extends State<HomePage> {
         builder: (context) => AlertDialog(
           title: const Text('Come importare?'),
           content: Text(
-            'File: ${restoredSchedules.length} schede, ${restoredScheduleVersions.length} versioni scheda, ${restoredHistory.length} allenamenti, ${restoredBodyLogs.length} misure corpo, ${restoredCustomExercises?.length ?? 0} esercizi custom, ${restoredFavoriteExerciseIds?.length ?? 0} preferiti esercizi.\n\nMerge dedup: +${mergePreview.addedSchedules} schede, ${mergePreview.mergedSchedules} schede unite, +${mergePreview.addedExercises} esercizi, ${mergePreview.skippedExercises} esercizi duplicati saltati, +${mergePreview.addedHistory} allenamenti, ${mergePreview.skippedHistory} allenamenti duplicati, +${mergePreview.addedBodyLogs} misure, ${mergePreview.skippedBodyLogs} misure duplicate.',
+            '${recoveryNotice}File: ${restoredSchedules.length} schede, ${restoredScheduleVersions.length} versioni scheda, ${restoredHistory.length} allenamenti, ${restoredBodyLogs.length} misure corpo, ${restoredCustomExercises?.length ?? 0} esercizi custom, ${restoredFavoriteExerciseIds?.length ?? 0} preferiti esercizi.\n\nMerge dedup: +${mergePreview.addedSchedules} schede, ${mergePreview.mergedSchedules} schede unite, +${mergePreview.addedExercises} esercizi, ${mergePreview.skippedExercises} esercizi duplicati saltati, +${mergePreview.addedHistory} allenamenti, ${mergePreview.skippedHistory} allenamenti duplicati, +${mergePreview.addedBodyLogs} misure, ${mergePreview.skippedBodyLogs} misure duplicate.',
           ),
           actions: [
             TextButton(

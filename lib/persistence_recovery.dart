@@ -157,9 +157,9 @@ class PersistenceRecoveryDecoder {
   static PersistenceRecoverySnapshot decodeLegacyStorage(
     Map<String, Object?> values,
   ) {
-    final context = _RecoveryContext();
+    final context = _RecoveryContext(missingIdsAreCorruption: false);
 
-    Object? decode(String key, Object fallback) {
+    Object? decode(String key, Object? fallback) {
       final raw = values[key];
       if (raw == null) return fallback;
       if (raw is! String) {
@@ -302,9 +302,11 @@ class PersistenceRecoveryDecoder {
         if (rawExercises == null) {
           schedule.exercises = exercises;
         } else if (rawExercises is List) {
-          for (var exerciseIndex = 0;
-              exerciseIndex < rawExercises.length;
-              exerciseIndex += 1) {
+          for (
+            var exerciseIndex = 0;
+            exerciseIndex < rawExercises.length;
+            exerciseIndex += 1
+          ) {
             final exercise = _decodeExercise(
               rawExercises[exerciseIndex],
               exerciseIndex,
@@ -439,12 +441,14 @@ class PersistenceRecoveryDecoder {
       idSet.add(id);
       final exercises = <WorkoutExercise>[];
       final rawExercises = map['exercises'];
-      if (rawExercises == null && allowPartial) {
-        context.recovered = true;
+      if (rawExercises == null) {
+        // Missing exercise arrays are supported by older persisted sessions.
       } else if (rawExercises is List) {
-        for (var exerciseIndex = 0;
-            exerciseIndex < rawExercises.length;
-            exerciseIndex += 1) {
+        for (
+          var exerciseIndex = 0;
+          exerciseIndex < rawExercises.length;
+          exerciseIndex += 1
+        ) {
           final exercise = _decodeWorkoutExercise(
             rawExercises[exerciseIndex],
             exerciseIndex,
@@ -495,7 +499,7 @@ class PersistenceRecoveryDecoder {
       final sets = <ExerciseSet>[];
       final rawSets = map['sets'];
       if (rawSets == null) {
-        context.recovered = true;
+        // Missing set arrays are supported by older persisted exercises.
       } else if (rawSets is List) {
         for (var setIndex = 0; setIndex < rawSets.length; setIndex += 1) {
           final set = _decodeSet(
@@ -694,7 +698,7 @@ class PersistenceRecoveryDecoder {
     _RecoveryContext context,
   ) {
     if (raw is String && raw.trim().isNotEmpty) return raw.trim();
-    context.recovered = true;
+    if (context.missingIdsAreCorruption) context.recovered = true;
     return fallback;
   }
 
@@ -729,6 +733,10 @@ class PersistenceRecoveryDecoder {
 }
 
 class _RecoveryContext {
+  final bool missingIdsAreCorruption;
+
+  _RecoveryContext({this.missingIdsAreCorruption = true});
+
   bool recovered = false;
   bool rootCorruption = false;
 

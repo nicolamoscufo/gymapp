@@ -11,11 +11,15 @@ import 'models/workout.dart';
 class LocalSqliteStore {
   final DatabaseFactory _factory;
   final String? _databasePath;
+  final Future<void> Function(String phase)? migrationFaultInjector;
   Database? _database;
 
-  LocalSqliteStore({DatabaseFactory? factoryOverride, String? databasePath})
-    : _factory = factoryOverride ?? databaseFactory,
-      _databasePath = databasePath;
+  LocalSqliteStore({
+    DatabaseFactory? factoryOverride,
+    String? databasePath,
+    this.migrationFaultInjector,
+  }) : _factory = factoryOverride ?? databaseFactory,
+       _databasePath = databasePath;
 
   Future<Database> get _db async {
     final existing = _database;
@@ -284,16 +288,101 @@ class LocalSqliteStore {
     required Set<String> favoriteExerciseIds,
     List<ScheduleVersion> scheduleVersions = const <ScheduleVersion>[],
   }) async {
-    await replaceSchedules(schedules);
-    await replaceScheduleVersions(scheduleVersions);
-    await replaceHistory(history);
-    await replaceBodyLogs(bodyLogs);
-    await replaceCustomExercises(customExercises);
-    await replaceFavoriteExerciseIds(favoriteExerciseIds);
-    if (currentSession != null) {
-      await saveCurrentSession(currentSession);
+    final db = await _db;
+    await db.transaction((txn) async {
+      await _replaceAllInTransaction(
+        txn,
+        schedules: schedules,
+        history: history,
+        scheduleVersions: scheduleVersions,
+        currentSession: currentSession,
+        bodyLogs: bodyLogs,
+        customExercises: customExercises,
+        favoriteExerciseIds: favoriteExerciseIds,
+        checkpoint: true,
+      );
+      await txn.insert('meta', {
+        'key': 'legacy_migrated_v1',
+        'value': '1',
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await _migrationCheckpoint('beforeCommit');
+    });
+  }
+
+  Future<void> _migrationCheckpoint(String phase) async {
+    final injector = migrationFaultInjector;
+    if (injector != null) await injector(phase);
+  }
+
+  Future<void> _replaceAllInTransaction(
+    DatabaseExecutor db, {
+    required List<Schedule> schedules,
+    required List<WorkoutSession> history,
+    required List<ScheduleVersion> scheduleVersions,
+    required WorkoutSession? currentSession,
+    required List<BodyLog> bodyLogs,
+    required List<Exercise> customExercises,
+    required Set<String> favoriteExerciseIds,
+    required bool checkpoint,
+  }) async {
+    await db.delete('schedules');
+    for (var i = 0; i < schedules.length; i += 1) {
+      await _insertSchedule(db, schedules[i], i);
     }
-    await markMigrationComplete();
+    if (checkpoint) await _migrationCheckpoint('afterSchedules');
+
+    await db.delete('schedule_versions');
+    for (final version in scheduleVersions) {
+      await _insertScheduleVersion(db, version);
+    }
+    if (checkpoint) await _migrationCheckpoint('afterScheduleVersions');
+
+    await db.delete('workout_sessions');
+    for (var i = 0; i < history.length; i += 1) {
+      await _insertSession(db, history[i], 'history', i);
+    }
+    if (currentSession != null) {
+      await _insertSession(db, currentSession, 'current', 0);
+    }
+    if (checkpoint) await _migrationCheckpoint('afterSessions');
+
+    await db.delete('body_logs');
+    for (var i = 0; i < bodyLogs.length; i += 1) {
+      final log = bodyLogs[i];
+      await db.insert('body_logs', {
+        'id': log.id,
+        'position': i,
+        'date': log.date.toIso8601String(),
+        'body_weight': log.bodyWeight,
+        'waist': log.waist,
+        'chest': log.chest,
+        'arm': log.arm,
+        'thigh': log.thigh,
+        'sleep_hours': log.sleepHours,
+        'readiness': log.readiness,
+        'notes': log.notes,
+        'photo_path': log.photoPath,
+        'photo_name': log.photoName,
+      });
+    }
+    if (checkpoint) await _migrationCheckpoint('afterBodyLogs');
+
+    await db.delete('custom_exercises');
+    for (var i = 0; i < customExercises.length; i += 1) {
+      final exercise = customExercises[i];
+      await db.insert('custom_exercises', {
+        'id': exercise.id,
+        'position': i,
+        'json': jsonEncode(exercise.toJson()),
+      });
+    }
+    if (checkpoint) await _migrationCheckpoint('afterCustomExercises');
+
+    await db.delete('favorite_exercises');
+    for (final id in favoriteExerciseIds) {
+      await db.insert('favorite_exercises', {'exercise_id': id});
+    }
+    if (checkpoint) await _migrationCheckpoint('afterFavorites');
   }
 
   Future<void> replaceSchedules(List<Schedule> schedules) async {
@@ -606,9 +695,11 @@ class LocalSqliteStore {
           mesocycleWeeks: row['mesocycle_weeks'] as int,
           deloadEveryWeeks: row['deload_every_weeks'] as int,
           goal: row['goal'] as String,
-          trainingWeekdays: (jsonDecode(
-            row['training_weekdays_json'] as String,
-          ) as List).whereType<num>().map((e) => e.toInt()).toList(),
+          trainingWeekdays:
+              (jsonDecode(row['training_weekdays_json'] as String) as List)
+                  .whereType<num>()
+                  .map((e) => e.toInt())
+                  .toList(),
           programBlock: row['program_block'] as String,
           cycleNumber: row['cycle_number'] as int,
           cycleNotes: row['cycle_notes'] as String,
@@ -750,9 +841,11 @@ class LocalSqliteStore {
       progressionRepStep: row['progression_rep_step'] as int,
       progressionScheme: progressionSchemeFromJson(row['progression_scheme']),
       sets: sets.map(_setFromRow).toList(),
-      previousWeights: (jsonDecode(
-        row['previous_weights_json'] as String,
-      ) as List).whereType<num>().map((e) => e.toDouble()).toList(),
+      previousWeights:
+          (jsonDecode(row['previous_weights_json'] as String) as List)
+              .whereType<num>()
+              .map((e) => e.toDouble())
+              .toList(),
       previousReps: (jsonDecode(row['previous_reps_json'] as String) as List)
           .whereType<num>()
           .map((e) => e.toInt())
@@ -826,6 +919,11 @@ class LocalSqliteStore {
     } catch (_) {
       return IntensityTechnique.none;
     }
+  }
+
+  Future<void> executeForTesting(String sql, [List<Object?>? arguments]) async {
+    final db = await _db;
+    await db.execute(sql, arguments);
   }
 
   Future<void> close() async {
