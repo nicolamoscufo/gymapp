@@ -44,17 +44,17 @@ class AiCoachContextDiagnostics {
 /// Final prompt-budget boundary for the on-device coach.
 ///
 /// Instead of trying to preserve a large JSON tree until the very last byte,
-/// this layer now always distills routed data into a deterministic mobile
-/// capsule. The capsule is dense plain text generated only from app state and
+/// this layer always distills routed data into a deterministic mobile capsule.
+/// The capsule is dense plain text generated only from app state and
 /// deterministic analytics; no second LLM is involved in compression.
 class AiCoachContextBudget {
   const AiCoachContextBudget._();
 
   static AiCoachContextDiagnostics? lastDiagnostics;
 
-  /// The full Gemma runtime has a 4096-token context window. Dense JSON has a
-  /// poor token/character ratio, so keep the final context envelope small even
-  /// when callers request the historical 7000-character allowance.
+  /// Gemma runs with a 4096-token context window. Dense JSON has a poor
+  /// token/character ratio, so keep the final context envelope small even when
+  /// callers request the historical 7000-character allowance.
   static const int _modelSafeCharBudget = 2600;
   static const int _capsuleMaxChars = 2200;
 
@@ -78,19 +78,20 @@ class AiCoachContextBudget {
       routed.remove('program_history');
       routed.remove('program_change_effectiveness');
     }
+    final inferredIntent = _inferRoutedIntent(routed);
 
     // Reserve space for JSON envelope keys/escaping. A second pass below
     // handles unusually escape-heavy strings deterministically.
-    var capsuleBudget = (budget - 260).clamp(160, _capsuleMaxChars).toInt();
+    var capsuleBudget = (budget - 360).clamp(160, _capsuleMaxChars).toInt();
     var capsule = const AiCoachContextCapsuleBuilder().build(
       context: routed,
-      intent: AiCoachChatIntent.general,
+      intent: inferredIntent,
       charBudget: capsuleBudget,
     );
 
     String? longitudinal;
     if (keepProgramHistory) {
-      longitudinal = _longitudinalCapsule(routed, maxChars: 360);
+      longitudinal = _longitudinalCapsule(routed, maxChars: 320);
     }
 
     var encoded = _encodeEnvelope(
@@ -101,14 +102,16 @@ class AiCoachContextBudget {
 
     if (encoded.length > budget) {
       final overflow = encoded.length - budget;
-      capsuleBudget = (capsuleBudget - overflow - 48).clamp(160, capsuleBudget).toInt();
+      capsuleBudget = (capsuleBudget - overflow - 48)
+          .clamp(160, capsuleBudget)
+          .toInt();
       capsule = const AiCoachContextCapsuleBuilder().build(
         context: routed,
-        intent: AiCoachChatIntent.general,
+        intent: inferredIntent,
         charBudget: capsuleBudget,
       );
-      if (longitudinal != null && longitudinal.length > 180) {
-        longitudinal = _clip(longitudinal, 180);
+      if (longitudinal != null && longitudinal.length > 160) {
+        longitudinal = _clip(longitudinal, 160);
       }
       encoded = _encodeEnvelope(
         capsule: capsule,
@@ -126,9 +129,11 @@ class AiCoachContextBudget {
       );
     }
 
-    if (encoded.length > budget) {
-      final allowedCapsule = (capsule.length - (encoded.length - budget) - 24)
-          .clamp(80, capsule.length)
+    if (encoded.length > budget && capsule.isNotEmpty) {
+      final desired = capsule.length - (encoded.length - budget) - 24;
+      final minAllowed = capsule.length < 80 ? capsule.length : 80;
+      final allowedCapsule = desired
+          .clamp(minAllowed, capsule.length)
           .toInt();
       capsule = _clip(capsule, allowedCapsule);
       encoded = _encodeEnvelope(
@@ -155,6 +160,47 @@ class AiCoachContextBudget {
     return encoded;
   }
 
+  /// The context router has already removed families that are irrelevant to
+  /// the current query. Infer the routed intent from that shape so the capsule
+  /// builder can preserve the right ordering without widening the public
+  /// budget API or duplicating the query string.
+  static AiCoachChatIntent _inferRoutedIntent(Map<String, dynamic> source) {
+    final analytics = source['deterministic_analytics'];
+    final keys = analytics is Map
+        ? analytics.keys.map((key) => key.toString()).toSet()
+        : const <String>{};
+    final hasCatalog =
+        source['exercise_catalog'] is Map &&
+        (source['exercise_catalog'] as Map).isNotEmpty;
+    final bodyLogs = source['body_logs'];
+    final bodyLogsEmpty = bodyLogs is List && bodyLogs.isEmpty;
+
+    if (hasCatalog && bodyLogsEmpty && !source.containsKey('metrics')) {
+      return AiCoachChatIntent.technique;
+    }
+    if (keys.contains('fatigue_readiness') &&
+        keys.contains('session_count') &&
+        !keys.contains('exercise_progress') &&
+        !keys.contains('progress_analytics')) {
+      return AiCoachChatIntent.recovery;
+    }
+    if (keys.contains('progression_recommendations') &&
+        keys.contains('exercise_progress') &&
+        !keys.contains('progress_analytics')) {
+      return AiCoachChatIntent.progression;
+    }
+    if (keys.contains('progress_analytics') &&
+        keys.contains('exercise_progress') &&
+        !keys.contains('progression_recommendations')) {
+      return AiCoachChatIntent.progress;
+    }
+    if (source.containsKey('program_history') ||
+        source.containsKey('program_change_effectiveness')) {
+      return AiCoachChatIntent.program;
+    }
+    return AiCoachChatIntent.general;
+  }
+
   static String _encodeEnvelope({
     required String capsule,
     required String? longitudinal,
@@ -163,6 +209,8 @@ class AiCoachContextBudget {
     final capsuleDiagnostics = AiCoachContextCapsuleBuilder.lastDiagnostics;
     return jsonEncode({
       'context_format': 'mobile_capsule_v1',
+      'contract':
+          'FACT/AN are app-calculated; PLAN/EX/SESSION/DO are app-grounded; never invent omitted values',
       'user_data_available':
           capsuleDiagnostics?.userDataAvailable ?? _hasUserData(source),
       'reference_data_available':
