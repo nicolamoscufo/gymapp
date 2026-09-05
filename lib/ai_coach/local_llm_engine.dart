@@ -6,6 +6,7 @@ import 'ai_coach_models.dart';
 import 'ai_coach_generation_profile.dart';
 import 'ai_coach_model_config.dart';
 import 'ai_coach_model_manager.dart';
+import 'ai_model_execution_coordinator.dart';
 import 'chat_conversation.dart';
 
 abstract class LocalLlmEngine {
@@ -503,11 +504,12 @@ class FlutterGemmaLocalLlmEngine implements LocalLlmEngine {
   static InferenceModel? _model;
   static bool _isReady = false;
   static bool _modelSupportsImages = false;
+  static final AiModelExecutionCoordinator _execution =
+      AiModelExecutionCoordinator();
 
   @override
-  Future<void> initialize() async {
-    await _ensureModel(supportImage: false);
-  }
+  Future<void> initialize() =>
+      _execution.ensureReady(() => _ensureModel(supportImage: false));
 
   Future<void> _ensureModel({required bool supportImage}) async {
     if (_isReady && _model != null && (!supportImage || _modelSupportsImages)) {
@@ -540,7 +542,9 @@ class FlutterGemmaLocalLlmEngine implements LocalLlmEngine {
   }
 
   @override
-  Future<void> dispose() async {
+  Future<void> dispose() => _execution.dispose(_disposeUnlocked);
+
+  Future<void> _disposeUnlocked() async {
     await _model?.close();
     _model = null;
     _modelSupportsImages = false;
@@ -557,6 +561,17 @@ class FlutterGemmaLocalLlmEngine implements LocalLlmEngine {
 
   @override
   Future<String> generateStructuredJsonWithImages(
+    String prompt,
+    Map<String, dynamic> schema,
+    List<AiCoachImageInput> images,
+  ) {
+    return _execution.runExclusive(() async {
+      await _execution.ensureReady(() => _ensureModel(supportImage: false));
+      return _generateStructuredJsonWithImagesUnlocked(prompt, schema, images);
+    });
+  }
+
+  Future<String> _generateStructuredJsonWithImagesUnlocked(
     String prompt,
     Map<String, dynamic> schema,
     List<AiCoachImageInput> images,
@@ -603,6 +618,21 @@ class FlutterGemmaLocalLlmEngine implements LocalLlmEngine {
 
   @override
   Future<String> generateChatText({
+    required String systemPrompt,
+    required List<ChatMessage> messages,
+    List<AiCoachImageInput> newImages = const [],
+  }) {
+    return _execution.runExclusive(() async {
+      await _execution.ensureReady(() => _ensureModel(supportImage: false));
+      return _generateChatTextUnlocked(
+        systemPrompt: systemPrompt,
+        messages: messages,
+        newImages: newImages,
+      );
+    });
+  }
+
+  Future<String> _generateChatTextUnlocked({
     required String systemPrompt,
     required List<ChatMessage> messages,
     List<AiCoachImageInput> newImages = const [],
@@ -688,7 +718,14 @@ class FlutterGemmaLocalLlmEngine implements LocalLlmEngine {
   }
 
   @override
-  Future<String> generateText(String prompt) async {
+  Future<String> generateText(String prompt) {
+    return _execution.runExclusive(() async {
+      await _execution.ensureReady(() => _ensureModel(supportImage: false));
+      return _generateTextUnlocked(prompt);
+    });
+  }
+
+  Future<String> _generateTextUnlocked(String prompt) async {
     await _ensureModel(supportImage: false);
     final model = _model;
     if (model == null) {

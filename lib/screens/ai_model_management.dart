@@ -419,6 +419,8 @@ class _HealthCard extends StatelessWidget {
       AiModelHealthStatus.healthy => 'Verificato',
       AiModelHealthStatus.legacyUnverified => 'Legacy / non verificato',
       AiModelHealthStatus.versionMismatch => 'Versione diversa',
+      AiModelHealthStatus.integrityMismatch => 'File corrotto',
+      AiModelHealthStatus.integrityUnverified => 'Integrità non verificata',
       AiModelHealthStatus.runtimeBroken => 'Runtime non valido',
     };
     return Card(
